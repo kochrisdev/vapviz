@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vap"
+version = "0.1.0"
+description = "Visualization Agentic Process — trace and visualize AI agent workflows"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "anthropic>=0.28.0",
+    "sse-starlette>=2.1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx", "pytest-asyncio"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["vap"]
