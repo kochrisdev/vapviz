@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from typing import Any, Generator, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Generator, Iterator, Optional
 
 from .events import EventType, NodeKind, VapEvent
-from .store import RunStore, default_store
+
+if TYPE_CHECKING:
+    from .store import RunStore
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _now() -> float:
@@ -18,11 +24,16 @@ def _uid() -> str:
     return uuid.uuid4().hex[:12]
 
 
-# Context var tracks the currently active StepContext so nested calls
-# can find their parent automatically.
+# ContextVar tracks the active StepContext so nested calls auto-wire parent IDs.
+# Python propagates ContextVar into asyncio.Task children automatically (PEP 567).
 _current_step: ContextVar[Optional["StepContext"]] = ContextVar(
     "_current_step", default=None
 )
+
+
+# ---------------------------------------------------------------------------
+# StepContext — one node in the run graph
+# ---------------------------------------------------------------------------
 
 
 class StepContext:
@@ -35,7 +46,7 @@ class StepContext:
         node_kind: NodeKind,
         label: str,
         parent_id: Optional[str],
-        store: RunStore,
+        store: "RunStore",
     ) -> None:
         self.run_id = run_id
         self.node_id = node_id
@@ -76,10 +87,46 @@ class StepContext:
         )
 
 
+# ---------------------------------------------------------------------------
+# Shared step logic (used by both sync and async context managers)
+# ---------------------------------------------------------------------------
+
+
+def _make_step_ctx(run_id: str, label: str, kind: str, store: "RunStore") -> StepContext:
+    node_kind = NodeKind(kind) if kind in NodeKind._value2member_map_ else NodeKind.STEP
+    parent = _current_step.get()
+    parent_id = parent.node_id if parent else None
+    return StepContext(
+        run_id=run_id,
+        node_id=_uid(),
+        node_kind=node_kind,
+        label=label,
+        parent_id=parent_id,
+        store=store,
+    )
+
+
+def _start_event(node_kind: NodeKind) -> EventType:
+    return {NodeKind.TOOL: EventType.TOOL_CALL, NodeKind.LLM: EventType.LLM_CALL}.get(
+        node_kind, EventType.STEP_START
+    )
+
+
+def _end_event(node_kind: NodeKind) -> EventType:
+    return {NodeKind.TOOL: EventType.TOOL_RESULT, NodeKind.LLM: EventType.LLM_RESPONSE}.get(
+        node_kind, EventType.STEP_END
+    )
+
+
+# ---------------------------------------------------------------------------
+# RunContext — top-level context for a single agent run
+# ---------------------------------------------------------------------------
+
+
 class RunContext:
     """Top-level context for a single agent run."""
 
-    def __init__(self, label: str, store: RunStore, run_id: Optional[str] = None) -> None:
+    def __init__(self, label: str, store: "RunStore", run_id: Optional[str] = None) -> None:
         self.run_id = run_id or _uid()
         self.label = label
         self._store = store
@@ -99,7 +146,6 @@ class RunContext:
                 data={"label": self.label},
             )
         )
-        # The root agent node becomes the initial "current step"
         self._root_ctx = StepContext(
             run_id=self.run_id,
             node_id=self._root_node_id,
@@ -130,32 +176,15 @@ class RunContext:
         )
         _current_step.reset(self._token)
 
+    # ------------------------------------------------------------------
+    # Synchronous step context manager
+    # ------------------------------------------------------------------
+
     @contextmanager
-    def step(
-        self,
-        label: str,
-        kind: str = "step",
-    ) -> Generator[StepContext, None, None]:
-        """Open a child step within this run."""
-        node_kind = NodeKind(kind) if kind in NodeKind._value2member_map_ else NodeKind.STEP
-        parent = _current_step.get()
-        parent_id = parent.node_id if parent else self._root_node_id
-
-        ctx = StepContext(
-            run_id=self.run_id,
-            node_id=_uid(),
-            node_kind=node_kind,
-            label=label,
-            parent_id=parent_id,
-            store=self._store,
-        )
-
-        start_event = {
-            NodeKind.TOOL: EventType.TOOL_CALL,
-            NodeKind.LLM: EventType.LLM_CALL,
-        }.get(node_kind, EventType.STEP_START)
-
-        ctx._emit(start_event)
+    def step(self, label: str, kind: str = "step") -> Iterator[StepContext]:
+        """Open a synchronous child step within this run."""
+        ctx = _make_step_ctx(self.run_id, label, kind, self._store)
+        ctx._emit(_start_event(ctx.node_kind))
         token = _current_step.set(ctx)
         error: Optional[Exception] = None
         try:
@@ -167,25 +196,91 @@ class RunContext:
         finally:
             _current_step.reset(token)
             if not error:
-                end_event = {
-                    NodeKind.TOOL: EventType.TOOL_RESULT,
-                    NodeKind.LLM: EventType.LLM_RESPONSE,
-                }.get(node_kind, EventType.STEP_END)
-                ctx._emit(end_event, {"input": ctx._input, "output": ctx._output})
+                ctx._emit(_end_event(ctx.node_kind), {"input": ctx._input, "output": ctx._output})
+
+    # ------------------------------------------------------------------
+    # Asynchronous step context manager
+    # ------------------------------------------------------------------
+
+    @asynccontextmanager
+    async def astep(self, label: str, kind: str = "step") -> AsyncIterator[StepContext]:
+        """Open an asynchronous child step within this run.
+
+        ContextVar propagates into asyncio.Task children automatically (PEP 567),
+        so concurrent tasks each see their own correct parent without any extra work.
+        """
+        ctx = _make_step_ctx(self.run_id, label, kind, self._store)
+        ctx._emit(_start_event(ctx.node_kind))
+        token = _current_step.set(ctx)
+        error: Optional[Exception] = None
+        try:
+            yield ctx
+        except Exception as exc:
+            error = exc
+            ctx._emit(EventType.ERROR, {"error": str(exc), "error_type": type(exc).__name__})
+            raise
+        finally:
+            _current_step.reset(token)
+            if not error:
+                ctx._emit(_end_event(ctx.node_kind), {"input": ctx._input, "output": ctx._output})
+
+
+# ---------------------------------------------------------------------------
+# Tracer — entry point
+# ---------------------------------------------------------------------------
 
 
 class Tracer:
-    """Entry point for the VaP tracing API."""
+    """Entry point for the VaP tracing API.
 
-    def __init__(self, store: RunStore | None = None) -> None:
-        self._store = store or default_store
+    Uses ``vap.store.default_store`` at call time if no explicit store is passed,
+    so ``vap.configure(db=...)`` takes effect even after import.
+    """
+
+    def __init__(self, store: "RunStore | None" = None) -> None:
+        self._store_explicit = store
+
+    @property
+    def _store(self) -> "RunStore":
+        if self._store_explicit is not None:
+            return self._store_explicit
+        import vap.store as _sm
+        return _sm.default_store
+
+    # ------------------------------------------------------------------
+    # Synchronous trace
+    # ------------------------------------------------------------------
 
     @contextmanager
-    def trace(
-        self,
-        label: str,
-        run_id: Optional[str] = None,
-    ) -> Generator[RunContext, None, None]:
+    def trace(self, label: str, run_id: Optional[str] = None) -> Iterator[RunContext]:
+        """Start a synchronous agent run trace."""
+        run = RunContext(label=label, store=self._store, run_id=run_id)
+        run._start()
+        error: Optional[Exception] = None
+        try:
+            yield run
+        except Exception as exc:
+            error = exc
+            raise
+        finally:
+            run._end(error=error)
+
+    # ------------------------------------------------------------------
+    # Asynchronous trace
+    # ------------------------------------------------------------------
+
+    @asynccontextmanager
+    async def atrace(self, label: str, run_id: Optional[str] = None) -> AsyncIterator[RunContext]:
+        """Start an asynchronous agent run trace.
+
+        Example::
+
+            async with vap.atrace("My async agent") as run:
+                async with run.astep("fetch", kind="tool") as step:
+                    step.set_input({"url": "..."})
+                    data = await fetch(url)
+                    step.set_output({"bytes": len(data)})
+        """
         run = RunContext(label=label, store=self._store, run_id=run_id)
         run._start()
         error: Optional[Exception] = None
@@ -201,8 +296,12 @@ class Tracer:
         return _current_step.get()
 
 
-# Module-level default tracer
+# ---------------------------------------------------------------------------
+# Module-level default tracer (uses default_store dynamically)
+# ---------------------------------------------------------------------------
+
 _default_tracer = Tracer()
 
 trace = _default_tracer.trace
+atrace = _default_tracer.atrace
 get_current_step = _default_tracer.get_current_step

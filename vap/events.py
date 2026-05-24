@@ -42,6 +42,7 @@ class VapEvent(BaseModel):
     node_label: str
     parent_id: Optional[str] = None
     data: dict[str, Any] = Field(default_factory=dict)
+    schema_version: int = 1
 
 
 class GraphNode(BaseModel):
