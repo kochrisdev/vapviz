@@ -1,0 +1,998 @@
+# VaP Developer Reference
+
+Complete API reference for the Visualization Agentic Process framework — Python package, CLI, REST API, SSE protocol, and TypeScript types.
+
+---
+
+## Contents
+
+1. [Python API](#python-api)
+   - [Module-level functions](#module-level-functions)
+   - [Tracer](#tracer)
+   - [RunContext](#runcontext)
+   - [StepContext](#stepcontext)
+   - [Store classes](#store-classes)
+   - [Event models](#event-models)
+   - [Enums](#enums)
+2. [CLI](#cli)
+3. [REST API](#rest-api)
+4. [SSE Stream Protocol](#sse-stream-protocol)
+5. [Remote Ingest](#remote-ingest)
+6. [TypeScript Types](#typescript-types)
+7. [Changelog](#changelog)
+
+---
+
+## Python API
+
+Install:
+
+```bash
+pip install -e .                    # core (no Anthropic)
+pip install -e ".[anthropic]"       # with Anthropic SDK integration
+pip install -e ".[dev]"             # + pytest, httpx, pytest-asyncio
+```
+
+---
+
+### Module-level functions
+
+These are the primary entry points exported from the `vap` package.
+
+---
+
+#### `vap.configure(db=None)`
+
+Configure the module-level store backend. Call once at startup before any `trace()` / `atrace()` calls.
+
+```python
+vap.configure(db: str | None = None) -> None
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `db` | `str \| None` | `None` | Path to a SQLite file. Pass `None` to use the in-memory store. |
+
+**Effect:** replaces both `vap.store.default_store` and `vap.default_store` with the new store instance. Any `Tracer` created without an explicit `store=` argument will pick up the new store dynamically.
+
+```python
+import vap
+
+# Persist runs to SQLite
+vap.configure(db="runs.db")
+
+# Reset to in-memory (e.g. in tests)
+vap.configure()
+```
+
+---
+
+#### `vap.trace(label, run_id=None)`
+
+Synchronous context manager. Starts an agent run trace, yields a `RunContext`, and closes the run on exit.
+
+```python
+vap.trace(label: str, run_id: str | None = None) -> ContextManager[RunContext]
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `label` | `str` | required | Human-readable name shown in the UI sidebar. |
+| `run_id` | `str \| None` | `None` | Custom run ID (12-char hex). Auto-generated if omitted. |
+
+```python
+with vap.trace("My Agent") as run:
+    print(run.run_id)  # e.g. "a3f9c2e81b47"
+    with run.step("fetch", kind="tool") as step:
+        ...
+```
+
+Exceptions raised inside the block are recorded as an error on the root agent node and re-raised unchanged.
+
+---
+
+#### `vap.atrace(label, run_id=None)`
+
+Async version of `trace`. Use inside `async def` functions with `async with`.
+
+```python
+vap.atrace(label: str, run_id: str | None = None) -> AsyncContextManager[RunContext]
+```
+
+Parameters are identical to `trace`.
+
+```python
+async with vap.atrace("Async Agent") as run:
+    async with run.astep("plan", kind="step") as step:
+        step.set_input({"goal": "research"})
+        await asyncio.sleep(0.1)
+        step.set_output({"urls": 3})
+```
+
+---
+
+#### `vap.get_current_step()`
+
+Returns the `StepContext` that is currently active in this thread / async task, or `None` if no trace is running.
+
+```python
+vap.get_current_step() -> StepContext | None
+```
+
+Useful for integrations that need to attach to the current trace context from a place where `run` is not in scope.
+
+```python
+def my_library_call():
+    step = vap.get_current_step()
+    if step:
+        step.set_meta(library_version="1.2.3")
+```
+
+---
+
+#### `vap.patch_anthropic(client)`
+
+Instrument an Anthropic client so every `messages.create` call is automatically traced as an `llm` node under the currently active VaP step.
+
+```python
+vap.patch_anthropic(client: Any) -> None
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `client` | `anthropic.Anthropic \| anthropic.AsyncAnthropic` | The client instance to patch. |
+
+Auto-detects sync vs. async clients and applies the correct wrapper.
+
+```python
+import anthropic, vap
+
+# Sync
+client = anthropic.Anthropic()
+vap.patch_anthropic(client)
+
+# Async
+async_client = anthropic.AsyncAnthropic()
+vap.patch_anthropic(async_client)
+```
+
+**What gets traced per `messages.create` call:**
+
+Input (`data` on the `llm_call` event):
+- `model` — string
+- `messages` — list of message dicts
+- `system` — system prompt string or `None`
+- `max_tokens` — int or `None`
+- `tools` — list of tool names
+
+Output (`data` on the `llm_response` event):
+- `text` — joined text content blocks
+- `stop_reason` — `"end_turn"`, `"max_tokens"`, `"tool_use"`, etc.
+- `usage` — `{"input_tokens": int, "output_tokens": int}`
+
+If called outside an active VaP trace context, the original `messages.create` is invoked directly with no overhead.
+
+---
+
+#### `vap.create_app(store=None)`
+
+Create a new FastAPI application instance.
+
+```python
+vap.create_app(store: RunStore | None = None) -> FastAPI
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `store` | `RunStore \| None` | `None` | Store backend to use. Defaults to `vap.store.default_store`. |
+
+Returns a `FastAPI` instance. Use with any ASGI server:
+
+```python
+import uvicorn, vap
+from vap.backends.sqlite import SqliteStore
+
+store = SqliteStore("runs.db")
+app = vap.create_app(store=store)
+uvicorn.run(app, host="0.0.0.0", port=8001)
+```
+
+The app wires `store.set_loop()` in its `lifespan` startup handler and calls `store.close()` (if present) on shutdown.
+
+---
+
+### Tracer
+
+`vap.Tracer` is the class underlying the module-level `trace` / `atrace` functions. Use it when you need an isolated tracer with its own store (e.g. in tests).
+
+```python
+class vap.Tracer(store: RunStore | None = None)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `store` | `RunStore \| None` | `None` | Explicit store. If `None`, reads `vap.store.default_store` dynamically at call time. |
+
+#### Methods
+
+| Method | Returns | Description |
+|---|---|---|
+| `trace(label, run_id=None)` | `ContextManager[RunContext]` | Synchronous run trace. |
+| `atrace(label, run_id=None)` | `AsyncContextManager[RunContext]` | Asynchronous run trace. |
+| `get_current_step()` | `StepContext \| None` | Active step in current context. |
+
+```python
+from vap import Tracer, MemoryStore
+
+store = MemoryStore()
+tracer = Tracer(store=store)
+
+with tracer.trace("isolated") as run:
+    with run.step("task", kind="tool") as step:
+        step.set_input({"x": 1})
+        step.set_output({"y": 2})
+
+summaries = store.list_runs()
+```
+
+---
+
+### RunContext
+
+Yielded by `trace()` / `atrace()`. Represents a single agent run.
+
+```python
+class RunContext:
+    run_id: str     # 12-char hex, unique per run
+    label: str      # display name
+```
+
+#### `run.step(label, kind="step")`
+
+Open a synchronous child step.
+
+```python
+run.step(label: str, kind: str = "step") -> ContextManager[StepContext]
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `label` | `str` | required | Node label shown in the graph. |
+| `kind` | `str` | `"step"` | Node kind — `"step"`, `"tool"`, `"llm"`, or `"agent"`. |
+
+#### `run.astep(label, kind="step")`
+
+Open an asynchronous child step.
+
+```python
+run.astep(label: str, kind: str = "step") -> AsyncContextManager[StepContext]
+```
+
+Parameters are identical to `step`.
+
+**Example — concurrent async tool calls:**
+
+```python
+async def fetch(run, url):
+    async with run.astep(f"fetch:{url}", kind="tool") as step:
+        step.set_input({"url": url})
+        data = await http_get(url)
+        step.set_output({"bytes": len(data)})
+        return data
+
+async with vap.atrace("Research") as run:
+    results = await asyncio.gather(
+        fetch(run, "https://example.com/a"),
+        fetch(run, "https://example.com/b"),
+    )
+```
+
+ContextVar propagation (PEP 567) ensures each concurrent task sees its own parent automatically — no manual parent ID passing required.
+
+---
+
+### StepContext
+
+Yielded by `run.step()` / `run.astep()`. Represents one node in the graph.
+
+```python
+class StepContext:
+    run_id: str
+    node_id: str
+    node_kind: NodeKind
+    label: str
+    parent_id: str | None
+```
+
+#### `step.set_input(data)`
+
+Record the inputs for this node. Stored in the `data` field of the close event.
+
+```python
+step.set_input(data: dict[str, Any]) -> None
+```
+
+#### `step.set_output(data)`
+
+Record the outputs for this node.
+
+```python
+step.set_output(data: dict[str, Any]) -> None
+```
+
+#### `step.set_meta(**kwargs)`
+
+Merge arbitrary metadata into the event data dict. Emitted on every subsequent event from this context.
+
+```python
+step.set_meta(**kwargs: Any) -> None
+```
+
+```python
+with run.step("process", kind="tool") as step:
+    step.set_input({"items": 100})
+    step.set_meta(worker_id="w-3", queue="fast")
+    result = process()
+    step.set_output({"processed": len(result)})
+```
+
+---
+
+### Store classes
+
+#### `RunStore` (ABC)
+
+Abstract base class for all store backends. Import from `vap.store`.
+
+```python
+from vap.store import RunStore
+```
+
+| Method | Signature | Description |
+|---|---|---|
+| `set_loop` | `(loop: asyncio.AbstractEventLoop) -> None` | Inject the asyncio loop. Default no-op. |
+| `add_event` | `(event: VapEvent) -> None` | Persist and fan-out to subscribers. |
+| `get_events` | `(run_id: str) -> list[VapEvent]` | All events in insertion order. |
+| `get_graph` | `(run_id: str) -> RunGraph \| None` | Deep-copy graph snapshot. |
+| `get_run` | `(run_id: str) -> RunSummary \| None` | Single run summary. |
+| `list_runs` | `() -> list[RunSummary]` | All runs, newest first. |
+| `delete_run` | `(run_id: str) -> None` | Remove one run and its events. |
+| `clear` | `() -> None` | Remove all runs. |
+| `subscribe` | `(run_id: str) -> asyncio.Queue` | Queue for live SSE events. |
+| `unsubscribe` | `(run_id: str, q: asyncio.Queue) -> None` | Remove queue from subscriber list. |
+
+---
+
+#### `MemoryStore`
+
+Default in-memory implementation. Thread-safe. Runs are lost when the process exits.
+
+```python
+from vap.store import MemoryStore
+
+store = MemoryStore()
+```
+
+No constructor arguments.
+
+---
+
+#### `SqliteStore`
+
+Persistent SQLite-backed store. Import from `vap.backends.sqlite` or `vap.SqliteStore`.
+
+```python
+from vap.backends.sqlite import SqliteStore
+
+store = SqliteStore(db_path: str | Path)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `db_path` | `str \| Path` | Path to the SQLite file. Created automatically if it doesn't exist. |
+
+Additional method not on the ABC:
+
+| Method | Description |
+|---|---|
+| `close()` | Close the SQLite connection. Called automatically by the server on shutdown. |
+
+**SQLite schema:**
+
+```sql
+CREATE TABLE events (
+    id          TEXT PRIMARY KEY,
+    run_id      TEXT NOT NULL,
+    timestamp   REAL NOT NULL,
+    type        TEXT NOT NULL,
+    node_id     TEXT NOT NULL,
+    node_kind   TEXT NOT NULL,
+    node_label  TEXT NOT NULL,
+    parent_id   TEXT,
+    data_json   TEXT NOT NULL DEFAULT '{}',
+    schema_ver  INTEGER NOT NULL DEFAULT 1
+);
+-- Indexes on run_id and timestamp
+```
+
+---
+
+### Event models
+
+All models are Pydantic `BaseModel` subclasses. Import from `vap.events`.
+
+---
+
+#### `VapEvent`
+
+The atomic unit of tracing. Every action emits one or two events (open + close).
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `str` | 12-char hex, globally unique. |
+| `run_id` | `str` | Groups all events belonging to one run. |
+| `timestamp` | `float` | Unix epoch seconds (float). |
+| `type` | `EventType` | Event type string — see [EventType](#eventtype). |
+| `node_id` | `str` | Graph node this event belongs to. |
+| `node_kind` | `NodeKind` | `agent` / `step` / `tool` / `llm`. |
+| `node_label` | `str` | Human-readable node name. |
+| `parent_id` | `str \| None` | Parent node ID; `None` for the root agent node. |
+| `data` | `dict[str, Any]` | Arbitrary payload (inputs, outputs, errors, metadata). |
+| `schema_version` | `int` | Always `1` in v0.2.0. Bumped on breaking schema changes. |
+
+---
+
+#### `GraphNode`
+
+A node in the run graph, built incrementally from events.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `str` | Same as `VapEvent.node_id`. |
+| `kind` | `NodeKind` | Node kind. |
+| `label` | `str` | Display label. |
+| `status` | `NodeStatus` | `pending` / `running` / `success` / `error`. |
+| `parent_id` | `str \| None` | Parent node ID. |
+| `started_at` | `float \| None` | Timestamp of the open event. |
+| `ended_at` | `float \| None` | Timestamp of the close event. `None` if still running. |
+| `data` | `dict[str, Any]` | Merged data from all events for this node. |
+
+---
+
+#### `GraphEdge`
+
+A directed edge in the run graph.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `str` | `"{source}→{target}"` |
+| `source` | `str` | Parent node ID. |
+| `target` | `str` | Child node ID. |
+| `kind` | `str` | Always `"execution"` in v0.2.0. |
+
+---
+
+#### `RunSummary`
+
+Lightweight summary of a run — used in the sidebar list.
+
+| Field | Type | Description |
+|---|---|---|
+| `run_id` | `str` | Unique run identifier. |
+| `label` | `str` | Display name. |
+| `status` | `NodeStatus` | Current run status. |
+| `started_at` | `float` | Unix epoch seconds. |
+| `ended_at` | `float \| None` | `None` if still running. |
+| `node_count` | `int` | Total graph nodes. |
+| `event_count` | `int` | Total raw events. |
+
+---
+
+#### `RunGraph`
+
+Full graph snapshot for a run.
+
+| Field | Type | Description |
+|---|---|---|
+| `run_id` | `str` | Unique run identifier. |
+| `label` | `str` | Display name. |
+| `status` | `NodeStatus` | Current run status. |
+| `nodes` | `list[GraphNode]` | All graph nodes. |
+| `edges` | `list[GraphEdge]` | All graph edges. |
+| `started_at` | `float` | Unix epoch seconds. |
+| `ended_at` | `float \| None` | `None` if still running. |
+
+---
+
+### Enums
+
+All enums extend `str, Enum` — their `.value` is the wire string.
+
+#### `EventType`
+
+| Value | Wire string | Emitted by |
+|---|---|---|
+| `AGENT_START` | `"agent_start"` | `trace()` / `atrace()` enter |
+| `AGENT_END` | `"agent_end"` | `trace()` / `atrace()` exit |
+| `STEP_START` | `"step_start"` | `step()` / `astep()` enter (kind=step/agent) |
+| `STEP_END` | `"step_end"` | `step()` / `astep()` exit (kind=step/agent) |
+| `TOOL_CALL` | `"tool_call"` | `step()` enter with kind=tool |
+| `TOOL_RESULT` | `"tool_result"` | `step()` exit with kind=tool |
+| `LLM_CALL` | `"llm_call"` | `step()` enter with kind=llm; Anthropic patch enter |
+| `LLM_RESPONSE` | `"llm_response"` | `step()` exit with kind=llm; Anthropic patch exit |
+| `STATE_UPDATE` | `"state_update"` | Freestanding state metadata event |
+| `ERROR` | `"error"` | Any unhandled exception inside a step block |
+
+#### `NodeKind`
+
+| Value | Wire string | Description |
+|---|---|---|
+| `AGENT` | `"agent"` | Root agent node (indigo in UI) |
+| `STEP` | `"step"` | Generic processing step (sky blue) |
+| `TOOL` | `"tool"` | Tool / function call (emerald) |
+| `LLM` | `"llm"` | LLM API call (purple) |
+
+#### `NodeStatus`
+
+| Value | Wire string | Description |
+|---|---|---|
+| `PENDING` | `"pending"` | Created but open event not yet received |
+| `RUNNING` | `"running"` | Open event received, no close yet |
+| `SUCCESS` | `"success"` | Close event received without error |
+| `ERROR` | `"error"` | Error event received |
+
+---
+
+## CLI
+
+```
+vap serve [OPTIONS]
+```
+
+Start the VaP HTTP server.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `--host` | `str` | `0.0.0.0` | Network interface to bind. Use `127.0.0.1` to restrict to localhost. |
+| `--port` | `int` | `8001` | TCP port. |
+| `--db` | `PATH` | *(none)* | SQLite database file. If omitted, in-memory store is used. |
+| `--reload` | flag | off | Enable Uvicorn auto-reload. Use during development. |
+| `--log-level` | `str` | `warning` | Uvicorn log level: `debug`, `info`, `warning`, `error`, `critical`. |
+
+**Examples:**
+
+```bash
+# In-memory store (default)
+vap serve
+
+# SQLite persistence, custom port, verbose logs
+vap serve --db runs.db --port 9000 --log-level info
+
+# Development mode with reload
+vap serve --db dev.db --reload --log-level debug
+```
+
+When `--db` is supplied the CLI:
+1. Creates a `SqliteStore` pointing at the file
+2. Sets `vap.store.default_store` to it (so in-process traces land there too)
+3. Passes the store to `create_app(store=store)`
+
+---
+
+## REST API
+
+Base URL: `http://localhost:8001` (default)
+
+Interactive docs: `http://localhost:8001/docs`
+
+---
+
+### `GET /runs`
+
+List all runs, newest first.
+
+**Response** `200 OK` — `application/json`
+
+```json
+[
+  {
+    "run_id": "a3f9c2e81b47",
+    "label": "Research Agent",
+    "status": "success",
+    "started_at": 1716720000.123,
+    "ended_at": 1716720003.456,
+    "node_count": 5,
+    "event_count": 10
+  }
+]
+```
+
+---
+
+### `GET /runs/{run_id}`
+
+Retrieve a single run summary.
+
+**Path parameter:** `run_id` — the 12-char hex run ID.
+
+**Response** `200 OK` — `RunSummary` JSON
+
+**Error** `404 Not Found` — `{"detail": "Run not found"}`
+
+---
+
+### `GET /runs/{run_id}/graph`
+
+Retrieve the full graph snapshot for a run (all nodes and edges).
+
+**Path parameter:** `run_id`
+
+**Response** `200 OK` — `RunGraph` JSON
+
+```json
+{
+  "run_id": "a3f9c2e81b47",
+  "label": "Research Agent",
+  "status": "success",
+  "started_at": 1716720000.123,
+  "ended_at": 1716720003.456,
+  "nodes": [
+    {
+      "id": "b5c8d1f2a3e4",
+      "kind": "agent",
+      "label": "Research Agent",
+      "status": "success",
+      "parent_id": null,
+      "started_at": 1716720000.123,
+      "ended_at": 1716720003.456,
+      "data": {}
+    }
+  ],
+  "edges": []
+}
+```
+
+**Error** `404 Not Found`
+
+---
+
+### `GET /runs/{run_id}/events`
+
+**SSE stream** — replays all historical events for the run, then streams live events as they arrive.
+
+**Path parameter:** `run_id`
+
+**Response** `200 OK` — `text/event-stream`
+
+See [SSE Stream Protocol](#sse-stream-protocol) for the event format.
+
+---
+
+### `POST /runs/{run_id}/events`
+
+Ingest an event from a remote process or out-of-process tracer.
+
+**Path parameter:** `run_id` — must match `event.run_id` in the request body.
+
+**Request body** — `VapEvent` JSON
+
+```json
+{
+  "id": "c9e2f4a1b6d7",
+  "run_id": "a3f9c2e81b47",
+  "timestamp": 1716720001.234,
+  "type": "step_start",
+  "node_id": "d4f7a2b8c1e5",
+  "node_kind": "step",
+  "node_label": "fetch_data",
+  "parent_id": "b5c8d1f2a3e4",
+  "data": {},
+  "schema_version": 1
+}
+```
+
+**Response** `202 Accepted`
+
+```json
+{"ok": true}
+```
+
+**Error** `400 Bad Request` — `run_id` in path does not match `run_id` in body.
+
+---
+
+### `DELETE /runs/{run_id}`
+
+Delete a single run and all its events.
+
+**Path parameter:** `run_id`
+
+**Response** `204 No Content`
+
+**Error** `404 Not Found`
+
+> For `SqliteStore`, this also deletes the rows from the `events` table permanently.
+
+---
+
+### `DELETE /runs`
+
+Delete all runs from the store.
+
+**Response** `204 No Content`
+
+> Irreversible for `SqliteStore` — all event rows are removed.
+
+---
+
+## SSE Stream Protocol
+
+The `/runs/{run_id}/events` endpoint uses the [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) protocol.
+
+### Event format
+
+Each SSE message has a named `event:` field matching the `EventType` wire string, and a `data:` field containing the full `VapEvent` JSON:
+
+```
+event: step_start
+data: {"id":"c9e2f4","run_id":"a3f9c2","timestamp":1716720001.234,"type":"step_start","node_id":"d4f7a2","node_kind":"step","node_label":"fetch_data","parent_id":"b5c8d1","data":{},"schema_version":1}
+
+event: step_end
+data: {"id":"e1a8b3","run_id":"a3f9c2","timestamp":1716720002.456,"type":"step_end","node_id":"d4f7a2","node_kind":"step","node_label":"fetch_data","parent_id":"b5c8d1","data":{"input":{"url":"..."},"output":{"rows":42}},"schema_version":1}
+```
+
+### Keepalive pings
+
+If no event arrives within 30 seconds, the server sends a ping to keep the connection alive:
+
+```
+event: ping
+data: {}
+```
+
+Clients should ignore `ping` events.
+
+### Consuming the stream
+
+**Browser (JavaScript):**
+
+```javascript
+const es = new EventSource(`http://localhost:8001/runs/${runId}/events`);
+
+es.addEventListener("step_start", (e) => {
+  const event = JSON.parse(e.data);
+  console.log("step started:", event.node_label);
+});
+
+es.addEventListener("error", (e) => {
+  const event = JSON.parse(e.data);
+  console.error("error:", event.data.error);
+});
+
+// Clean up
+es.close();
+```
+
+**Python (httpx):**
+
+```python
+import httpx, json
+
+with httpx.stream("GET", f"http://localhost:8001/runs/{run_id}/events") as r:
+    for line in r.iter_lines():
+        if line.startswith("data:"):
+            event = json.loads(line[5:].strip())
+            print(event["type"], event["node_label"])
+```
+
+**curl:**
+
+```bash
+curl -N http://localhost:8001/runs/a3f9c2e81b47/events
+```
+
+### Two-phase replay
+
+The stream always begins with a replay of all historical events for the run (in insertion order), then seamlessly continues with live events. This means:
+
+- A client that connects **after** a run completes sees the full history
+- A client that connects **during** a run sees history first, then live updates with no gap
+- The client code is identical for both cases
+
+---
+
+## Remote Ingest
+
+To trace an agent running in a separate process (or a different language), push `VapEvent` objects to the HTTP endpoint directly.
+
+**Python example:**
+
+```python
+import httpx, time, uuid
+
+SERVER = "http://localhost:8001"
+run_id = uuid.uuid4().hex[:12]
+
+def uid():
+    return uuid.uuid4().hex[:12]
+
+def post(event):
+    httpx.post(f"{SERVER}/runs/{run_id}/events", json=event)
+
+# Open the run
+root_id = uid()
+post({
+    "id": uid(), "run_id": run_id,
+    "timestamp": time.time(),
+    "type": "agent_start",
+    "node_id": root_id, "node_kind": "agent",
+    "node_label": "Remote Agent", "parent_id": None,
+    "data": {"label": "Remote Agent"}, "schema_version": 1,
+})
+
+# Open a step
+step_id = uid()
+post({
+    "id": uid(), "run_id": run_id,
+    "timestamp": time.time(),
+    "type": "step_start",
+    "node_id": step_id, "node_kind": "step",
+    "node_label": "process", "parent_id": root_id,
+    "data": {}, "schema_version": 1,
+})
+
+# ... do work ...
+
+# Close the step
+post({
+    "id": uid(), "run_id": run_id,
+    "timestamp": time.time(),
+    "type": "step_end",
+    "node_id": step_id, "node_kind": "step",
+    "node_label": "process", "parent_id": root_id,
+    "data": {"input": {"x": 1}, "output": {"y": 2}}, "schema_version": 1,
+})
+
+# Close the run
+post({
+    "id": uid(), "run_id": run_id,
+    "timestamp": time.time(),
+    "type": "agent_end",
+    "node_id": root_id, "node_kind": "agent",
+    "node_label": "Remote Agent", "parent_id": None,
+    "data": {}, "schema_version": 1,
+})
+```
+
+The VaP server is language-agnostic — any HTTP client can push events, including agents written in Node.js, Go, or Java.
+
+---
+
+## TypeScript Types
+
+The `ui/src/types/events.ts` module mirrors the Python event models. Import as:
+
+```typescript
+import type { VapEvent, RunGraph, RunSummary, GraphNode, GraphEdge, EventType, NodeKind, NodeStatus } from "../types/events";
+```
+
+### `EventType`
+
+```typescript
+type EventType =
+  | "agent_start" | "agent_end"
+  | "step_start"  | "step_end"
+  | "tool_call"   | "tool_result"
+  | "llm_call"    | "llm_response"
+  | "state_update"
+  | "error";
+```
+
+### `NodeKind`
+
+```typescript
+type NodeKind = "agent" | "step" | "tool" | "llm";
+```
+
+### `NodeStatus`
+
+```typescript
+type NodeStatus = "pending" | "running" | "success" | "error";
+```
+
+### `VapEvent`
+
+```typescript
+interface VapEvent {
+  id: string;
+  run_id: string;
+  timestamp: number;        // Unix epoch seconds
+  type: EventType;
+  node_id: string;
+  node_kind: NodeKind;
+  node_label: string;
+  parent_id: string | null;
+  data: Record<string, unknown>;
+}
+```
+
+> Note: `schema_version` is not currently included in the TypeScript type since it is not consumed by the UI. Add it if you consume VapEvent in client-side storage.
+
+### `GraphNode`
+
+```typescript
+interface GraphNode {
+  id: string;
+  kind: NodeKind;
+  label: string;
+  status: NodeStatus;
+  parent_id: string | null;
+  started_at: number | null;
+  ended_at: number | null;
+  data: Record<string, unknown>;
+}
+```
+
+### `GraphEdge`
+
+```typescript
+interface GraphEdge {
+  id: string;      // "{source}→{target}"
+  source: string;
+  target: string;
+  kind: string;    // "execution"
+}
+```
+
+### `RunSummary`
+
+```typescript
+interface RunSummary {
+  run_id: string;
+  label: string;
+  status: NodeStatus;
+  started_at: number;
+  ended_at: number | null;
+  node_count: number;
+  event_count: number;
+}
+```
+
+### `RunGraph`
+
+```typescript
+interface RunGraph {
+  run_id: string;
+  label: string;
+  status: NodeStatus;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  started_at: number;
+  ended_at: number | null;
+}
+```
+
+---
+
+## Changelog
+
+### v0.2.0
+
+- **Async tracer** — `vap.atrace()` and `run.astep()` with `asynccontextmanager`
+- **SQLite persistence** — `SqliteStore` in `vap/backends/sqlite.py`; WAL mode, startup replay
+- **`vap.configure(db=...)`** — module-level store configuration
+- **CLI** — `vap serve --db <path> --port <n> --reload`
+- **Async Anthropic patch** — `patch_anthropic()` auto-detects `AsyncAnthropic`
+- **New REST endpoints** — `GET /runs/{id}`, `DELETE /runs/{id}`
+- **`schema_version`** field on `VapEvent` (default `1`)
+- **`RunStore` refactored to ABC** — `_apply_event_to_graph` extracted as shared pure function
+- `anthropic` moved to optional dependency (`pip install "vap[anthropic]"`)
+
+### v0.1.0
+
+- Initial release
+- Sync tracer (`trace`, `step`)
+- In-memory store with asyncio pub/sub
+- FastAPI server with SSE streaming
+- ReactFlow + dagre UI
+- Anthropic SDK sync integration
