@@ -10,39 +10,50 @@ This document describes the internal design of the Visualization Agentic Process
 ┌─────────────────────────────────────────────────────────────────────┐
 │  User / Agent Code                                                  │
 │                                                                     │
-│   with vap.trace("My Agent") as run:                                │
+│   with vap.trace("My Agent") as run:           (sync)               │
 │       with run.step("fetch", kind="tool") as step:                  │
 │           step.set_input({...})                                     │
 │           result = do_work()                                        │
 │           step.set_output({...})                                    │
+│                                                                     │
+│   async with vap.atrace("Async Agent") as run: (async)              │
+│       async with run.astep("fetch", kind="tool") as step:           │
+│           step.set_input({...})                                     │
+│           result = await do_work_async()                            │
+│           step.set_output({...})                                    │
 └──────────────────────────┬──────────────────────────────────────────┘
-                           │  VapEvent objects (sync, in-process)
+                           │  VapEvent objects (in-process)
                            ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  RunStore  (vap/store.py)                                           │
+│  RunStore ABC  (vap/store.py)                                        │
 │                                                                     │
-│  • Thread-safe dict of run_id → [VapEvent]                          │
-│  • Builds RunGraph (nodes + edges) incrementally on each event      │
-│  • Holds asyncio.Queue per SSE subscriber                           │
-│  • Uses loop.call_soon_threadsafe() to cross thread→asyncio boundary│
+│  MemoryStore   — thread-safe in-memory dict (default)               │
+│  SqliteStore   — WAL-mode SQLite, survives restarts                  │
+│                                                                     │
+│  Both implementations:                                              │
+│  • Build RunGraph (nodes + edges) incrementally on each event       │
+│  • Hold asyncio.Queue per SSE subscriber                            │
+│  • Use loop.call_soon_threadsafe() for thread→asyncio hand-off      │
 └──────────────────────────┬───────────────────────────────────────────┘
                            │  asyncio.Queue (per subscriber)
                            ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │  FastAPI Server  (vap/server.py)                                    │
 │                                                                     │
-│  GET  /runs                    → list[RunSummary]                   │
-│  GET  /runs/{id}/graph         → RunGraph snapshot                  │
-│  GET  /runs/{id}/events        → SSE stream (replay + live)         │
-│  POST /runs/{id}/events        → remote event ingest                │
-│  DEL  /runs                    → clear store                        │
+│  GET    /runs                  → list[RunSummary]                   │
+│  GET    /runs/{id}             → RunSummary                         │
+│  GET    /runs/{id}/graph       → RunGraph snapshot                  │
+│  GET    /runs/{id}/events      → SSE stream (replay + live)         │
+│  POST   /runs/{id}/events      → remote event ingest                │
+│  DELETE /runs                  → clear all runs                     │
+│  DELETE /runs/{id}             → delete one run                     │
 └──────────────────────────┬───────────────────────────────────────────┘
                            │  Server-Sent Events  (EventSource API)
                            ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │  React UI  (ui/src/)                                                │
 │                                                                     │
-│  useRunStream(runId)           SSE hook → applyEvent() in Zustand   │
+│  useRunStream(runId)           SSE hook -> applyEvent() in Zustand  │
 │  runStore.ts                   Builds nodes/edges from event stream  │
 │  AgentGraph.tsx                ReactFlow DAG with dagre layout       │
 │  EventTimeline.tsx             Chronological event log               │
@@ -67,7 +78,10 @@ class VapEvent(BaseModel):
     node_label: str           # human-readable name
     parent_id: str | None     # parent node_id (None = root)
     data: dict[str, Any]      # arbitrary payload (input, output, error, etc.)
+    schema_version: int = 1   # bumped on breaking schema changes
 ```
+
+`schema_version` enables forward-compatible migrations when the event schema evolves — stored events are tagged with the version they were written under.
 
 ### Event types and lifecycle
 
@@ -85,11 +99,13 @@ The `state_update` event is freestanding — it doesn't open/close a node, it up
 
 ### Graph construction
 
-The `RunStore` builds a `RunGraph` incrementally as events arrive:
+The store builds a `RunGraph` incrementally as events arrive via the shared pure function `_apply_event_to_graph(graph, event)`:
 
-- **Open event** → add `GraphNode` with `status: running`; if `parent_id` exists and parent is already in the graph, add a `GraphEdge`
+- **Open event** → add `GraphNode` with `status: running`; if `parent_id` exists, add a `GraphEdge`
 - **Close event** → update the matching node's `status` to `success` or `error`, set `ended_at`, merge `data`
 - **`agent_end`** → also updates the top-level `RunGraph.status` and `RunGraph.ended_at`
+
+This logic is extracted into a standalone pure function so both `MemoryStore` and `SqliteStore` share identical graph-building behaviour without inheritance.
 
 ---
 
@@ -108,25 +124,50 @@ trace("Agent"):
   _current_step = root_ctx        # token_0 saved
 
   step("phase_1"):
-    parent = _current_step.get()  # → root_ctx
+    parent = _current_step.get()  # -> root_ctx
     _current_step = phase1_ctx    # token_1 saved
-    edge: root → phase1
+    edge: root -> phase1
 
     step("sub_task"):
-      parent = _current_step.get()  # → phase1_ctx
+      parent = _current_step.get()  # -> phase1_ctx
       _current_step = sub_ctx       # token_2 saved
-      edge: phase1 → sub
+      edge: phase1 -> sub
 
-      yield  ← user code runs here
+      yield  <- user code runs here
 
-      _current_step.reset(token_2)  # → back to phase1_ctx
+      _current_step.reset(token_2)  # -> back to phase1_ctx
 
-    _current_step.reset(token_1)  # → back to root_ctx
+    _current_step.reset(token_1)  # -> back to root_ctx
 
-  _current_step.reset(token_0)  # → None
+  _current_step.reset(token_0)  # -> None
 ```
 
 `ContextVar.reset(token)` is used instead of `set(None)` so that async tasks and threads each have their own isolated context chain — two concurrent runs never interfere.
+
+**Async tracer:**
+
+`atrace` and `astep` are mirrors of `trace` and `step` built with `asynccontextmanager`:
+
+```python
+@asynccontextmanager
+async def atrace(self, label: str) -> AsyncIterator[RunContext]:
+    run = RunContext(label=label, store=self._store)
+    run._start()
+    error = None
+    try:
+        yield run
+    except Exception as exc:
+        error = exc
+        raise
+    finally:
+        run._end(error=error)
+```
+
+Because `ContextVar` already propagates correctly through asyncio tasks (each `asyncio.Task` inherits a copy of the context at creation time), concurrent `astep` calls in `asyncio.gather` each see their own parent chain — no user intervention required.
+
+**Dynamic store lookup:**
+
+`Tracer._store` is a `@property` that reads `vap.store.default_store` at call time rather than capturing it at construction time. This means `vap.configure(db=...)` takes effect for all subsequent traces on the default tracer without requiring any re-import.
 
 **Exception handling:**
 
@@ -138,20 +179,47 @@ If the body of a `with run.step()` block raises:
 
 This ensures the graph always reaches a terminal state even when agents fail mid-run.
 
+---
+
 ### Store (`vap/store.py`)
 
-The store is the single source of truth shared between the sync tracer thread and the async FastAPI server.
+`RunStore` is an abstract base class. All store operations are defined as abstract methods:
 
-**Thread-safety model:**
+```python
+class RunStore(ABC):
+    @abstractmethod
+    def add_event(self, event: VapEvent) -> None: ...
+    @abstractmethod
+    def get_events(self, run_id: str) -> list[VapEvent]: ...
+    @abstractmethod
+    def get_graph(self, run_id: str) -> RunGraph | None: ...
+    @abstractmethod
+    def get_run(self, run_id: str) -> RunSummary | None: ...
+    @abstractmethod
+    def list_runs(self) -> list[RunSummary]: ...
+    @abstractmethod
+    def delete_run(self, run_id: str) -> None: ...
+    @abstractmethod
+    def clear(self) -> None: ...
+    @abstractmethod
+    def subscribe(self, run_id: str) -> asyncio.Queue: ...
+    @abstractmethod
+    def unsubscribe(self, run_id: str, q: asyncio.Queue) -> None: ...
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None: ...  # default no-op
+```
+
+**`MemoryStore`** is the default implementation — everything lives in process memory.
+
+**Thread-safety model (both stores):**
 
 ```
 Tracer thread (sync)          asyncio event loop (server)
       │                               │
       │  add_event(event)             │
-      │  ┌─ acquire Lock             │
-      │  │  append to list           │
-      │  │  update graph             │
-      │  └─ release Lock             │
+      │  acquire Lock                 │
+      │  append to list               │
+      │  update graph                 │
+      │  release Lock                 │
       │                               │
       │  loop.call_soon_threadsafe(   │
       │    q.put_nowait, event        │──► asyncio.Queue
@@ -167,9 +235,49 @@ Tracer thread (sync)          asyncio event loop (server)
 
 The loop reference is injected at server startup via `store.set_loop(asyncio.get_running_loop())` inside the FastAPI `lifespan` handler.
 
+---
+
+### SQLite Backend (`vap/backends/sqlite.py`)
+
+`SqliteStore` persists events to a SQLite database file and replays them into an in-memory graph cache on startup.
+
+**Schema:**
+
+```sql
+CREATE TABLE IF NOT EXISTS events (
+    id        TEXT PRIMARY KEY,
+    run_id    TEXT NOT NULL,
+    timestamp REAL NOT NULL,
+    data      TEXT NOT NULL    -- full VapEvent JSON
+);
+CREATE INDEX IF NOT EXISTS idx_events_run_id   ON events (run_id);
+CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp);
+```
+
+**Key design choices:**
+
+- `PRAGMA journal_mode=WAL` — allows concurrent reads from FastAPI while the tracer writes, with no read blocking writes
+- `PRAGMA synchronous=NORMAL` — one fsync per WAL checkpoint instead of per write; survives OS crashes, risks at most one checkpoint of data on power loss
+- `INSERT OR IGNORE` — prevents duplicate events if `add_event` is called twice with the same event ID (e.g. retry logic)
+- Startup replay: `_load_from_db()` reads all persisted events ordered by `timestamp` and feeds them through `_apply_event_to_graph` to rebuild the in-memory graph cache
+- `close()` method — called by the server's lifespan `finally` block to cleanly close the SQLite connection on shutdown
+
+---
+
 ### Server (`vap/server.py`)
 
-The FastAPI app is a thin façade over the store. The most interesting endpoint is the SSE stream:
+The FastAPI app is a thin façade over the store. The lifespan handler wires up the asyncio loop and cleans up on shutdown:
+
+```python
+@asynccontextmanager
+async def lifespan(app):
+    _store.set_loop(asyncio.get_running_loop())
+    yield
+    if hasattr(_store, "close"):
+        _store.close()
+```
+
+The most interesting endpoint is the SSE stream:
 
 ```python
 async def generator():
@@ -196,6 +304,25 @@ The two-phase design means:
 
 ---
 
+### Configuration (`vap/__init__.py`)
+
+`vap.configure(db=...)` is the public API for switching the module-level store:
+
+```python
+def configure(db: str | None = None) -> None:
+    import sys
+    import vap.store as _sm
+
+    new_store = SqliteStore(db) if db is not None else MemoryStore()
+    _sm.default_store = new_store
+    # Also update the binding on this module so vap.default_store stays current
+    sys.modules[__name__].default_store = new_store
+```
+
+The `sys.modules[__name__]` trick is needed because Python's import machinery creates a binding in `vap.__init__` at import time (`from .store import default_store`). Simply reassigning `_sm.default_store` would leave the `vap.default_store` name pointing at the old object. Writing through `sys.modules` updates both bindings atomically from the caller's perspective.
+
+---
+
 ## React UI Internals
 
 ### State management (`runStore.ts`)
@@ -207,18 +334,16 @@ SSE event arrives
        │
        ▼
 applyEvent(event)
-  ├── START type → push new GraphNode (status: running), maybe push GraphEdge
-  ├── END type   → update matching node (status: success/error, ended_at, data)
-  └── ERROR type → update matching node (status: error)
+  ├── START type -> push new GraphNode (status: running), maybe push GraphEdge
+  ├── END type   -> update matching node (status: success/error, ended_at, data)
+  └── ERROR type -> update matching node (status: error)
        │
        ▼
 Zustand subscribers re-render
-  ├── AgentGraph  (nodes + edges → ReactFlow)
+  ├── AgentGraph  (nodes + edges -> ReactFlow)
   ├── EventTimeline (events list)
   └── RunList (run summary)
 ```
-
-The store also maintains a `runs` array (the sidebar list) which is updated in-place as events arrive for already-known runs, or prepended for new runs.
 
 ### Graph rendering (`AgentGraph.tsx`)
 
@@ -266,16 +391,21 @@ Named SSE events (`event: tool_call\ndata: {...}`) are used instead of the defau
 
 ## Anthropic SDK Integration (`integrations/anthropic_sdk.py`)
 
-`patch_anthropic(client)` replaces `client.messages.create` with a wrapper that:
+`patch_anthropic(client)` auto-detects whether the client is `anthropic.Anthropic` (sync) or `anthropic.AsyncAnthropic` (async) and applies the appropriate wrapper to `client.messages.create`.
 
-1. Checks `_current_step` — if there's no active VaP trace context, calls the original and returns immediately (zero overhead outside a trace)
-2. Creates a `StepContext` with `kind=llm`, parented to the current step
-3. Emits `llm_call` with model name, message count, and tool names
-4. Calls the original `messages.create`
-5. Emits `llm_response` with response text, `stop_reason`, and token usage
-6. On exception: emits `error` and re-raises
+**Sync path:** replaces `client.messages.create` with a regular function that wraps the call in a `StepContext`.
 
-Because Python module imports are cached, the `ContextVar` imported inside the wrapper is the same object as the one used by the tracer — so parent tracking works correctly.
+**Async path:** replaces `client.messages.create` with an `async def` that `await`s the original coroutine.
+
+Both paths:
+1. Check `_current_step` — if no active VaP trace context, call the original immediately (zero overhead outside a trace)
+2. Create a `StepContext` with `kind=llm`, parented to the current step
+3. Emit `llm_call` with model name, message count, and tool names
+4. Call the original `messages.create`
+5. Emit `llm_response` with response text, `stop_reason`, and token usage
+6. On exception: emit `error` and re-raise
+
+Because Python module imports are cached, the `ContextVar` imported inside the wrapper is the same object as the one used by the tracer — so parent tracking works correctly across the patched call.
 
 ---
 
@@ -284,7 +414,7 @@ Because Python module imports are cached, the `ContextVar` imported inside the w
 ### Adding a new node kind
 
 1. **`vap/events.py`** — add a value to `NodeKind`
-2. **`vap/tracer.py`** — add the start/end `EventType` mappings in `step()` (the two dicts)
+2. **`vap/tracer.py`** — add the start/end `EventType` mappings in the `_start_event` / `_end_event` helpers
 3. **`ui/src/components/AgentGraph.tsx`** — add a colour entry to `KIND_BG`
 4. **`ui/src/types/events.ts`** — add the string literal to the `NodeKind` union
 
@@ -293,21 +423,21 @@ Because Python module imports are cached, the `ContextVar` imported inside the w
 Create `vap/integrations/<framework>.py` following the pattern in `anthropic_sdk.py`:
 
 ```python
-from ..tracer import get_current_step, _current_step, _uid, NodeKind, StepContext
+from ..tracer import _current_step, _uid, NodeKind, StepContext
 from ..events import EventType
 
 def patch_myframework(client):
     original = client.some_method
 
     def patched(*args, **kwargs):
-        current = get_current_step()
+        current = _current_step.get()
         if current is None:
             return original(*args, **kwargs)
 
         ctx = StepContext(
             run_id=current.run_id,
             node_id=_uid(),
-            node_kind=NodeKind.TOOL,   # or LLM, STEP
+            node_kind=NodeKind.TOOL,
             label="my_framework/method",
             parent_id=current.node_id,
             store=current._store,
@@ -328,17 +458,47 @@ def patch_myframework(client):
     client.some_method = patched
 ```
 
-### Using a custom store
+For an async integration, use `async def patched` and `await original(...)` — otherwise the structure is identical.
 
-The `RunStore` interface is simple: if you want persistent storage (e.g. SQLite), subclass `RunStore` and override `add_event`, `get_events`, `get_graph`, and `list_runs`. Pass your custom store to `create_app()` and `Tracer()`:
+### Implementing a custom store backend
+
+Subclass `RunStore` and implement all abstract methods. The minimum required surface:
 
 ```python
-store = MyPersistentStore("sqlite:///vap.db")
+from vap.store import RunStore, _apply_event_to_graph
+from vap.events import VapEvent, RunGraph, RunSummary
+import asyncio, threading
+
+class MyStore(RunStore):
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._graphs: dict[str, RunGraph] = {}
+        self._events: dict[str, list[VapEvent]] = {}
+        self._subscribers: dict[str, list[asyncio.Queue]] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def set_loop(self, loop):
+        self._loop = loop
+
+    def add_event(self, event: VapEvent) -> None:
+        with self._lock:
+            self._events.setdefault(event.run_id, []).append(event)
+            graph = self._graphs.setdefault(event.run_id, RunGraph(run_id=event.run_id))
+            _apply_event_to_graph(graph, event)
+        # Fan out to SSE subscribers
+        for q in self._subscribers.get(event.run_id, []):
+            if self._loop:
+                self._loop.call_soon_threadsafe(q.put_nowait, event)
+
+    # ... implement remaining abstract methods
+```
+
+Pass your store to `create_app()` and `Tracer()`:
+
+```python
+store = MyStore()
 app   = vap.create_app(store=store)
 tracer = vap.Tracer(store=store)
-
-with tracer.trace("persistent run") as run:
-    ...
 ```
 
 ---
@@ -347,7 +507,7 @@ with tracer.trace("persistent run") as run:
 
 ### Why `ContextVar` instead of explicit parent passing?
 
-Users shouldn't have to thread a context object through every function call. `ContextVar` provides automatic propagation through the call stack, including across `asyncio.Task` boundaries — so concurrent async agent steps each see their own correct parent without any user intervention.
+Users shouldn't have to thread a context object through every function call. `ContextVar` provides automatic propagation through the call stack, including across `asyncio.Task` boundaries — so concurrent async agent steps each see their own correct parent without any user intervention. Each `asyncio.Task` inherits a snapshot of the context at creation time, making concurrent fan-out safe by construction.
 
 ### Why SSE instead of WebSockets?
 
@@ -356,6 +516,20 @@ SSE is unidirectional (server → client), which is exactly the access pattern n
 ### Why in-process store by default?
 
 Running the tracer and server in the same process via `default_store` eliminates all serialisation overhead on the hot path — emitting an event is a lock-acquire + list-append. The remote ingest endpoint (`POST /runs/{id}/events`) exists for multi-process deployments without changing any user-facing API.
+
+### Why SQLite with WAL mode?
+
+SQLite's Write-Ahead Logging mode allows concurrent readers and a single writer without blocking each other. This is ideal for VaP's access pattern: the tracer writes one event at a time (often from a non-asyncio thread), while FastAPI serves multiple concurrent SSE readers. WAL mode with `synchronous=NORMAL` gives a good safety/throughput balance — events are not lost on an OS crash, and throughput is limited by fsync-per-checkpoint rather than fsync-per-write.
+
+### Why `sys.modules[__name__]` in `configure()`?
+
+Python's import system creates a binding in `vap.__init__` at import time:
+
+```python
+from .store import default_store  # creates vap.default_store = <MemoryStore>
+```
+
+Later, `vap.store.default_store = new_store` updates the variable in the `store` module but leaves the `vap.default_store` name (created by the `from ... import` statement) still pointing at the old object. Writing through `sys.modules[__name__].default_store = new_store` updates the attribute on the `vap` module object directly, keeping both names in sync.
 
 ### Why dagre for layout?
 

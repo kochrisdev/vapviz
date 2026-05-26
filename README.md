@@ -11,8 +11,11 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 ## Features
 
 - **Zero-boilerplate tracing** — `with vap.trace("my agent")` is all you need
+- **Async-native** — `async with vap.atrace(...)` / `run.astep(...)` for full asyncio support
 - **Automatic nesting** — `ContextVar`-based parent tracking; deeply nested steps wire up correctly without any manual IDs
-- **Anthropic SDK auto-instrumentation** — one call to `vap.patch_anthropic(client)` traces every `messages.create` call automatically
+- **Anthropic SDK auto-instrumentation** — one call to `vap.patch_anthropic(client)` traces every `messages.create` call automatically (sync **and** async clients)
+- **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
+- **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
 - **Interactive graph** — ReactFlow DAG with dagre auto-layout, zoom/pan, minimap
 - **Node detail panel** — click any node to inspect its inputs, outputs, token usage, duration, and errors
@@ -37,29 +40,31 @@ pip install -e .
 ```bash
 cd ui
 npm install
-npm run dev        # → http://localhost:5173
+npm run dev        # -> http://localhost:5173
 ```
 
-### 3. Start the dev server + run a demo
+### 3. Start the server
 
 ```bash
-# From the project root (separate terminal from the UI)
-python run_dev.py  # starts FastAPI on :8001 and runs a demo agent
+# In-memory (resets on restart):
+vap serve
+
+# Persistent SQLite (survives restarts):
+vap serve --db vap.db
 ```
 
-Open **http://localhost:5173**, click "Research Agent Demo" in the sidebar.
+Open **http://localhost:5173** to see the live graph UI.
 
 ---
 
 ## Core API
 
-### Tracing a run
+### Synchronous tracing
 
 ```python
 import vap
 
 with vap.trace("My Agent") as run:
-    # Every block inside becomes a node in the graph
     with run.step("fetch_data", kind="tool") as step:
         step.set_input({"url": "https://api.example.com/data"})
         data = fetch()
@@ -70,6 +75,30 @@ with vap.trace("My Agent") as run:
         result = analyze(data)
         step.set_output({"summary": result})
 ```
+
+### Async tracing
+
+```python
+import asyncio
+import vap
+
+async def run_agent():
+    async with vap.atrace("Async Agent") as run:
+        async with run.astep("plan", kind="step") as step:
+            step.set_input({"goal": "research"})
+            await asyncio.sleep(0.1)
+            step.set_output({"urls": 3})
+
+        # Concurrent tool calls
+        results = await asyncio.gather(
+            fetch_with_step(run, "https://example.com/a"),
+            fetch_with_step(run, "https://example.com/b"),
+        )
+
+asyncio.run(run_agent())
+```
+
+Both `trace`/`atrace` and `step`/`astep` are interchangeable in terms of what gets recorded — use whichever matches your code's execution model.
 
 ### Node kinds
 
@@ -100,27 +129,80 @@ Unhandled exceptions are caught, recorded on the node as `status: error`, and re
 ```python
 with vap.trace("Risky Agent") as run:
     with run.step("might_fail", kind="tool") as step:
-        result = risky_operation()   # if this raises, node → error, exception re-raised
+        result = risky_operation()   # if this raises, node -> error, exception re-raised
+```
+
+---
+
+## Persistence
+
+By default VaP uses an in-memory store — fast, no setup required, but runs are lost when the process exits.
+
+### SQLite persistence
+
+```python
+import vap
+
+# Call once at startup, before any trace() calls
+vap.configure(db="vap.db")
+
+with vap.trace("My Agent") as run:
+    ...
+```
+
+Or use the CLI:
+
+```bash
+vap serve --db vap.db
+```
+
+Runs are replayed from the database on startup, so you can view historical traces after restarting the server.
+
+---
+
+## CLI
+
+```
+vap serve [OPTIONS]
+
+Options:
+  --host TEXT       Bind host (default: 0.0.0.0)
+  --port INT        Bind port (default: 8001)
+  --db PATH         SQLite database path for persistence (default: in-memory)
+  --reload          Enable auto-reload for development
+  --log-level TEXT  Uvicorn log level (default: warning)
 ```
 
 ---
 
 ## Anthropic SDK Integration
 
+Works with both sync and async Anthropic clients:
+
 ```python
 import anthropic
 import vap
 
+# Sync client
 client = anthropic.Anthropic()
-vap.patch_anthropic(client)        # one-time setup
+vap.patch_anthropic(client)
+
+# Async client
+async_client = anthropic.AsyncAnthropic()
+vap.patch_anthropic(async_client)   # same call — auto-detected
+```
+
+```python
+# Install with Anthropic support
+# pip install "vap[anthropic]"
 
 with vap.trace("Claude Agent") as run:
     with run.step("research", kind="step"):
-        # This call is traced automatically as an LLM node
+        # Traced automatically as an LLM node
         response = client.messages.create(
             model="claude-opus-4-5",
             max_tokens=1024,
-            messages=[{"role": "user", "content": "Summarize AI trends in 2024."}],
+            messages=[{"role": "user", "content": "Summarize AI trends."}],
         )
 ```
 
@@ -138,10 +220,12 @@ The FastAPI server (`http://localhost:8001`) exposes:
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/runs` | List all runs (summary) |
+| `GET` | `/runs/{id}` | Single run summary |
 | `GET` | `/runs/{id}/graph` | Full graph snapshot (nodes + edges) |
 | `GET` | `/runs/{id}/events` | **SSE stream** — replays history then pushes live |
 | `POST` | `/runs/{id}/events` | Ingest an event from a remote process |
-| `DELETE` | `/runs` | Clear all runs from memory |
+| `DELETE` | `/runs` | Clear all runs from store |
+| `DELETE` | `/runs/{id}` | Delete a single run |
 
 Interactive docs: **http://localhost:8001/docs**
 
@@ -164,13 +248,17 @@ error
 
 ```
 vap/                          Python package
-├── __init__.py               Public API: trace, patch_anthropic, app
+├── __init__.py               Public API: trace, atrace, configure, patch_anthropic
 ├── events.py                 Pydantic models — VapEvent, GraphNode, RunGraph
-├── store.py                  Thread-safe in-memory store + asyncio pub/sub
-├── tracer.py                 trace() context manager, StepContext, ContextVar nesting
+├── store.py                  RunStore ABC + MemoryStore + thread-safe pub/sub
+├── tracer.py                 trace/atrace context managers, ContextVar nesting
 ├── server.py                 FastAPI app — REST + SSE endpoints
+├── cli.py                    vap serve command
+├── backends/
+│   ├── __init__.py
+│   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
 └── integrations/
-    └── anthropic_sdk.py      patch_anthropic() — wraps messages.create
+    └── anthropic_sdk.py      patch_anthropic() — sync + async client support
 
 ui/src/                       Vite + React + TypeScript
 ├── App.tsx                   Root layout — sidebar / graph / timeline / detail panel
@@ -188,7 +276,8 @@ ui/src/                       Vite + React + TypeScript
 
 examples/
 ├── simple_demo.py            Multi-step fake agent — no API key needed
-└── anthropic_demo.py         Real Claude API calls with auto-tracing
+├── anthropic_demo.py         Real Claude API calls with auto-tracing
+└── async_demo.py             Async agent with concurrent steps (asyncio.gather)
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
@@ -204,27 +293,49 @@ pyproject.toml                Python package metadata + dependencies
 python examples/simple_demo.py
 ```
 
-Starts the server on `:8000` in a background thread, runs a simulated research agent, then waits for Enter.
+Starts the server on `:8001` in a background thread, runs a simulated research agent, then waits for Enter.
+
+### Async demo (no API key)
+
+```bash
+# Start the server separately:
+vap serve --db vap.db
+
+# Then run the async agent:
+python examples/async_demo.py
+
+# Or run both in one process:
+python examples/async_demo.py --server
+```
+
+Demonstrates `atrace`, `astep`, and `asyncio.gather` for concurrent fan-out tool calls.
 
 ### Anthropic demo
 
 ```bash
+pip install "vap[anthropic]"
 export ANTHROPIC_API_KEY=sk-ant-...
 python examples/anthropic_demo.py
 ```
 
-Runs two real Claude API calls and traces them through VaP.
+Runs real Claude API calls and traces them through VaP.
 
 ---
 
-## Custom Tracer Instance
-
-If you need multiple isolated stores (e.g. in tests):
+## Configuration Reference
 
 ```python
-from vap import Tracer, RunStore
+import vap
 
-store = RunStore()
+# Use SQLite persistence (call once at startup)
+vap.configure(db="vap.db")
+
+# Use in-memory store (default)
+vap.configure()
+
+# Custom store passed directly
+from vap import Tracer, MemoryStore
+store = MemoryStore()
 tracer = Tracer(store=store)
 
 with tracer.trace("isolated run") as run:
@@ -235,10 +346,21 @@ with tracer.trace("isolated run") as run:
 
 ## Roadmap
 
-- [ ] **Persistent storage** — SQLite / PostgreSQL backend
+### v0.2.0 — Phase 1 (complete)
+- [x] **Persistent storage** — SQLite backend with WAL mode, replay on startup
+- [x] **Async tracer** — `atrace` / `astep` with `asynccontextmanager`
+- [x] **CLI** — `vap serve --db <path>`
+- [x] **Async Anthropic** — `patch_anthropic` detects `AsyncAnthropic` automatically
+- [x] **Single-run REST** — `GET /runs/{id}`, `DELETE /runs/{id}`
+
+### v0.3.0 — Phase 2 (planned)
 - [ ] **LangGraph integration** — automatic callback handler
-- [ ] **Async tracer** — `async with` support for async agent frameworks
+- [ ] **OpenAI SDK integration** — `patch_openai(client)`
+
+### v0.4.0 — Phase 3 (planned)
 - [ ] **Token cost overlay** — per-node cost estimation
+
+### v0.5.0 — Phase 4 (planned)
 - [ ] **Run comparison** — diff two runs side by side
 - [ ] **Export** — download run as JSON / PNG
 
@@ -253,7 +375,9 @@ with tracer.trace("isolated run") as run:
 | `uvicorn` | ASGI server |
 | `pydantic` | Event schema validation |
 | `sse-starlette` | Server-Sent Events support |
-| `anthropic` | Optional — Anthropic SDK integration |
+| `anthropic` *(optional)* | Anthropic SDK integration (`pip install "vap[anthropic]"`) |
+
+`sqlite3` is part of the Python standard library — no extra install needed for persistence.
 
 ### UI
 | Package | Role |
