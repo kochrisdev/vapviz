@@ -28,6 +28,14 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 
 ---
 
+## Tutorial
+
+New to VaP? The **[step-by-step tutorial](docs/TUTORIAL.md)** walks you from installation to a
+fully instrumented agent — covering tracing, async, error handling, cost tracking, OpenAI/Anthropic
+auto-instrumentation, LangGraph, remote ingest, run comparison, and export.
+
+---
+
 ## Deployment
 
 See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for full production deployment instructions, including Docker, Nginx, Railway, Render, Fly.io, health checks, and security hardening.
@@ -340,6 +348,12 @@ examples/
 ├── anthropic_demo.py         Real Claude API calls with auto-tracing
 ├── openai_demo.py            OpenAI chat.completions with auto-tracing
 └── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
+
+docs/
+├── TUTORIAL.md               Step-by-step learning guide (start here)
+├── ARCHITECTURE.md           Internal design — event flow, store, React state machine
+├── DEVELOPER_REFERENCE.md    Complete Python API, CLI, REST, SSE, TypeScript types
+└── DEPLOYMENT.md             Docker, Nginx, cloud platforms, security
 
 tests/
 ├── conftest.py               Shared fixtures
