@@ -709,6 +709,7 @@ Start the VaP HTTP server.
 | `--host` | `str` | `0.0.0.0` | Network interface to bind. Use `127.0.0.1` to restrict to localhost. |
 | `--port` | `int` | `8001` | TCP port. |
 | `--db` | `PATH` | *(none)* | SQLite database file. If omitted, in-memory store is used. |
+| `--static-dir` | `PATH` | *(none)* | Serve the built React UI from this directory. Run `npm run build` inside `ui/` first; the output goes to `ui/dist`. |
 | `--reload` | flag | off | Enable Uvicorn auto-reload. Use during development. |
 | `--log-level` | `str` | `warning` | Uvicorn log level: `debug`, `info`, `warning`, `error`, `critical`. |
 

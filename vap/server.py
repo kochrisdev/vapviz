@@ -12,7 +12,7 @@ from .events import RunGraph, RunSummary, VapEvent
 from .store import RunStore, default_store
 
 
-def create_app(store: RunStore | None = None) -> FastAPI:
+def create_app(store: RunStore | None = None, static_dir: str | None = None) -> FastAPI:
     _store = store or default_store
 
     @asynccontextmanager
@@ -135,6 +135,25 @@ def create_app(store: RunStore | None = None) -> FastAPI:
     @app.delete("/runs", status_code=204)
     async def clear_runs():
         _store.clear()
+
+    # ------------------------------------------------------------------
+    # Optional: serve the built React UI as static files
+    # Must be mounted AFTER all API routes so the catch-all SPA fallback
+    # does not shadow /runs/*, /docs, etc.
+    # ------------------------------------------------------------------
+
+    if static_dir is not None:
+        from pathlib import Path
+        from fastapi.staticfiles import StaticFiles
+
+        dist = Path(static_dir)
+        if not dist.is_dir():
+            raise RuntimeError(
+                f"static_dir '{static_dir}' does not exist or is not a directory. "
+                "Run 'npm run build' inside the ui/ directory first."
+            )
+        # html=True enables SPA fallback: unknown paths → index.html
+        app.mount("/", StaticFiles(directory=str(dist), html=True), name="ui")
 
     return app
 

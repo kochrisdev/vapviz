@@ -6,20 +6,24 @@ import sys
 
 def _serve(args: argparse.Namespace) -> None:
     import uvicorn
+    from vap.server import create_app
+    import vap.store as _sm
 
     if args.db:
         from vap.backends.sqlite import SqliteStore
-        from vap.server import create_app
-        import vap.store as _sm
-
         store = SqliteStore(args.db)
         _sm.default_store = store          # in-process tracers pick this up
-        app = create_app(store=store)
         print(f"[vap] Using SQLite store: {args.db}")
     else:
-        from vap.server import app
+        from vap.store import MemoryStore
+        store = MemoryStore()
         print("[vap] Using in-memory store (runs will be lost on restart)")
         print("[vap] Pass --db <path> to persist runs to SQLite")
+
+    if args.static_dir:
+        print(f"[vap] Serving UI from: {args.static_dir}")
+
+    app = create_app(store=store, static_dir=args.static_dir)
 
     print(f"[vap] Server starting on http://{args.host}:{args.port}")
     uvicorn.run(
@@ -47,6 +51,8 @@ def main() -> None:
     serve.add_argument("--reload", action="store_true", help="Enable auto-reload (dev mode)")
     serve.add_argument("--log-level", default="warning",
                        choices=["debug", "info", "warning", "error", "critical"])
+    serve.add_argument("--static-dir", default=None, metavar="PATH",
+                       help="Serve the built React UI from this directory (e.g. ui/dist)")
 
     args = parser.parse_args()
 

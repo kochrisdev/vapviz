@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+
+# Node
+ui/node_modules/
+ui/dist/
+
+# Data / secrets
+*.db
+*.db-wal
+*.db-shm
+.env
+*.env
+
+# Dev artifacts
+.git/
+docs/screenshot.png
+take_screenshot.py
+
+# OS
+.DS_Store
+Thumbs.db

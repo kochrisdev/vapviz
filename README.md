@@ -28,6 +28,12 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 
 ---
 
+## Deployment
+
+See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for full production deployment instructions, including Docker, Nginx, Railway, Render, Fly.io, health checks, and security hardening.
+
+---
+
 ## Quick Start
 
 ### 1. Python backend

@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  vap:
+    build: .
+    ports:
+      - "8001:8001"   # API + UI on the same port
+    volumes:
+      - vap-data:/data        # SQLite database persists across restarts
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/runs')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  vap-data:
+    driver: local
