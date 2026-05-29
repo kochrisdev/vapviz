@@ -23,6 +23,8 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Node detail panel** — click any node to inspect its inputs, outputs, token usage, duration, and errors
 - **Event timeline** — chronological log of all 10 event types with millisecond timestamps
 - **Remote ingest** — push events via HTTP from any process or language (`POST /runs/{id}/events`)
+- **Run comparison** — diff any two runs side by side: node diff (only A / only B / common), duration Δ, and cost Δ
+- **Export** — download any run as JSON (`GET /runs/{id}/export`) or PNG (html2canvas capture)
 
 ---
 
@@ -266,7 +268,9 @@ The FastAPI server (`http://localhost:8001`) exposes:
 | `GET` | `/runs` | List all runs (summary) |
 | `GET` | `/runs/{id}` | Single run summary |
 | `GET` | `/runs/{id}/graph` | Full graph snapshot (nodes + edges) |
+| `GET` | `/runs/{id}/export` | Download run graph as a JSON file attachment |
 | `GET` | `/runs/{id}/events` | **SSE stream** — replays history then pushes live |
+| `GET` | `/runs/compare?a={id}&b={id}` | Return two run graphs for comparison |
 | `POST` | `/runs/{id}/events` | Ingest an event from a remote process |
 | `DELETE` | `/runs` | Clear all runs from store |
 | `DELETE` | `/runs/{id}` | Delete a single run |
@@ -310,8 +314,10 @@ ui/src/                       Vite + React + TypeScript
 ├── components/
 │   ├── AgentGraph.tsx        ReactFlow DAG with dagre auto-layout
 │   ├── EventTimeline.tsx     Chronological event log
+│   ├── ExportMenu.tsx        Export dropdown (JSON download + PNG capture)
 │   ├── NodeDetail.tsx        Selected-node inspector
-│   └── RunList.tsx           Sidebar run list (polls /runs every 3s)
+│   ├── RunComparison.tsx     Side-by-side diff of two runs
+│   └── RunList.tsx           Sidebar run list with compare button
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
 ├── store/
@@ -465,6 +471,7 @@ with tracer.trace("isolated run") as run:
 |---|---|
 | `@xyflow/react` | Graph canvas (ReactFlow v12) |
 | `dagre` | Automatic DAG layout |
+| `html2canvas` | PNG snapshot of the graph canvas |
 | `zustand` | Client-side state management |
 | `tailwindcss` | Utility CSS |
 | `lucide-react` | Icons |

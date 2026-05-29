@@ -44,8 +44,10 @@ This document describes the internal design of the Visualization Agentic Process
 │  FastAPI Server  (vap/server.py)                                    │
 │                                                                     │
 │  GET    /runs                  → list[RunSummary]                   │
+│  GET    /runs/compare?a=&b=    → {a: RunGraph, b: RunGraph}         │
 │  GET    /runs/{id}             → RunSummary                         │
 │  GET    /runs/{id}/graph       → RunGraph snapshot                  │
+│  GET    /runs/{id}/export      → RunGraph JSON file download        │
 │  GET    /runs/{id}/events      → SSE stream (replay + live)         │
 │  POST   /runs/{id}/events      → remote event ingest                │
 │  DELETE /runs                  → clear all runs                     │
@@ -398,6 +400,41 @@ Zustand subscribers re-render
 **Cost aggregation in `runStore.ts`:**
 
 After every `applyEvent` call, `total_cost_usd` is recomputed by summing `node.data.output.cost_usd` across all nodes in the run. The result is stored in `RunSummary.total_cost_usd` — `null` if no LLM node has a cost entry (e.g. the model is unknown), otherwise the running sum as a `number`. This is a pure client-side recalculation with no extra network round-trip.
+
+### Run comparison (`RunComparison.tsx`)
+
+`RunComparison` is rendered instead of the normal graph view whenever `compareRunId` is non-null in the Zustand store.
+
+**Data flow:**
+1. The component `fetch`es `/runs/compare?a={runIdA}&b={runIdB}` on mount, receiving both `RunGraph` objects in one request.
+2. Client-side diff is computed by comparing node labels between the two graphs:
+   - **common** — nodes whose `label` appears in both graphs
+   - **only A / only B** — nodes unique to each run
+3. Duration Δ and cost Δ are computed from graph-level metadata.
+4. Two `ReactFlowProvider` / `AgentGraph` pairs render side by side, each with a coloured label strip (sky-blue for A, amber for B).
+
+**UX flow in RunList:**
+- A hover-revealed `⊕` (GitCompare) icon appears on every non-selected run row.
+- Clicking it sets `compareRunId` in the store → `App.tsx` switches to `RunComparison`.
+- An amber "Comparison mode active" banner appears at the bottom of the sidebar.
+- The `✕` icon on the active comparison run clears `compareRunId`; so does selecting any new primary run.
+
+---
+
+### Export (`ExportMenu.tsx`)
+
+The `ExportMenu` dropdown lives in the run header and offers two actions:
+
+**JSON download:**
+- Calls `GET /runs/{id}/export` which returns the `RunGraph` as `application/json` with `Content-Disposition: attachment`.
+- The browser triggers an automatic file download (`vap-{run_id}.json`).
+
+**PNG download:**
+- Dynamically imports `html2canvas` (loaded only on demand to avoid bundle bloat).
+- Captures the graph container `<div>` (the `ref` is wired in `App.tsx`) including the ReactFlow viewport.
+- Converts the canvas to a PNG blob and triggers a download.
+
+---
 
 ### Graph rendering (`AgentGraph.tsx`)
 

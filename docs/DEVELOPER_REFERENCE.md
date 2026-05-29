@@ -775,6 +775,34 @@ Retrieve a single run summary.
 
 ---
 
+### `GET /runs/compare`
+
+Return the full graphs for two runs in a single request — used by the comparison view.
+
+**Query parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `a` | `str` | Run ID of the first (primary) run. |
+| `b` | `str` | Run ID of the second (comparison) run. |
+
+**Response** `200 OK` — `application/json`
+
+```json
+{
+  "a": { "run_id": "a3f9c2e81b47", "label": "Run A", "nodes": [...], "edges": [...], ... },
+  "b": { "run_id": "d7e1b4f02c98", "label": "Run B", "nodes": [...], "edges": [...], ... }
+}
+```
+
+**Error** `404 Not Found` — `{"detail": "Run not found: {id}"}` (specifies which run was missing)
+
+**Error** `422 Unprocessable Entity` — when `a` or `b` query param is omitted
+
+> **Route ordering note:** `/runs/compare` is registered before `/runs/{run_id}` in FastAPI so the literal path segment `compare` is not treated as a run ID.
+
+---
+
 ### `GET /runs/{run_id}/graph`
 
 Retrieve the full graph snapshot for a run (all nodes and edges).
@@ -807,6 +835,33 @@ Retrieve the full graph snapshot for a run (all nodes and edges).
 ```
 
 **Error** `404 Not Found`
+
+---
+
+### `GET /runs/{run_id}/export`
+
+Download the full run graph as a JSON file.
+
+**Path parameter:** `run_id`
+
+**Response** `200 OK` — `application/json` with `Content-Disposition: attachment; filename="vap-{run_id}.json"`
+
+The response body is the same schema as `GET /runs/{run_id}/graph` (a `RunGraph` object), pretty-printed with 2-space indentation, suitable for archiving or loading into external tools.
+
+**Error** `404 Not Found` — `{"detail": "Run not found"}`
+
+**Download example (browser):**
+
+```javascript
+const resp = await fetch(`/runs/${runId}/export`);
+const blob = await resp.blob();
+const url  = URL.createObjectURL(blob);
+const a    = document.createElement("a");
+a.href     = url;
+a.download = `vap-${runId}.json`;
+a.click();
+URL.revokeObjectURL(url);
+```
 
 ---
 
@@ -1130,6 +1185,14 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.5.0
+
+- **Run comparison** — `GET /runs/compare?a={id}&b={id}` returns both `RunGraph` objects; `RunComparison` React component shows side-by-side ReactFlow graphs with a stats header (duration Δ, cost Δ, node diff)
+- **Export** — `GET /runs/{id}/export` serves the `RunGraph` as a JSON attachment; UI `ExportMenu` adds "Download JSON" and "Download PNG" (via dynamically-imported `html2canvas`)
+- **Compare mode in sidebar** — hover any run to reveal `⊕` compare button; active comparison run gets amber highlight; a banner confirms comparison mode is active
+- **`runStore`** — new `compareRunId` state + `setCompareRun` action; `selectRun` clears `compareRunId` automatically
+- **Test suite** — 8 new server tests (export + compare); **118 passing** total
 
 ### v0.4.0
 
