@@ -4,6 +4,7 @@ from .server import create_app, app
 from .integrations.anthropic_sdk import patch_anthropic
 from .integrations.openai_sdk import patch_openai
 from .backends.sqlite import SqliteStore
+from .cost import calculate_cost, format_cost
 
 
 def configure(db: str | None = None) -> None:
@@ -50,6 +51,9 @@ __all__ = [
     # Integrations
     "patch_anthropic",
     "patch_openai",
+    # Cost
+    "calculate_cost",
+    "format_cost",
     # Configuration
     "configure",
 ]

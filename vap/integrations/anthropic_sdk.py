@@ -33,8 +33,10 @@ def _make_llm_ctx(kwargs: dict[str, Any]) -> StepContext | None:
     return ctx
 
 
-def _extract_output(result: Any) -> dict[str, Any]:
-    """Pull text, stop_reason, and token usage from an Anthropic message response."""
+def _extract_output(result: Any, model: str = "") -> dict[str, Any]:
+    """Pull text, stop_reason, token usage, and cost from an Anthropic message response."""
+    from ..cost import calculate_cost
+
     output: dict[str, Any] = {}
     if hasattr(result, "content") and result.content:
         output["text"] = "\n".join(
@@ -43,10 +45,15 @@ def _extract_output(result: Any) -> dict[str, Any]:
     if hasattr(result, "stop_reason"):
         output["stop_reason"] = result.stop_reason
     if hasattr(result, "usage") and result.usage:
+        input_tokens = result.usage.input_tokens
+        output_tokens = result.usage.output_tokens
         output["usage"] = {
-            "input_tokens": result.usage.input_tokens,
-            "output_tokens": result.usage.output_tokens,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
         }
+        cost = calculate_cost(model, input_tokens, output_tokens)
+        if cost is not None:
+            output["cost_usd"] = round(cost, 8)
     return output
 
 
@@ -61,7 +68,7 @@ def _patch_sync(client: Any) -> None:
         token = _current_step.set(ctx)
         try:
             result = original(*args, **kwargs)
-            ctx.set_output(_extract_output(result))
+            ctx.set_output(_extract_output(result, model=kwargs.get("model", "")))
             ctx._emit(EventType.LLM_RESPONSE, {"input": ctx._input, "output": ctx._output})
             return result
         except Exception as exc:
@@ -84,7 +91,7 @@ def _patch_async(client: Any) -> None:
         token = _current_step.set(ctx)
         try:
             result = await original(*args, **kwargs)
-            ctx.set_output(_extract_output(result))
+            ctx.set_output(_extract_output(result, model=kwargs.get("model", "")))
             ctx._emit(EventType.LLM_RESPONSE, {"input": ctx._input, "output": ctx._output})
             return result
         except Exception as exc:

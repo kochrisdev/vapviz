@@ -18,8 +18,20 @@ from .events import (
 
 
 # ---------------------------------------------------------------------------
-# Shared graph-mutation logic (pure function, used by all store backends)
+# Shared helpers (pure functions, used by all store backends)
 # ---------------------------------------------------------------------------
+
+def _total_cost(graph: RunGraph) -> Optional[float]:
+    """Sum cost_usd from all LLM nodes in the graph; return None if none have cost."""
+    total = 0.0
+    found = False
+    for node in graph.nodes:
+        cost = node.data.get("output", {}).get("cost_usd") if isinstance(node.data.get("output"), dict) else None
+        if cost is not None:
+            total += cost
+            found = True
+    return round(total, 8) if found else None
+
 
 def _apply_event_to_graph(graph: RunGraph, event: VapEvent) -> None:
     """Mutate *graph* in place according to *event*. No locking — caller's responsibility."""
@@ -189,6 +201,7 @@ class MemoryStore(RunStore):
                         ended_at=g.ended_at,
                         node_count=len(g.nodes),
                         event_count=len(self._events.get(run_id, [])),
+                        total_cost_usd=_total_cost(g),
                     )
                     for run_id, g in self._graphs.items()
                 ],
@@ -209,6 +222,7 @@ class MemoryStore(RunStore):
                 ended_at=g.ended_at,
                 node_count=len(g.nodes),
                 event_count=len(self._events.get(run_id, [])),
+                total_cost_usd=_total_cost(g),
             )
 
     def get_graph(self, run_id: str) -> Optional[RunGraph]:

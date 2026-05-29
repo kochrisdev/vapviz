@@ -411,8 +411,10 @@ with tracer.trace("isolated run") as run:
 - [x] **LangGraph / LangChain integration** — `VapCallbackHandler` for any LangChain-compatible framework
 - [x] **Test suite** — 90 tests covering tracer, stores, server, and integrations
 
-### v0.4.0 — Phase 3 (planned)
-- [ ] **Token cost overlay** — per-node cost estimation
+### v0.4.0 — Phase 3 (complete)
+- [x] **Token cost overlay** — per-node USD cost on every LLM call, total cost per run in sidebar
+- [x] **Pricing table** — 20+ OpenAI and Anthropic models with prefix-match fallback
+- [x] **`vap.calculate_cost(model, input_tokens, output_tokens)`** — public cost utility
 
 ### v0.5.0 — Phase 4 (planned)
 - [ ] **Run comparison** — diff two runs side by side

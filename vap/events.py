@@ -71,6 +71,7 @@ class RunSummary(BaseModel):
     ended_at: Optional[float] = None
     node_count: int = 0
     event_count: int = 0
+    total_cost_usd: Optional[float] = None
 
 
 class RunGraph(BaseModel):

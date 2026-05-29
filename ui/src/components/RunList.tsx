@@ -6,11 +6,17 @@ const STATUS_DOT: Record<NodeStatus, string> = {
   pending: "bg-slate-400",
   running: "bg-amber-400 animate-pulse",
   success: "bg-green-400",
-  error: "bg-red-400",
+  error:   "bg-red-400",
 };
 
 function fmt(ts: number) {
   return new Date(ts * 1000).toLocaleTimeString();
+}
+
+function fmtCost(usd: number): string {
+  if (usd < 0.0001) return "<$0.0001";
+  if (usd < 0.01)   return `$${usd.toFixed(6)}`;
+  return `$${usd.toFixed(4)}`;
 }
 
 interface Props {
@@ -18,9 +24,9 @@ interface Props {
 }
 
 export function RunList({ onSelect }: Props) {
-  const runs = useRunStore((s) => s.runs);
+  const runs          = useRunStore((s) => s.runs);
   const selectedRunId = useRunStore((s) => s.selectedRunId);
-  const setRuns = useRunStore((s) => s.setRuns);
+  const setRuns       = useRunStore((s) => s.setRuns);
 
   useEffect(() => {
     const load = () =>
@@ -51,10 +57,15 @@ export function RunList({ onSelect }: Props) {
               <span className={`h-2 w-2 rounded-full shrink-0 ${STATUS_DOT[run.status]}`} />
               <span className="text-sm font-medium text-slate-200 truncate">{run.label}</span>
             </div>
-            <div className="text-xs text-slate-500 flex gap-3">
+            <div className="text-xs text-slate-500 flex gap-3 flex-wrap">
               <span>{fmt(run.started_at)}</span>
               <span>{run.node_count} nodes</span>
               <span>{run.event_count} events</span>
+              {run.total_cost_usd != null && (
+                <span className="text-purple-400 font-medium">
+                  {fmtCost(run.total_cost_usd)}
+                </span>
+              )}
             </div>
           </button>
         ))}

@@ -105,24 +105,34 @@ export const useRunStore = create<Store>((set) => ({
           ...s.runStates,
           [event.run_id]: { ...prev, nodes, edges, status, ended_at, events: [...prev.events, event] },
         },
-        runs: s.runs.some((r) => r.run_id === event.run_id)
-          ? s.runs.map((r) =>
-              r.run_id === event.run_id
-                ? { ...r, status, ended_at, node_count: nodes.length, event_count: prev.events.length + 1 }
-                : r
-            )
-          : [
-              {
-                run_id: event.run_id,
-                label: event.node_label,
-                status,
-                started_at: prev.started_at ?? event.timestamp,
-                ended_at,
-                node_count: nodes.length,
-                event_count: 1,
-              },
-              ...s.runs,
-            ],
+        runs: (() => {
+          // Recompute total cost from all nodes in this run
+          const totalCostUsd = nodes.reduce((sum, n) => {
+            const cost = (n.data?.output as Record<string, unknown> | undefined)?.cost_usd as number | undefined;
+            return cost != null ? sum + cost : sum;
+          }, 0);
+          const costForRun = totalCostUsd > 0 ? totalCostUsd : null;
+
+          return s.runs.some((r) => r.run_id === event.run_id)
+            ? s.runs.map((r) =>
+                r.run_id === event.run_id
+                  ? { ...r, status, ended_at, node_count: nodes.length, event_count: prev.events.length + 1, total_cost_usd: costForRun }
+                  : r
+              )
+            : [
+                {
+                  run_id: event.run_id,
+                  label: event.node_label,
+                  status,
+                  started_at: prev.started_at ?? event.timestamp,
+                  ended_at,
+                  node_count: nodes.length,
+                  event_count: 1,
+                  total_cost_usd: costForRun,
+                },
+                ...s.runs,
+              ];
+        })(),
       };
     }),
 }));

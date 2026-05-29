@@ -56,10 +56,16 @@ function VapNode({ data, selected }: NodeProps) {
       <div className="opacity-60 text-[10px] uppercase tracking-wider mb-0.5">{node.kind}</div>
       <div className="truncate">{node.label}</div>
       {node.started_at && node.ended_at && (
-        <div className="opacity-60 mt-0.5 text-[10px]">
+        <div className="opacity-70 mt-0.5 text-[10px]">
           {((node.ended_at - node.started_at) * 1000).toFixed(0)} ms
         </div>
       )}
+      {node.kind === "llm" && (() => {
+        const cost = (node.data?.output as Record<string, unknown> | undefined)?.cost_usd as number | undefined;
+        if (cost == null) return null;
+        const label = cost < 0.0001 ? "<$0.0001" : cost < 0.01 ? `$${cost.toFixed(6)}` : `$${cost.toFixed(4)}`;
+        return <div className="opacity-80 text-[10px] mt-0.5 text-purple-200">{label}</div>;
+      })()}
       <Handle type="source" position={Position.Bottom} style={{ background: ring }} />
     </div>
   );

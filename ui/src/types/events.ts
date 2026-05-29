@@ -61,4 +61,5 @@ export interface RunSummary {
   ended_at: number | null;
   node_count: number;
   event_count: number;
+  total_cost_usd: number | null;
 }

@@ -11,6 +11,12 @@ function JsonBlock({ value }: { value: unknown }) {
   );
 }
 
+function formatCost(usd: number): string {
+  if (usd < 0.0001) return "<$0.0001";
+  if (usd < 0.01)   return `$${usd.toFixed(6)}`;
+  return `$${usd.toFixed(4)}`;
+}
+
 interface Props {
   node: GraphNode;
 }
@@ -24,6 +30,10 @@ export function NodeDetail({ node }: Props) {
       ? "running…"
       : "—";
 
+  const output   = node.data.output as Record<string, unknown> | undefined;
+  const usage    = output?.usage   as { input_tokens: number; output_tokens: number } | undefined;
+  const costUsd  = output?.cost_usd as number | undefined;
+
   return (
     <div className="flex flex-col h-full bg-slate-800 border-l border-slate-700 text-slate-200 text-sm">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
@@ -34,9 +44,30 @@ export function NodeDetail({ node }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-        <Row label="Kind" value={node.kind} />
-        <Row label="Status" value={node.status} />
+        <Row label="Kind"     value={node.kind} />
+        <Row label="Status"   value={node.status} />
         <Row label="Duration" value={duration} />
+
+        {/* Token usage — flat display for LLM nodes */}
+        {usage && (
+          <div className="flex gap-3">
+            <span className="text-slate-400 w-20 shrink-0">Tokens</span>
+            <span className="font-mono text-xs">
+              {usage.input_tokens.toLocaleString()} in&nbsp;/&nbsp;
+              {usage.output_tokens.toLocaleString()} out
+            </span>
+          </div>
+        )}
+
+        {/* Cost badge — only shown when pricing is known */}
+        {costUsd !== undefined && (
+          <div className="flex gap-3 items-center">
+            <span className="text-slate-400 w-20 shrink-0">Cost</span>
+            <span className="font-mono text-xs bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded">
+              {formatCost(costUsd)}
+            </span>
+          </div>
+        )}
 
         {node.data.input !== undefined && (
           <div>
@@ -49,13 +80,6 @@ export function NodeDetail({ node }: Props) {
           <div>
             <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">Output</div>
             <JsonBlock value={node.data.output} />
-          </div>
-        )}
-
-        {node.data.usage !== undefined && (
-          <div>
-            <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">Token usage</div>
-            <JsonBlock value={node.data.usage} />
           </div>
         )}
 
