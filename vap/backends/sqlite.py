@@ -64,6 +64,7 @@ class SqliteStore(RunStore):
         # In-memory caches (rebuilt from DB on init)
         self._events: dict[str, list[VapEvent]] = {}
         self._graphs: dict[str, RunGraph] = {}
+        self._event_ids: dict[str, set[str]] = {}   # run_id -> set of event IDs for dedup
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
         self._lock = Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -99,12 +100,14 @@ class SqliteStore(RunStore):
             event = self._row_to_event(row)
             if event.run_id not in self._events:
                 self._events[event.run_id] = []
+                self._event_ids[event.run_id] = set()
                 self._graphs[event.run_id] = RunGraph(
                     run_id=event.run_id,
                     label=event.data.get("label", event.run_id),
                     status=NodeStatus.RUNNING,
                     started_at=event.timestamp,
                 )
+            self._event_ids[event.run_id].add(event.id)
             self._events[event.run_id].append(event)
             _apply_event_to_graph(self._graphs[event.run_id], event)
 
@@ -137,6 +140,12 @@ class SqliteStore(RunStore):
 
     def add_event(self, event: VapEvent) -> None:
         with self._lock:
+            # Skip duplicates (INSERT OR IGNORE handles the DB side)
+            known_ids = self._event_ids.setdefault(event.run_id, set())
+            if event.id in known_ids:
+                return
+            known_ids.add(event.id)
+
             # Persist first
             self._write_event(event)
 
@@ -204,6 +213,7 @@ class SqliteStore(RunStore):
         with self._lock:
             self._events.pop(run_id, None)
             self._graphs.pop(run_id, None)
+            self._event_ids.pop(run_id, None)
             self._conn.execute("DELETE FROM events WHERE run_id = ?", (run_id,))
             self._conn.commit()
 
@@ -211,6 +221,7 @@ class SqliteStore(RunStore):
         with self._lock:
             self._events.clear()
             self._graphs.clear()
+            self._event_ids.clear()
             self._conn.execute("DELETE FROM events")
             self._conn.commit()
 

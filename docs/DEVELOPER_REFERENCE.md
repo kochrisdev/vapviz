@@ -130,6 +130,49 @@ def my_library_call():
 
 ---
 
+#### `vap.patch_openai(client)`
+
+Instrument an OpenAI client so every `chat.completions.create` call is automatically traced as an `llm` node under the currently active VaP step.
+
+```python
+vap.patch_openai(client: Any) -> None
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `client` | `openai.OpenAI \| openai.AsyncOpenAI` | The client instance to patch. |
+
+Auto-detects sync vs. async clients and applies the correct wrapper.
+
+```python
+import openai, vap
+
+# Sync
+client = openai.OpenAI()
+vap.patch_openai(client)
+
+# Async
+async_client = openai.AsyncOpenAI()
+vap.patch_openai(async_client)
+```
+
+**What gets traced per `chat.completions.create` call:**
+
+Input (`data` on the `llm_call` event):
+- `model` — string
+- `messages` — list of message dicts
+- `max_tokens` — int or `None`
+- `tools` — list of function names
+
+Output (`data` on the `llm_response` event):
+- `text` — `choices[0].message.content`
+- `finish_reason` — `"stop"`, `"length"`, `"tool_calls"`, etc.
+- `usage` — `{"input_tokens": int, "output_tokens": int}`
+
+Requires: `pip install "vap[openai]"`
+
+---
+
 #### `vap.patch_anthropic(client)`
 
 Instrument an Anthropic client so every `messages.create` call is automatically traced as an `llm` node under the currently active VaP step.
@@ -540,6 +583,56 @@ All enums extend `str, Enum` — their `.value` is the wire string.
 | `RUNNING` | `"running"` | Open event received, no close yet |
 | `SUCCESS` | `"success"` | Close event received without error |
 | `ERROR` | `"error"` | Error event received |
+
+---
+
+---
+
+### `VapCallbackHandler`
+
+LangChain/LangGraph callback handler. Import from `vap.integrations.langchain`.
+
+```python
+from vap.integrations.langchain import VapCallbackHandler
+
+VapCallbackHandler(run: RunContext)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `run` | `RunContext` | The active run context from `vap.trace()` or `vap.atrace()`. |
+
+Raises `ImportError` at instantiation time if `langchain-core` is not installed.
+
+**Usage:**
+
+```python
+from vap.integrations.langchain import VapCallbackHandler
+
+with vap.trace("LangGraph Agent") as run:
+    handler = VapCallbackHandler(run)
+    result = graph.invoke(inputs, config={"callbacks": [handler]})
+```
+
+**Callbacks handled:**
+
+| LangChain callback | VaP node kind | Open event | Close event |
+|---|---|---|---|
+| `on_chain_start` / `on_chain_end` | `step` | `step_start` | `step_end` |
+| `on_tool_start` / `on_tool_end` | `tool` | `tool_call` | `tool_result` |
+| `on_chat_model_start` / `on_llm_start` | `llm` | `llm_call` | — |
+| `on_llm_end` | `llm` | — | `llm_response` |
+| `on_chain_error` / `on_tool_error` / `on_llm_error` | any | — | `error` |
+
+**Parent tracking:**
+
+LangChain passes `run_id` (UUID) and `parent_run_id` (UUID) into each callback. `VapCallbackHandler` maps these to VaP `StepContext` objects so the graph nests correctly. Top-level chains with no `parent_run_id` are parented to the `RunContext` root node.
+
+**Tool input parsing:**
+
+`on_tool_start` receives `input_str` as a string. The handler attempts to parse it as JSON; if that fails it stores `{"input": input_str}`.
+
+Requires: `pip install "vap[langchain]"`
 
 ---
 
@@ -975,6 +1068,14 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.3.0
+
+- **OpenAI SDK integration** — `patch_openai()` for `openai.OpenAI` and `openai.AsyncOpenAI`
+- **LangGraph / LangChain integration** — `VapCallbackHandler(run)` for any LangChain-compatible framework
+- **Test suite** — 90 tests covering tracer, stores, server, OpenAI integration, and LangChain handler (14 additional tests run when `langchain-core` is installed)
+- **`SqliteStore` deduplication** — `_event_ids` set prevents duplicate in-memory entries alongside `INSERT OR IGNORE`
+- `anthropic`, `openai`, `langchain-core` all moved to separate optional extra groups; `all` group installs all three
 
 ### v0.2.0
 

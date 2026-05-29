@@ -2,6 +2,7 @@ from .tracer import trace, atrace, get_current_step, Tracer
 from .store import default_store, RunStore, MemoryStore
 from .server import create_app, app
 from .integrations.anthropic_sdk import patch_anthropic
+from .integrations.openai_sdk import patch_openai
 from .backends.sqlite import SqliteStore
 
 
@@ -48,6 +49,7 @@ __all__ = [
     "app",
     # Integrations
     "patch_anthropic",
+    "patch_openai",
     # Configuration
     "configure",
 ]

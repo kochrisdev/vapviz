@@ -14,6 +14,8 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Async-native** — `async with vap.atrace(...)` / `run.astep(...)` for full asyncio support
 - **Automatic nesting** — `ContextVar`-based parent tracking; deeply nested steps wire up correctly without any manual IDs
 - **Anthropic SDK auto-instrumentation** — one call to `vap.patch_anthropic(client)` traces every `messages.create` call automatically (sync **and** async clients)
+- **OpenAI SDK auto-instrumentation** — `vap.patch_openai(client)` traces every `chat.completions.create` call (sync **and** async)
+- **LangGraph / LangChain integration** — `VapCallbackHandler` captures all chain, tool, and LLM calls from any LangChain-compatible framework
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -175,41 +177,64 @@ Options:
 
 ---
 
-## Anthropic SDK Integration
+## SDK Integrations
+
+### Anthropic
 
 Works with both sync and async Anthropic clients:
 
 ```python
-import anthropic
-import vap
+import anthropic, vap
 
-# Sync client
 client = anthropic.Anthropic()
-vap.patch_anthropic(client)
+vap.patch_anthropic(client)                     # sync
 
-# Async client
 async_client = anthropic.AsyncAnthropic()
-vap.patch_anthropic(async_client)   # same call — auto-detected
+vap.patch_anthropic(async_client)               # async — same call
 ```
+
+```bash
+pip install "vap[anthropic]"
+```
+
+### OpenAI
 
 ```python
-# Install with Anthropic support
-# pip install "vap[anthropic]"
+import openai, vap
 
-with vap.trace("Claude Agent") as run:
-    with run.step("research", kind="step"):
-        # Traced automatically as an LLM node
-        response = client.messages.create(
-            model="claude-opus-4-5",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": "Summarize AI trends."}],
-        )
+client = openai.OpenAI()
+vap.patch_openai(client)                        # sync
+
+async_client = openai.AsyncOpenAI()
+vap.patch_openai(async_client)                  # async — same call
 ```
 
-Each `messages.create` call becomes a purple **llm** node showing:
-- Model name and token usage (`input_tokens`, `output_tokens`)
-- Full input messages (truncated in UI)
-- Response text and `stop_reason`
+```bash
+pip install "vap[openai]"
+```
+
+Each `chat.completions.create` call becomes a purple **llm** node showing model name, messages, token usage (`input_tokens`, `output_tokens`), and the response text.
+
+### LangGraph / LangChain
+
+Pass `VapCallbackHandler` to any LangChain-compatible graph or chain:
+
+```python
+from vap.integrations.langchain import VapCallbackHandler
+
+with vap.trace("LangGraph Agent") as run:
+    handler = VapCallbackHandler(run)
+    result = graph.invoke(
+        {"messages": [HumanMessage(content="Research AI trends")]},
+        config={"callbacks": [handler]},
+    )
+```
+
+```bash
+pip install "vap[langchain]" langgraph langchain-openai
+```
+
+Every chain invocation, tool call, and LLM call appears as a correctly nested node in the graph — no manual instrumentation needed.
 
 ---
 
@@ -276,8 +301,18 @@ ui/src/                       Vite + React + TypeScript
 
 examples/
 ├── simple_demo.py            Multi-step fake agent — no API key needed
+├── async_demo.py             Async agent with concurrent steps (asyncio.gather)
 ├── anthropic_demo.py         Real Claude API calls with auto-tracing
-└── async_demo.py             Async agent with concurrent steps (asyncio.gather)
+├── openai_demo.py            OpenAI chat.completions with auto-tracing
+└── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
+
+tests/
+├── conftest.py               Shared fixtures
+├── test_tracer.py            Sync/async tracing, nesting, ContextVar, errors
+├── test_store.py             MemoryStore, SqliteStore, graph mutation
+├── test_server.py            REST endpoints
+├── test_openai_patch.py      OpenAI integration (mock, no API key)
+└── test_langchain.py         LangChain handler (skipped if langchain-core absent)
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
@@ -318,7 +353,25 @@ export ANTHROPIC_API_KEY=sk-ant-...
 python examples/anthropic_demo.py
 ```
 
-Runs real Claude API calls and traces them through VaP.
+### OpenAI demo
+
+```bash
+pip install "vap[openai]"
+export OPENAI_API_KEY=sk-...
+python examples/openai_demo.py
+```
+
+Runs three `gpt-4o-mini` calls and traces each as a nested `llm` node.
+
+### LangGraph demo
+
+```bash
+pip install "vap[langchain]" langgraph langchain-openai
+export OPENAI_API_KEY=sk-...
+python examples/langgraph_demo.py
+```
+
+Runs a ReAct agent with two tools (`search_web`, `calculate`). Every chain step, tool call, and LLM round-trip is traced automatically via `VapCallbackHandler`.
 
 ---
 
@@ -353,9 +406,10 @@ with tracer.trace("isolated run") as run:
 - [x] **Async Anthropic** — `patch_anthropic` detects `AsyncAnthropic` automatically
 - [x] **Single-run REST** — `GET /runs/{id}`, `DELETE /runs/{id}`
 
-### v0.3.0 — Phase 2 (planned)
-- [ ] **LangGraph integration** — automatic callback handler
-- [ ] **OpenAI SDK integration** — `patch_openai(client)`
+### v0.3.0 — Phase 2 (complete)
+- [x] **OpenAI SDK integration** — `patch_openai(client)` for sync + async clients
+- [x] **LangGraph / LangChain integration** — `VapCallbackHandler` for any LangChain-compatible framework
+- [x] **Test suite** — 90 tests covering tracer, stores, server, and integrations
 
 ### v0.4.0 — Phase 3 (planned)
 - [ ] **Token cost overlay** — per-node cost estimation
@@ -376,6 +430,8 @@ with tracer.trace("isolated run") as run:
 | `pydantic` | Event schema validation |
 | `sse-starlette` | Server-Sent Events support |
 | `anthropic` *(optional)* | Anthropic SDK integration (`pip install "vap[anthropic]"`) |
+| `openai` *(optional)* | OpenAI SDK integration (`pip install "vap[openai]"`) |
+| `langchain-core` *(optional)* | LangGraph/LangChain integration (`pip install "vap[langchain]"`) |
 
 `sqlite3` is part of the Python standard library — no extra install needed for persistence.
 
