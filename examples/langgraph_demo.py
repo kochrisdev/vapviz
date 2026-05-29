@@ -1,19 +1,24 @@
 """
-LangGraph demo — traces a simple ReAct agent with VapCallbackHandler.
+LangGraph demo — traces a ReAct agent with VapCallbackHandler.
+
+VapCallbackHandler wires into LangChain's callback system, so every
+chain invocation, tool call, and LLM round-trip appears as a correctly
+nested node in the VaP graph — no manual instrumentation needed.
 
 Requirements:
     pip install "vap[langchain]" langgraph langchain-openai
     export OPENAI_API_KEY=sk-...
 
-Start the VaP server first (separate terminal):
-    vap serve --db vap.db
-
-Then run:
+Run (server + agent in one process):
     python examples/langgraph_demo.py
 
-Or run everything in one process:
-    python examples/langgraph_demo.py --server
+Or start the server first:
+    vap serve --db vap.db
+    python examples/langgraph_demo.py --agent-only
+
+Open http://localhost:8001 (or http://localhost:5173 for Vite dev server).
 """
+import os
 import sys
 import time
 import threading
@@ -21,7 +26,15 @@ import threading
 import vap
 
 
+# ── Agent logic ────────────────────────────────────────────────────────────────
+
 def run_agent() -> None:
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise SystemExit(
+            "OPENAI_API_KEY is not set.\n"
+            "Export it with: export OPENAI_API_KEY=sk-..."
+        )
+
     try:
         from langchain_openai import ChatOpenAI
         from langchain_core.tools import tool
@@ -34,53 +47,65 @@ def run_agent() -> None:
 
     from vap.integrations.langchain import VapCallbackHandler
 
-    # ------------------------------------------------------------------
-    # Define tools
-    # ------------------------------------------------------------------
+    # ── Define tools ──────────────────────────────────────────────────────
 
     @tool
     def search_web(query: str) -> str:
-        """Search the web for information about a query."""
+        """Search the web for recent information about a topic."""
         time.sleep(0.1)  # simulate latency
-        return f"Search results for '{query}': Found 3 relevant articles about AI trends."
+        return (
+            f"Search results for '{query}': "
+            "Found 3 articles. Key finding: significant progress in 2024."
+        )
 
     @tool
     def calculate(expression: str) -> str:
-        """Evaluate a mathematical expression."""
+        """Evaluate a Python arithmetic expression and return the result."""
         try:
             result = eval(expression, {"__builtins__": {}})  # noqa: S307
             return str(result)
-        except Exception as e:
-            return f"Error: {e}"
+        except Exception as exc:
+            return f"Error evaluating '{expression}': {exc}"
 
-    # ------------------------------------------------------------------
-    # Build the agent
-    # ------------------------------------------------------------------
+    @tool
+    def summarize_findings(findings: str) -> str:
+        """Condense a set of research findings into a one-paragraph summary."""
+        time.sleep(0.05)
+        return f"Summary: {findings[:120]}... (condensed)"
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    tools = [search_web, calculate]
+    # ── Build the ReAct agent ─────────────────────────────────────────────
+
+    llm   = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    tools = [search_web, calculate, summarize_findings]
     agent = create_react_agent(llm, tools)
 
-    # ------------------------------------------------------------------
-    # Run with VaP tracing
-    # ------------------------------------------------------------------
+    # ── Run with VaP tracing ──────────────────────────────────────────────
 
     with vap.trace("LangGraph ReAct Agent") as run:
         handler = VapCallbackHandler(run)
 
         result = agent.invoke(
-            {"messages": [{"role": "user", "content":
-                "Search for recent AI agent news and then calculate 42 * 7."}]},
+            {
+                "messages": [{
+                    "role": "user",
+                    "content": (
+                        "Search for recent AI agent developments, "
+                        "calculate 128 * 37, "
+                        "then summarize your findings."
+                    ),
+                }]
+            },
             config={"callbacks": [handler]},
         )
 
-        # The final message content
         final_msg = result["messages"][-1].content
-        print(f"[agent] Response: {final_msg[:200]}")
+        print(f"\n[agent] {final_msg[:300]}")
 
-    print(f"[vap] Run complete -> run_id={run.run_id}")
-    print("[vap] Open http://localhost:5173 to see the trace.")
+    print(f"\n[vap] Run complete  run_id={run.run_id}")
+    print("[vap] View at http://localhost:8001")
 
+
+# ── Entry points ───────────────────────────────────────────────────────────────
 
 def main_with_server() -> None:
     import uvicorn
@@ -88,15 +113,15 @@ def main_with_server() -> None:
     vap.configure(db="vap.db")
     server_app = vap.create_app()
 
-    def run_server():
-        uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning")
-
-    t = threading.Thread(target=run_server, daemon=True)
+    t = threading.Thread(
+        target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
+        daemon=True,
+    )
     t.start()
-    time.sleep(1.5)
+    time.sleep(1.0)
 
     run_agent()
-    input("Press Enter to exit...")
+    input("\nPress Enter to exit…")
 
 
 def main_agent_only() -> None:
@@ -105,7 +130,7 @@ def main_agent_only() -> None:
 
 
 if __name__ == "__main__":
-    if "--server" in sys.argv:
-        main_with_server()
-    else:
+    if "--agent-only" in sys.argv:
         main_agent_only()
+    else:
+        main_with_server()

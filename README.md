@@ -334,6 +334,9 @@ ui/src/                       Vite + React + TypeScript
 examples/
 ├── simple_demo.py            Multi-step fake agent — no API key needed
 ├── async_demo.py             Async agent with concurrent steps (asyncio.gather)
+├── error_handling_demo.py    Three error scenarios — leaf, nested, partial failure
+├── cost_tracking_demo.py     Simulated LLM cost overlay — no API key needed
+├── remote_ingest_demo.py     HTTP POST ingest from a separate process (stdlib only)
 ├── anthropic_demo.py         Real Claude API calls with auto-tracing
 ├── openai_demo.py            OpenAI chat.completions with auto-tracing
 └── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
@@ -366,17 +369,51 @@ Starts the server on `:8001` in a background thread, runs a simulated research a
 ### Async demo (no API key)
 
 ```bash
-# Start the server separately:
-vap serve --db vap.db
-
-# Then run the async agent:
 python examples/async_demo.py
 
-# Or run both in one process:
-python examples/async_demo.py --server
+# Or push to an already-running server:
+vap serve --db vap.db
+python examples/async_demo.py --agent-only
 ```
 
 Demonstrates `atrace`, `astep`, and `asyncio.gather` for concurrent fan-out tool calls.
+
+### Error handling demo (no API key)
+
+```bash
+python examples/error_handling_demo.py
+```
+
+Runs three separate traces that each demonstrate a different failure mode:
+- **Leaf failure** — a tool raises `ConnectionError`; the caller catches it, a fallback step continues
+- **Nested failure** — a child step raises `ValueError` which propagates to mark the parent node red too
+- **Partial failure** — one of three parallel fetches fails while the others succeed; a downstream merge step still runs
+
+Failed nodes appear red in the graph; successfully-completed nodes stay green.
+
+### Cost tracking demo (no API key)
+
+```bash
+python examples/cost_tracking_demo.py
+```
+
+Simulates three LLM pipelines (gpt-4o-mini, gpt-4o, mixed-model) using `vap.calculate_cost()` to attach
+`cost_usd` to each node. Shows per-node cost labels (purple) in the graph and per-run totals in the
+sidebar. Select two runs and click ⊕ to compare costs side by side.
+
+### Remote ingest demo (no API key, no vap import in agent)
+
+```bash
+python examples/remote_ingest_demo.py
+
+# Or push to an already-running server:
+vap serve --db vap.db
+python examples/remote_ingest_demo.py --agent-only --server-url http://localhost:8001
+```
+
+Demonstrates the HTTP ingest pattern: the "agent" process uses only `urllib.request` (no `vap` import)
+and POSTs `VapEvent` JSON payloads directly to `POST /runs/{run_id}/events`. Useful for polyglot
+architectures where the agent runs in a different language or on a separate machine.
 
 ### Anthropic demo
 
@@ -404,7 +441,7 @@ export OPENAI_API_KEY=sk-...
 python examples/langgraph_demo.py
 ```
 
-Runs a ReAct agent with two tools (`search_web`, `calculate`). Every chain step, tool call, and LLM round-trip is traced automatically via `VapCallbackHandler`.
+Runs a ReAct agent with three tools (`search_web`, `calculate`, `summarize_findings`). Every chain step, tool call, and LLM round-trip is traced automatically via `VapCallbackHandler`.
 
 ---
 
