@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
@@ -40,6 +40,19 @@ def create_app(store: RunStore | None = None) -> FastAPI:
     async def list_runs():
         return _store.list_runs()
 
+    # NOTE: /runs/compare must be registered BEFORE /runs/{run_id} so that
+    # FastAPI treats "compare" as a literal path segment, not a run_id.
+    @app.get("/runs/compare")
+    async def compare_runs(a: str, b: str):
+        """Return two run graphs for client-side diff comparison."""
+        graph_a = _store.get_graph(a)
+        graph_b = _store.get_graph(b)
+        if graph_a is None:
+            raise HTTPException(status_code=404, detail=f"Run not found: {a}")
+        if graph_b is None:
+            raise HTTPException(status_code=404, detail=f"Run not found: {b}")
+        return {"a": graph_a, "b": graph_b}
+
     @app.get("/runs/{run_id}", response_model=RunSummary)
     async def get_run(run_id: str):
         summary = _store.get_run(run_id)
@@ -57,6 +70,18 @@ def create_app(store: RunStore | None = None) -> FastAPI:
         if not graph:
             raise HTTPException(status_code=404, detail="Run not found")
         return graph
+
+    @app.get("/runs/{run_id}/export")
+    async def export_run(run_id: str):
+        """Download the full run graph as a JSON file."""
+        graph = _store.get_graph(run_id)
+        if not graph:
+            raise HTTPException(status_code=404, detail="Run not found")
+        return Response(
+            content=graph.model_dump_json(indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="vap-{run_id}.json"'},
+        )
 
     # ------------------------------------------------------------------
     # SSE event stream

@@ -437,9 +437,11 @@ with tracer.trace("isolated run") as run:
 - [x] **Pricing table** — 20+ OpenAI and Anthropic models with prefix-match fallback
 - [x] **`vap.calculate_cost(model, input_tokens, output_tokens)`** — public cost utility
 
-### v0.5.0 — Phase 4 (planned)
-- [ ] **Run comparison** — diff two runs side by side
-- [ ] **Export** — download run as JSON / PNG
+### v0.5.0 — Phase 4 (complete)
+- [x] **Run comparison** — diff two runs side by side; stats header (duration Δ, cost Δ, node diff), side-by-side ReactFlow graphs
+- [x] **Export** — download run as JSON (`GET /runs/{id}/export`) or PNG (html2canvas capture of the graph canvas)
+- [x] **`GET /runs/compare?a={id}&b={id}`** — server endpoint returning both graphs in one request
+- [x] **Compare mode in sidebar** — hover any run to see the ⊕ compare button; amber highlight + banner when active
 
 ---
 

@@ -16,12 +16,14 @@ interface Store {
   selectedRunId: string | null;
   runStates: Record<string, RunState>;
   selectedNodeId: string | null;
+  compareRunId: string | null;
 
   setRuns: (runs: RunSummary[]) => void;
   selectRun: (runId: string) => void;
   selectNode: (nodeId: string | null) => void;
   applyEvent: (event: VapEvent) => void;
   setRunGraph: (runId: string, nodes: GraphNode[], edges: GraphEdge[], label: string, status: NodeStatus, started_at: number, ended_at: number | null) => void;
+  setCompareRun: (runId: string | null) => void;
 }
 
 const START_TYPES = new Set(["agent_start", "step_start", "tool_call", "llm_call"]);
@@ -32,12 +34,15 @@ export const useRunStore = create<Store>((set) => ({
   selectedRunId: null,
   runStates: {},
   selectedNodeId: null,
+  compareRunId: null,
 
   setRuns: (runs) => set({ runs }),
 
-  selectRun: (runId) => set({ selectedRunId: runId, selectedNodeId: null }),
+  selectRun: (runId) => set({ selectedRunId: runId, selectedNodeId: null, compareRunId: null }),
 
   selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
+
+  setCompareRun: (runId) => set({ compareRunId: runId }),
 
   setRunGraph: (runId, nodes, edges, label, status, started_at, ended_at) =>
     set((s) => ({

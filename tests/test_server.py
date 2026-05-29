@@ -195,3 +195,82 @@ class TestClearRuns:
         r = client.delete("/runs")
         assert r.status_code == 204
         assert store.list_runs() == []
+
+
+# ---------------------------------------------------------------------------
+# GET /runs/{run_id}/export
+# ---------------------------------------------------------------------------
+
+class TestExportRun:
+    def test_export_returns_json_attachment(self, app_client):
+        client, store = app_client
+        run_id = _seed_run(store, "Export Run")
+        r = client.get(f"/runs/{run_id}/export")
+        assert r.status_code == 200
+        assert "application/json" in r.headers["content-type"]
+        assert "attachment" in r.headers.get("content-disposition", "")
+        assert f"{run_id}.json" in r.headers.get("content-disposition", "")
+        data = r.json()
+        assert data["run_id"] == run_id
+        assert "nodes" in data
+        assert "edges" in data
+        assert len(data["nodes"]) == 2
+
+    def test_export_404_for_missing_run(self, app_client):
+        client, _ = app_client
+        r = client.get("/runs/doesnotexist/export")
+        assert r.status_code == 404
+
+    def test_export_json_is_valid_run_graph(self, app_client):
+        """The exported JSON round-trips back to a RunGraph model."""
+        from vap.events import RunGraph
+        client, store = app_client
+        run_id = _seed_run(store)
+        r = client.get(f"/runs/{run_id}/export")
+        graph = RunGraph.model_validate(r.json())
+        assert graph.run_id == run_id
+
+
+# ---------------------------------------------------------------------------
+# GET /runs/compare
+# ---------------------------------------------------------------------------
+
+class TestCompareRuns:
+    def test_compare_returns_both_graphs(self, app_client):
+        client, store = app_client
+        run_a = _seed_run(store, "Run A")
+        run_b = _seed_run(store, "Run B")
+        r = client.get(f"/runs/compare?a={run_a}&b={run_b}")
+        assert r.status_code == 200
+        data = r.json()
+        assert "a" in data and "b" in data
+        assert data["a"]["run_id"] == run_a
+        assert data["b"]["run_id"] == run_b
+
+    def test_compare_graphs_contain_nodes(self, app_client):
+        client, store = app_client
+        run_a = _seed_run(store, "Run A")
+        run_b = _seed_run(store, "Run B")
+        r = client.get(f"/runs/compare?a={run_a}&b={run_b}")
+        data = r.json()
+        assert len(data["a"]["nodes"]) == 2
+        assert len(data["b"]["nodes"]) == 2
+
+    def test_compare_404_when_a_missing(self, app_client):
+        client, store = app_client
+        run_b = _seed_run(store, "Run B")
+        r = client.get(f"/runs/compare?a=notexist&b={run_b}")
+        assert r.status_code == 404
+        assert "notexist" in r.json()["detail"]
+
+    def test_compare_404_when_b_missing(self, app_client):
+        client, store = app_client
+        run_a = _seed_run(store, "Run A")
+        r = client.get(f"/runs/compare?a={run_a}&b=notexist")
+        assert r.status_code == 404
+        assert "notexist" in r.json()["detail"]
+
+    def test_compare_requires_both_params(self, app_client):
+        client, _ = app_client
+        r = client.get("/runs/compare?a=only_a")
+        assert r.status_code == 422  # FastAPI validation error
