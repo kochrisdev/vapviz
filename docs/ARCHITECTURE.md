@@ -34,6 +34,9 @@ This document describes the internal design of the Visualization Agentic Process
 │  • Build RunGraph (nodes + edges) incrementally on each event       │
 │  • Hold asyncio.Queue per SSE subscriber                            │
 │  • Use loop.call_soon_threadsafe() for thread→asyncio hand-off      │
+│                                                                     │
+│  vap/cost.py   — pricing table, calculate_cost(), format_cost()     │
+│  (used by integrations to attach cost_usd to llm_response events)  │
 └──────────────────────────┬───────────────────────────────────────────┘
                            │  asyncio.Queue (per subscriber)
                            ▼
@@ -304,6 +307,49 @@ The two-phase design means:
 
 ---
 
+### Cost Module (`vap/cost.py`)
+
+`vap/cost.py` is a self-contained pricing utility — no external dependencies, no I/O.
+
+**Pricing table:**
+
+```python
+PRICING: dict[str, tuple[float, float]] = {
+    # (input_usd_per_1k, output_usd_per_1k)
+    "gpt-4o":                  (0.00250,  0.01000),
+    "gpt-4o-mini":             (0.00015,  0.00060),
+    "o1":                      (0.01500,  0.06000),
+    "o3-mini":                 (0.00110,  0.00440),
+    "o4-mini":                 (0.00110,  0.00440),
+    "claude-3-5-sonnet-20241022": (0.00300, 0.01500),
+    "claude-3-haiku-20240307": (0.00025,  0.00125),
+    # ... 20+ models total
+}
+```
+
+**Matching strategy** (in order):
+1. Exact model name
+2. Pricing-table key is a prefix of the model string — e.g. `"gpt-4o"` matches `"gpt-4o-2099-01-01"`
+3. Model string is a prefix of a pricing-table key — handles short aliases
+
+This means new versioned variants (e.g. `"gpt-4o-2025-03-15"`) automatically resolve to the base model's pricing without any table update.
+
+**`calculate_cost(model, input_tokens, output_tokens) -> float | None`**
+
+Returns USD cost rounded to 8 decimal places, or `None` for unknown models. The integrations use this function: if `None` is returned, no `cost_usd` key is added to the node's output data.
+
+**`format_cost(cost_usd) -> str`**
+
+Display helper used by both the Python server (not currently exposed) and the React UI components:
+
+| Cost range | Format | Example |
+|---|---|---|
+| `< $0.0001` | `"<$0.0001"` | very cheap calls |
+| `< $0.01` | `"$0.000123"` | 6 decimal places |
+| `≥ $0.01` | `"$0.0123"` | 4 decimal places |
+
+---
+
 ### Configuration (`vap/__init__.py`)
 
 `vap.configure(db=...)` is the public API for switching the module-level store:
@@ -339,11 +385,19 @@ applyEvent(event)
   └── ERROR type -> update matching node (status: error)
        │
        ▼
+  Recompute total_cost_usd
+  (sum node.data.output.cost_usd across all nodes in this run)
+       │
+       ▼
 Zustand subscribers re-render
-  ├── AgentGraph  (nodes + edges -> ReactFlow)
+  ├── AgentGraph  (nodes + edges -> ReactFlow; LLM nodes show cost_usd)
   ├── EventTimeline (events list)
-  └── RunList (run summary)
+  └── RunList (run summary; total_cost_usd shown in purple when non-null)
 ```
+
+**Cost aggregation in `runStore.ts`:**
+
+After every `applyEvent` call, `total_cost_usd` is recomputed by summing `node.data.output.cost_usd` across all nodes in the run. The result is stored in `RunSummary.total_cost_usd` — `null` if no LLM node has a cost entry (e.g. the model is unknown), otherwise the running sum as a `number`. This is a pure client-side recalculation with no extra network round-trip.
 
 ### Graph rendering (`AgentGraph.tsx`)
 
@@ -369,6 +423,7 @@ ReactFlow Node[] with { position: { x, y } }
 - Sets border colour by `node.status` (amber for running, green for success, red for error)
 - Animates a pulsing dot when `status === "running"`
 - Shows duration in ms when both `started_at` and `ended_at` are present
+- Shows a purple cost label below the duration for `llm` nodes when `data.output.cost_usd` is present
 
 ### SSE hook (`useRunStream.ts`)
 
@@ -402,10 +457,58 @@ Both paths:
 2. Create a `StepContext` with `kind=llm`, parented to the current step
 3. Emit `llm_call` with model name, message count, and tool names
 4. Call the original `messages.create`
-5. Emit `llm_response` with response text, `stop_reason`, and token usage
-6. On exception: emit `error` and re-raise
+5. Call `calculate_cost(model, input_tokens, output_tokens)` and attach `cost_usd` to the output if the model is recognised
+6. Emit `llm_response` with response text, `stop_reason`, token usage, and optional `cost_usd`
+7. On exception: emit `error` and re-raise
 
 Because Python module imports are cached, the `ContextVar` imported inside the wrapper is the same object as the one used by the tracer — so parent tracking works correctly across the patched call.
+
+---
+
+## OpenAI SDK Integration (`integrations/openai_sdk.py`)
+
+`patch_openai(client)` follows the same dual-path pattern as the Anthropic integration, wrapping `client.chat.completions.create`.
+
+Auto-detection uses `isinstance(client, openai.AsyncOpenAI)` to choose the async wrapper; falls back to the sync wrapper otherwise.
+
+Both paths:
+1. Check `_current_step` — no-op if outside a VaP trace
+2. Create a `StepContext` with `kind=llm`
+3. Emit `llm_call` with model, messages, and tool names
+4. Call the original `chat.completions.create`
+5. Call `calculate_cost(model, prompt_tokens, completion_tokens)` and attach `cost_usd` if the model is in the pricing table
+6. Emit `llm_response` with `choices[0].message.content`, `finish_reason`, token usage, and optional `cost_usd`
+7. On exception: emit `error` and re-raise
+
+---
+
+## LangGraph / LangChain Integration (`integrations/langchain.py`)
+
+`VapCallbackHandler` implements LangChain's `BaseCallbackHandler` interface. It translates LangChain's UUID-based run tracking into VaP's `StepContext` tree.
+
+**UUID → VaP mapping:**
+
+LangChain passes a UUID `run_id` and an optional `parent_run_id` into every callback. `VapCallbackHandler` maintains an internal `_contexts: dict[UUID, StepContext]` map and looks up the parent context in that map. If `parent_run_id` is absent (top-level chain), it falls back to the `RunContext`'s root `StepContext`.
+
+**Callback → VaP node mapping:**
+
+| LangChain callback | VaP `kind` | Events emitted |
+|---|---|---|
+| `on_chain_start` / `on_chain_end` | `step` | `step_start` / `step_end` |
+| `on_tool_start` / `on_tool_end` | `tool` | `tool_call` / `tool_result` |
+| `on_chat_model_start` / `on_llm_start` | `llm` | `llm_call` |
+| `on_llm_end` | `llm` | `llm_response` |
+| `on_chain_error` / `on_tool_error` / `on_llm_error` | any | `error` |
+
+**Tool input parsing:**
+
+`on_tool_start` passes tool input as a string. The handler attempts `json.loads(input_str)` first; if that fails it stores `{"input": input_str}`.
+
+**LLM response extraction:**
+
+`on_llm_end` receives a LangChain `LLMResult`. The handler extracts the first generation text and, if present, token usage from `LLMResult.llm_output`.
+
+Raises `ImportError` at instantiation time if `langchain-core` is not installed.
 
 ---
 

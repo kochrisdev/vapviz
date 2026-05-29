@@ -28,9 +28,12 @@ Complete API reference for the Visualization Agentic Process framework — Pytho
 Install:
 
 ```bash
-pip install -e .                    # core (no Anthropic)
-pip install -e ".[anthropic]"       # with Anthropic SDK integration
-pip install -e ".[dev]"             # + pytest, httpx, pytest-asyncio
+pip install -e .                    # core only
+pip install -e ".[anthropic]"       # + Anthropic SDK integration
+pip install -e ".[openai]"          # + OpenAI SDK integration
+pip install -e ".[langchain]"       # + LangGraph/LangChain integration
+pip install -e ".[all]"             # + all three integrations
+pip install -e ".[dev]"             # + pytest, httpx, pytest-asyncio, all integrations
 ```
 
 ---
@@ -168,6 +171,7 @@ Output (`data` on the `llm_response` event):
 - `text` — `choices[0].message.content`
 - `finish_reason` — `"stop"`, `"length"`, `"tool_calls"`, etc.
 - `usage` — `{"input_tokens": int, "output_tokens": int}`
+- `cost_usd` — estimated USD cost (omitted for unknown models)
 
 Requires: `pip install "vap[openai]"`
 
@@ -212,8 +216,63 @@ Output (`data` on the `llm_response` event):
 - `text` — joined text content blocks
 - `stop_reason` — `"end_turn"`, `"max_tokens"`, `"tool_use"`, etc.
 - `usage` — `{"input_tokens": int, "output_tokens": int}`
+- `cost_usd` — estimated USD cost (omitted for unknown models)
 
 If called outside an active VaP trace context, the original `messages.create` is invoked directly with no overhead.
+
+---
+
+#### `vap.calculate_cost(model, input_tokens, output_tokens)`
+
+Estimate the USD cost for a single LLM API call.
+
+```python
+vap.calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float | None
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `model` | `str` | Model identifier as returned by the API (e.g. `"gpt-4o"`, `"claude-3-haiku-20240307"`). |
+| `input_tokens` | `int` | Prompt / input token count. |
+| `output_tokens` | `int` | Completion / output token count. |
+
+**Returns:** Cost in USD as a `float` rounded to 8 decimal places, or `None` if the model is not in the pricing table.
+
+Matching is attempted in order: exact name → pricing-table key is a prefix of `model` → `model` is a prefix of a pricing-table key. This makes versioned variants (e.g. `"gpt-4o-2025-03-15"`) resolve to the base model automatically.
+
+```python
+import vap
+
+cost = vap.calculate_cost("gpt-4o", input_tokens=1000, output_tokens=500)
+# -> 0.0075
+
+cost = vap.calculate_cost("some-private-model", 100, 50)
+# -> None
+```
+
+Available via `from vap.cost import calculate_cost` or directly as `vap.calculate_cost`.
+
+---
+
+#### `vap.format_cost(cost_usd)`
+
+Format a USD cost value for human display.
+
+```python
+vap.format_cost(cost_usd: float) -> str
+```
+
+| Cost range | Output format | Example |
+|---|---|---|
+| `< $0.0001` | `"<$0.0001"` | tiny micro-calls |
+| `< $0.01` | `"$0.000123"` | 6 decimal places |
+| `≥ $0.01` | `"$0.0123"` | 4 decimal places |
+
+```python
+vap.format_cost(0.0075)    # -> "$0.007500"
+vap.format_cost(0.000001)  # -> "<$0.0001"
+vap.format_cost(0.05)      # -> "$0.0500"
+```
 
 ---
 
@@ -528,6 +587,7 @@ Lightweight summary of a run — used in the sidebar list.
 | `ended_at` | `float \| None` | `None` if still running. |
 | `node_count` | `int` | Total graph nodes. |
 | `event_count` | `int` | Total raw events. |
+| `total_cost_usd` | `float \| None` | Sum of `cost_usd` from all LLM nodes. `None` if no LLM nodes have a known cost. |
 
 ---
 
@@ -695,7 +755,8 @@ List all runs, newest first.
     "started_at": 1716720000.123,
     "ended_at": 1716720003.456,
     "node_count": 5,
-    "event_count": 10
+    "event_count": 10,
+    "total_cost_usd": 0.0075
   }
 ]
 ```
@@ -1048,6 +1109,7 @@ interface RunSummary {
   ended_at: number | null;
   node_count: number;
   event_count: number;
+  total_cost_usd: number | null;  // null when no LLM nodes have a known cost
 }
 ```
 
@@ -1068,6 +1130,16 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.4.0
+
+- **Token cost overlay** — per-node `cost_usd` on every `llm_response` event; total run cost in sidebar
+- **Pricing table** (`vap/cost.py`) — 20+ OpenAI and Anthropic models with prefix-match fallback for versioned variants
+- **`vap.calculate_cost(model, input_tokens, output_tokens)`** — public cost utility, returns `float | None`
+- **`vap.format_cost(cost_usd)`** — display helper for USD amounts
+- **`RunSummary.total_cost_usd`** — new optional field; `None` when no LLM nodes have a recognised model
+- **`patch_openai` + `patch_anthropic`** now attach `cost_usd` to every `llm_response` output when the model is in the pricing table
+- **React UI** — `AgentGraph` shows cost on LLM nodes; `RunList` shows per-run total; `NodeDetail` shows cost badge; `runStore` recomputes `total_cost_usd` live on every event
 
 ### v0.3.0
 

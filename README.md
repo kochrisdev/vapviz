@@ -34,7 +34,8 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 # Clone and install
 git clone https://github.com/kochrisdev/vap.git
 cd vap
-pip install -e .
+pip install -e .                  # core only
+pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain integrations
 ```
 
 ### 2. React UI
@@ -123,6 +124,24 @@ with vap.trace("Pipeline") as run:
         with run.step("sub_task_b", kind="tool"):   # depth 2 — auto-parented
             ...
 ```
+
+### Cost utilities
+
+VaP ships a built-in pricing table covering 20+ OpenAI and Anthropic models. Use the utility directly or let the SDK patches attach cost automatically:
+
+```python
+import vap
+
+# Returns USD cost as a float, or None for unknown models
+cost = vap.calculate_cost("gpt-4o", input_tokens=1000, output_tokens=500)
+# -> 0.0075
+
+# Format for display
+vap.format_cost(cost)          # -> "$0.0075"
+vap.format_cost(0.000005)      # -> "<$0.0001"
+```
+
+When `patch_openai` or `patch_anthropic` is active, cost is calculated automatically and stored as `cost_usd` in every `llm` node's output data. The per-run total appears in the sidebar, and each LLM node shows its individual cost in the graph.
 
 ### Error handling
 
@@ -213,7 +232,7 @@ vap.patch_openai(async_client)                  # async — same call
 pip install "vap[openai]"
 ```
 
-Each `chat.completions.create` call becomes a purple **llm** node showing model name, messages, token usage (`input_tokens`, `output_tokens`), and the response text.
+Each `chat.completions.create` call becomes a purple **llm** node showing model name, messages, token usage (`input_tokens`, `output_tokens`), response text, and estimated USD cost for known models.
 
 ### LangGraph / LangChain
 
@@ -279,6 +298,7 @@ vap/                          Python package
 ├── tracer.py                 trace/atrace context managers, ContextVar nesting
 ├── server.py                 FastAPI app — REST + SSE endpoints
 ├── cli.py                    vap serve command
+├── cost.py                   Token cost — 20+ model pricing table, calculate_cost()
 ├── backends/
 │   ├── __init__.py
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
@@ -312,7 +332,8 @@ tests/
 ├── test_store.py             MemoryStore, SqliteStore, graph mutation
 ├── test_server.py            REST endpoints
 ├── test_openai_patch.py      OpenAI integration (mock, no API key)
-└── test_langchain.py         LangChain handler (skipped if langchain-core absent)
+├── test_langchain.py         LangChain handler (skipped if langchain-core absent)
+└── test_cost.py              Pricing table, calculate_cost(), integration cost output
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
