@@ -225,14 +225,23 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
         )
 
     def _get_crew_root(self) -> Optional[StepContext]:
-        """Return the active crew root StepContext."""
-        if self._provided_run is not None:
-            return self._provided_run._root_ctx
+        """Return the active crew root StepContext.
+
+        In auto mode this is the run's own root_ctx; in manual mode it is the
+        'crew/…' step that was created inside the provided run.  Either way it
+        is stored in ``_crew_roots`` by the kickoff-started handler, so we
+        always prefer that over the fallback run root.
+        """
         with self._lock:
             eid = self._current_crew_event_id
-        if eid:
-            with self._lock:
-                return self._crew_roots.get(eid)
+            if eid:
+                ctx = self._crew_roots.get(eid)
+                if ctx is not None:
+                    return ctx
+        # Fallback: no kickoff seen yet — return the provided run's root so
+        # that any nodes created before a kickoff still have a valid parent.
+        if self._provided_run is not None:
+            return self._provided_run._root_ctx
         return None
 
     # ------------------------------------------------------------------
@@ -415,17 +424,30 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
                 or (_safe_str(getattr(agent_obj, "id", None)) if agent_obj else None)
                 or agent_role
             )
-            task_name = getattr(event, "task_name", None)
+            # Derive task_name the same way _on_task_start does so we can look
+            # up the matching task StepContext as the agent's parent node.
+            task_obj_for_parent = getattr(event, "task", None)
+            task_name = (
+                getattr(event, "task_name", None)
+                or (getattr(task_obj_for_parent, "name", None) if task_obj_for_parent else None)
+                or (
+                    _first_words(getattr(task_obj_for_parent, "description", ""), 6)
+                    if task_obj_for_parent
+                    else None
+                )
+            )
 
             run_id = self._get_run_id()
             if run_id is None:
                 return
 
-            # Parent = current task node, else crew root
+            # Parent = current task node, else crew root.
+            # NOTE: _get_crew_root() acquires self._lock internally, so it must
+            # be called *outside* any self._lock block to avoid a deadlock.
             with self._lock:
-                parent_ctx = (
-                    self._task_nodes.get(task_name) if task_name else None
-                ) or self._get_crew_root()
+                parent_ctx = self._task_nodes.get(task_name) if task_name else None
+            if parent_ctx is None:
+                parent_ctx = self._get_crew_root()
             parent_id = parent_ctx.node_id if parent_ctx else None
 
             ctx = self._make_ctx(
