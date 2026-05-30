@@ -19,11 +19,12 @@ the last, so work through them in order. No prior VaP knowledge required.
 10. [OpenAI Auto-Instrumentation](#10-openai-auto-instrumentation)
 11. [Anthropic Auto-Instrumentation](#11-anthropic-auto-instrumentation)
 12. [LangGraph / LangChain Integration](#12-langgraph--langchain-integration)
-13. [Remote Ingest (any language)](#13-remote-ingest-any-language)
-14. [Comparing Runs](#14-comparing-runs)
-15. [Exporting Runs](#15-exporting-runs)
-16. [Persistence with SQLite](#16-persistence-with-sqlite)
-17. [What's Next?](#17-whats-next)
+13. [CrewAI Integration](#13-crewai-integration)
+14. [Remote Ingest (any language)](#14-remote-ingest-any-language)
+15. [Comparing Runs](#15-comparing-runs)
+16. [Exporting Runs](#16-exporting-runs)
+17. [Persistence with SQLite](#17-persistence-with-sqlite)
+18. [What's Next?](#18-whats-next)
 
 ---
 
@@ -597,7 +598,111 @@ arriving at its final answer.
 
 ---
 
-## 13. Remote Ingest (any language)
+## 13. CrewAI Integration
+
+`VapCrewAIListener` hooks into CrewAI's native event bus. Instantiate it once before calling
+`crew.kickoff()` — no other changes to your crew code are needed.
+
+**Requires:** `pip install "vap[crewai]"` and an LLM API key.
+
+### Auto mode — one trace per kickoff
+
+```python
+import vap
+from vap.integrations.crewai_listener import VapCrewAIListener
+from crewai import Agent, Crew, Process, Task
+
+vap.configure(db="vap.db")
+
+# Register listener once — auto-creates a VaP run for every kickoff()
+VapCrewAIListener()
+
+researcher = Agent(
+    role="Senior Researcher",
+    goal="Summarise '{topic}' in three bullet points.",
+    backstory="You are a meticulous researcher.",
+    verbose=False,
+)
+writer = Agent(
+    role="Content Writer",
+    goal="Write a paragraph from the research findings.",
+    backstory="You craft clear technical summaries.",
+    verbose=False,
+)
+research_task = Task(
+    description="Research '{topic}' and list three key developments.",
+    expected_output="Three bullet points.",
+    agent=researcher,
+)
+write_task = Task(
+    description="Summarise '{topic}' in one paragraph (max 80 words).",
+    expected_output="One paragraph.",
+    agent=writer,
+    context=[research_task],
+)
+
+crew = Crew(agents=[researcher, writer], tasks=[research_task, write_task],
+            process=Process.sequential, verbose=False)
+
+result = crew.kickoff(inputs={"topic": "AI agent frameworks"})
+print(result.raw)
+```
+
+**What you'll see:**
+
+The VaP graph has this structure:
+
+```
+Research Crew (agent root)
+├── task/research
+│   └── agent/Senior Researcher
+│       ├── llm/gpt-4o-mini   (thinking call)
+│       └── llm/gpt-4o-mini   (response)
+└── task/write
+    └── agent/Content Writer
+        └── llm/gpt-4o-mini
+```
+
+Each `llm/` node shows the model, messages, token usage, and USD cost. Tool calls would also appear
+here as `tool/` nodes if the agents have tools attached.
+
+### Manual mode — crew inside a larger pipeline
+
+```python
+import time
+import vap
+from vap.integrations.crewai_listener import VapCrewAIListener
+
+with vap.trace("Full Pipeline") as run:
+
+    # Step 1 — plain VaP, no CrewAI
+    with run.step("load_data", kind="step") as step:
+        step.set_input({"source": "s3://bucket/data.csv"})
+        time.sleep(0.05)
+        step.set_output({"rows": 10_000})
+
+    # Step 2 — CrewAI crew attached to this run
+    VapCrewAIListener(run=run)
+    result = crew.kickoff(inputs={"topic": "quarterly trends"})
+
+    # Step 3 — plain VaP again
+    with run.step("store_report", kind="step") as step:
+        step.set_input({"destination": "reports/q4.json"})
+        time.sleep(0.03)
+        step.set_output({"written": True})
+```
+
+**What you'll see:**
+
+One run in the sidebar called "Full Pipeline". `load_data`, the `crew/` step containing all tasks,
+and `store_report` all sit side by side as siblings.
+
+> **Note:** In manual mode the listener does NOT close the provided `RunContext` — your
+> `with vap.trace(...)` block controls the run lifecycle.
+
+---
+
+## 14. Remote Ingest (any language)
 
 You don't need to import `vap` in the process that runs your agent. Any process — including
 non-Python code — can push events by POSTing JSON to `POST /runs/{run_id}/events`.
@@ -683,7 +788,7 @@ though the agent process has no knowledge of VaP internals.
 
 ---
 
-## 14. Comparing Runs
+## 15. Comparing Runs
 
 Once you have two or more runs you can diff them side by side to understand what changed — useful
 for comparing model variants, prompt changes, or pipeline refactors.
@@ -714,7 +819,7 @@ run in the sidebar normally.
 
 ---
 
-## 15. Exporting Runs
+## 16. Exporting Runs
 
 Every run can be exported in two formats from the **Export ▾** button in the top-right toolbar
 (only visible when a run is selected).
@@ -743,7 +848,7 @@ screenshot includes the layout exactly as you see it — useful for reports or d
 
 ---
 
-## 16. Persistence with SQLite
+## 17. Persistence with SQLite
 
 By default VaP uses an in-memory store — fast, zero setup, but all runs are lost when the
 process exits. Switch to SQLite with one line:
@@ -787,7 +892,7 @@ sqlite3 vap.db ".backup vap_backup_$(date +%Y%m%d).db"
 
 ---
 
-## 17. What's Next?
+## 18. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 

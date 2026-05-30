@@ -16,6 +16,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Anthropic SDK auto-instrumentation** — one call to `vap.patch_anthropic(client)` traces every `messages.create` call automatically (sync **and** async clients)
 - **OpenAI SDK auto-instrumentation** — `vap.patch_openai(client)` traces every `chat.completions.create` call (sync **and** async)
 - **LangGraph / LangChain integration** — `VapCallbackHandler` captures all chain, tool, and LLM calls from any LangChain-compatible framework
+- **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native event bus to trace Crews, Tasks, Agents, Tools, and LLM calls automatically
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -51,7 +52,7 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for full production deployment 
 git clone https://github.com/kochrisdev/vap.git
 cd vap
 pip install -e .                  # core only
-pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain integrations
+pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI integrations
 ```
 
 ### 2. React UI
@@ -271,6 +272,39 @@ pip install "vap[langchain]" langgraph langchain-openai
 
 Every chain invocation, tool call, and LLM call appears as a correctly nested node in the graph — no manual instrumentation needed.
 
+### CrewAI
+
+Register `VapCrewAIListener` once before calling `crew.kickoff()`:
+
+```python
+import vap
+from vap.integrations.crewai_listener import VapCrewAIListener
+
+vap.configure(db="vap.db")
+VapCrewAIListener()          # auto mode — one new VaP run per kickoff()
+
+result = crew.kickoff(inputs={"topic": "AI agents"})
+```
+
+Or attach to an existing run (**manual mode**) to embed the crew inside a larger pipeline trace:
+
+```python
+with vap.trace("Full Pipeline") as run:
+    with run.step("pre_process", kind="step") as step: ...
+
+    VapCrewAIListener(run=run)   # tasks appear as children of this run
+    crew.kickoff(inputs={...})
+
+    with run.step("post_process", kind="step") as step: ...
+```
+
+```bash
+pip install "vap[crewai]"
+```
+
+Every Task, Agent execution, Tool call, and LLM round-trip is captured automatically via
+CrewAI's native event bus — no `verbose=True` noise, no monkey-patching.
+
 ---
 
 ## REST API
@@ -321,7 +355,8 @@ vap/                          Python package
 │   ├── __init__.py
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
 └── integrations/
-    └── anthropic_sdk.py      patch_anthropic() — sync + async client support
+    ├── anthropic_sdk.py      patch_anthropic() — sync + async client support
+    └── crewai_listener.py    VapCrewAIListener — CrewAI event bus integration
 
 ui/src/                       Vite + React + TypeScript
 ├── App.tsx                   Root layout — sidebar / graph / timeline / detail panel
@@ -347,7 +382,8 @@ examples/
 ├── remote_ingest_demo.py     HTTP POST ingest from a separate process (stdlib only)
 ├── anthropic_demo.py         Real Claude API calls with auto-tracing
 ├── openai_demo.py            OpenAI chat.completions with auto-tracing
-└── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
+├── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
+└── crewai_demo.py            CrewAI multi-agent crew with VapCrewAIListener
 
 docs/
 ├── TUTORIAL.md               Step-by-step learning guide (start here)
@@ -362,7 +398,8 @@ tests/
 ├── test_server.py            REST endpoints
 ├── test_openai_patch.py      OpenAI integration (mock, no API key)
 ├── test_langchain.py         LangChain handler (skipped if langchain-core absent)
-└── test_cost.py              Pricing table, calculate_cost(), integration cost output
+├── test_cost.py              Pricing table, calculate_cost(), integration cost output
+└── test_crewai_listener.py   CrewAI listener (skipped if crewai absent)
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
@@ -456,6 +493,18 @@ python examples/langgraph_demo.py
 ```
 
 Runs a ReAct agent with three tools (`search_web`, `calculate`, `summarize_findings`). Every chain step, tool call, and LLM round-trip is traced automatically via `VapCallbackHandler`.
+
+### CrewAI demo
+
+```bash
+pip install "vap[crewai]"
+export OPENAI_API_KEY=sk-...
+python examples/crewai_demo.py
+```
+
+Runs two traces:
+1. **Auto mode** — a two-agent sequential crew (researcher → writer). `VapCrewAIListener()` is registered once and auto-creates a VaP run per `kickoff()`.
+2. **Manual mode** — the same crew embedded inside a larger `vap.trace()` pipeline with pre/post-processing steps on either side.
 
 ---
 

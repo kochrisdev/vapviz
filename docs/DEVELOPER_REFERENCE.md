@@ -32,7 +32,8 @@ pip install -e .                    # core only
 pip install -e ".[anthropic]"       # + Anthropic SDK integration
 pip install -e ".[openai]"          # + OpenAI SDK integration
 pip install -e ".[langchain]"       # + LangGraph/LangChain integration
-pip install -e ".[all]"             # + all three integrations
+pip install -e ".[crewai]"          # + CrewAI integration
+pip install -e ".[all]"             # + all four integrations
 pip install -e ".[dev]"             # + pytest, httpx, pytest-asyncio, all integrations
 ```
 
@@ -696,6 +697,71 @@ Requires: `pip install "vap[langchain]"`
 
 ---
 
+### `VapCrewAIListener`
+
+CrewAI event bus listener. Import from `vap.integrations.crewai_listener`.
+
+```python
+from vap.integrations.crewai_listener import VapCrewAIListener
+
+VapCrewAIListener(run: RunContext | None = None)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `run` | `RunContext \| None` | `None` | Optional existing run context (manual mode). When `None`, a new VaP run is created automatically for each `crew.kickoff()` call (auto mode). |
+
+Raises `ImportError` at instantiation time if `crewai` is not installed.
+
+**Auto mode** — instantiate once at module level; every subsequent `crew.kickoff()` creates its own run:
+
+```python
+import vap
+from vap.integrations.crewai_listener import VapCrewAIListener
+
+vap.configure(db="vap.db")
+VapCrewAIListener()           # register before any kickoff()
+
+result = crew.kickoff(inputs={"topic": "AI"})
+```
+
+**Manual mode** — attach to an existing `RunContext` so the crew appears as a sub-section:
+
+```python
+with vap.trace("Full Pipeline") as run:
+    VapCrewAIListener(run=run)
+    result = crew.kickoff(inputs={...})
+```
+
+**Events captured and VaP node mapping:**
+
+| CrewAI event | VaP node kind | Parent |
+|---|---|---|
+| `CrewKickoffStartedEvent` | `agent` (auto) or `step` (manual) | none / run root |
+| `TaskStartedEvent` | `step` (`task/…`) | crew root |
+| `AgentExecutionStartedEvent` | `step` (`agent/…`) | task node |
+| `ToolUsageStartedEvent` | `tool` | agent execution node |
+| `LLMCallStartedEvent` | `llm` (`llm/model-name`) | agent execution node |
+
+**Cost tracking:**
+
+`LLMCallCompletedEvent.usage` is a LiteLLM-style dict (`prompt_tokens`, `completion_tokens`).
+The listener reads it, normalises the keys, and calls `vap.calculate_cost(model, input_tokens,
+output_tokens)` automatically. `cost_usd` appears on the node when the model is in the pricing
+table.
+
+**`detach()`:**
+
+```python
+listener = VapCrewAIListener(run=run)
+crew.kickoff(inputs={...})
+listener.detach()   # flush any orphaned open nodes (rarely needed)
+```
+
+Requires: `pip install "vap[crewai]"`
+
+---
+
 ## CLI
 
 ```
@@ -1186,6 +1252,16 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.6.0
+
+- **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native `BaseEventListener` event bus; traces Crew runs, Tasks, Agent executions, Tool calls, and LLM round-trips automatically
+- **Two usage modes** — auto mode (new VaP run per `kickoff()`) and manual mode (tasks as children of an existing `RunContext`)
+- **LLM cost on CrewAI nodes** — `cost_usd` automatically attached to every `llm/` node when the model is in the pricing table (LiteLLM usage dict parsed transparently)
+- **`pip install "vap[crewai]"`** — new optional extra; `crewai>=1.0.0` dependency
+- **`vap/integrations/crewai_listener.py`** — `VapCrewAIListener`, `detach()` helper for manual cleanup
+- **`examples/crewai_demo.py`** — two-demo example (sequential crew + pipeline embedding); no custom tools required
+- **Test suite** — `tests/test_crewai_listener.py` with 10 tests; skipped when `crewai` is not installed
 
 ### v0.5.0
 
