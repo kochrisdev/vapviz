@@ -909,6 +909,7 @@ python examples/remote_ingest_demo.py
 python examples/openai_demo.py
 python examples/anthropic_demo.py
 python examples/langgraph_demo.py
+python examples/crewai_demo.py      # requires pip install "vap[crewai]"
 ```
 
 ### Read the reference docs

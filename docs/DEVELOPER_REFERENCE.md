@@ -1261,7 +1261,9 @@ interface RunGraph {
 - **`pip install "vap[crewai]"`** — new optional extra; `crewai>=1.0.0` dependency
 - **`vap/integrations/crewai_listener.py`** — `VapCrewAIListener`, `detach()` helper for manual cleanup
 - **`examples/crewai_demo.py`** — two-demo example (sequential crew + pipeline embedding); no custom tools required
-- **Test suite** — `tests/test_crewai_listener.py` with 10 tests; skipped when `crewai` is not installed
+- **Test suite** — `tests/test_crewai_listener.py` with 19 tests across 7 classes; skipped when `crewai` is not installed
+- **Fix: deadlock in `_on_agent_exec_start`** — `_get_crew_root()` was called while holding `self._lock`; since `_get_crew_root()` also acquires the same non-reentrant lock, accumulated listener instances from multiple test runs deadlocked the `ThreadPoolExecutor` thread pool. Fixed by calling `_get_crew_root()` outside the lock block.
+- **Fix: agent node parent lookup** — `task_name` was read only from `event.task_name` (always `None` when callers pass `task=<Task>`). Added the same name-derivation chain used by `_on_task_start` (`event.task_name` → `task.name` → first-6-words of `task.description`) so agent nodes are correctly parented under the matching task node.
 
 ### v0.5.0
 
