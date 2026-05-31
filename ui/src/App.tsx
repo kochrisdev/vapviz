@@ -1,5 +1,6 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
+import { Activity } from "lucide-react";
 import { AgentGraph } from "./components/AgentGraph";
 import { EventTimeline } from "./components/EventTimeline";
 import { ExportMenu } from "./components/ExportMenu";
@@ -16,6 +17,7 @@ function RunViewer() {
   const selectedNodeId = useRunStore((s) => s.selectedNodeId);
   const runs           = useRunStore((s) => s.runs);
   const selectRun      = useRunStore((s) => s.selectRun);
+  const selectNode     = useRunStore((s) => s.selectNode);
   const setCompareRun  = useRunStore((s) => s.setCompareRun);
 
   useRunStream(selectedRunId);
@@ -28,7 +30,16 @@ function RunViewer() {
 
   // Labels for comparison header
   const labelA = runs.find((r) => r.run_id === selectedRunId)?.label ?? selectedRunId ?? "";
-  const labelB = runs.find((r) => r.run_id === compareRunId)?.label ?? compareRunId ?? "";
+  const labelB = runs.find((r) => r.run_id === compareRunId)?.label  ?? compareRunId  ?? "";
+
+  // Escape key: close node detail panel
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") selectNode(null);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectNode]);
 
   return (
     <div className="flex h-screen bg-slate-950 text-white overflow-hidden">
@@ -39,7 +50,7 @@ function RunViewer() {
 
       {/* Main area */}
       {compareRunId && selectedRunId ? (
-        /* ── Comparison mode ─────────────────────────────────────── */
+        /* ── Comparison mode ───────────────────────────────────── */
         <RunComparison
           runIdA={selectedRunId}
           runIdB={compareRunId}
@@ -48,17 +59,17 @@ function RunViewer() {
           onClose={() => setCompareRun(null)}
         />
       ) : state ? (
-        /* ── Normal run view ─────────────────────────────────────── */
+        /* ── Normal run view ───────────────────────────────────── */
         <>
           {/* Graph column */}
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Header */}
+            {/* Header bar */}
             <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-700 bg-slate-900 shrink-0">
-              <span className="font-semibold text-slate-100">{state.label}</span>
+              <span className="font-semibold text-slate-100 truncate">{state.label}</span>
               <StatusBadge status={state.status} />
               {state.started_at && state.ended_at && (
-                <span className="text-xs text-slate-400">
-                  {((state.ended_at - state.started_at) * 1000).toFixed(0)} ms total
+                <span className="text-xs text-slate-400 font-mono tabular-nums">
+                  {((state.ended_at - state.started_at) * 1000).toFixed(0)} ms
                 </span>
               )}
               <div className="ml-auto">
@@ -93,9 +104,21 @@ function RunViewer() {
           )}
         </>
       ) : (
-        /* ── Empty state ─────────────────────────────────────────── */
-        <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
-          Select a run from the sidebar
+        /* ── Empty state ───────────────────────────────────────── */
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center px-8">
+          <div className="h-14 w-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+            <Activity size={26} className="text-indigo-400" />
+          </div>
+          <div>
+            <p className="text-slate-300 font-medium mb-1">No run selected</p>
+            <p className="text-slate-500 text-sm leading-relaxed max-w-xs">
+              Pick a run from the sidebar, or start an agent with{" "}
+              <code className="bg-slate-800 text-slate-300 px-1 py-0.5 rounded text-xs">
+                python examples/simple_demo.py
+              </code>{" "}
+              to see a live trace.
+            </p>
+          </div>
         </div>
       )}
     </div>
@@ -105,14 +128,16 @@ function RunViewer() {
 function StatusBadge({ status }: { status: string }) {
   const cls =
     status === "running"
-      ? "bg-amber-500/20 text-amber-300"
+      ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
       : status === "success"
-      ? "bg-green-500/20 text-green-300"
+      ? "bg-green-500/20 text-green-300 border border-green-500/30"
       : status === "error"
-      ? "bg-red-500/20 text-red-300"
-      : "bg-slate-500/20 text-slate-300";
+      ? "bg-red-500/20 text-red-300 border border-red-500/30"
+      : "bg-slate-500/20 text-slate-300 border border-slate-500/30";
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{status}</span>
+    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${cls}`}>
+      {status}
+    </span>
   );
 }
 

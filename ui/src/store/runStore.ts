@@ -19,7 +19,7 @@ interface Store {
   compareRunId: string | null;
 
   setRuns: (runs: RunSummary[]) => void;
-  selectRun: (runId: string) => void;
+  selectRun: (runId: string | null) => void;
   selectNode: (nodeId: string | null) => void;
   applyEvent: (event: VapEvent) => void;
   setRunGraph: (runId: string, nodes: GraphNode[], edges: GraphEdge[], label: string, status: NodeStatus, started_at: number, ended_at: number | null) => void;
