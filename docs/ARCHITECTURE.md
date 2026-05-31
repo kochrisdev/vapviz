@@ -549,6 +549,127 @@ Raises `ImportError` at instantiation time if `langchain-core` is not installed.
 
 ---
 
+## CrewAI Integration (`integrations/crewai_listener.py`)
+
+`VapCrewAIListener` uses a fundamentally different pattern from the SDK patches. Rather than monkey-patching method calls, it subclasses CrewAI's `BaseEventListener` and subscribes to the framework's internal event bus.
+
+### Event bus mechanics
+
+CrewAI exposes a process-wide singleton bus (`crewai_event_bus`). Calling `BaseEventListener.__init__()` invokes `setup_listeners()`, which registers handlers via `@bus.on(EventClass)` decorators. The bus dispatches events through a `ThreadPoolExecutor` — each `emit(source, event)` call submits all matching handlers to the pool and returns a `Future` that resolves when every handler finishes.
+
+Two critical constraints follow from this design:
+
+- **Handlers cannot be deregistered.** Once a listener is instantiated its handlers persist for the process lifetime. Creating multiple listeners (e.g. one per test) accumulates handlers; all of them fire on every subsequent event.
+- **A stalled handler blocks the emitting thread.** Because `future.result()` waits for _all_ handlers to complete, a deadlocked handler in any registered listener freezes the caller.
+
+### Initialisation order
+
+All state is initialised **before** `super().__init__()` is called:
+
+```python
+def __init__(self, run=None):
+    self._provided_run = run
+    self._lock = threading.Lock()
+    self._crew_roots: dict[str, StepContext] = {}
+    self._task_nodes: dict[str, StepContext] = {}
+    # ... other dicts ...
+    super().__init__()   # calls setup_listeners() — must come last
+```
+
+`super().__init__()` triggers `setup_listeners()` immediately, and the registered handlers close over `self`. If any state were uninitialised at that point an in-flight event could race the constructor.
+
+### Parent tracking without ContextVar
+
+The SDK integrations (OpenAI, Anthropic, LangChain) rely on the `_current_step` `ContextVar` for automatic parent tracking because they run on the same thread or asyncio task as the user code.
+
+CrewAI's `ThreadPoolExecutor` threads have no VaP `ContextVar` context — they are bare OS threads with no connection to the tracer's context chain. The listener therefore maintains **explicit parent-tracking dictionaries** guarded by a single `threading.Lock`:
+
+| Dict | Key | Value | Purpose |
+|---|---|---|---|
+| `_crew_roots` | `kickoff_started_event_id` | `StepContext` | Crew root node per `kickoff()` |
+| `_task_nodes` | `task_name` | `StepContext` | Open task nodes |
+| `_task_event_to_name` | `started_event_id` | `task_name` | Maps end events back to their task |
+| `_agent_exec_nodes` | `started_event_id` | `StepContext` | Open agent-execution nodes |
+| `_agent_by_id` | `agent_id` | `StepContext` | Most recent open exec node per agent |
+| `_tool_nodes` | `started_event_id` | `StepContext` | Open tool-call nodes |
+| `_llm_nodes` | `call_id` | `StepContext` | Open LLM-call nodes |
+
+The lifecycle of each map entry mirrors the event lifecycle: start-event → insert; end/error event → pop and close the node.
+
+### Deadlock avoidance
+
+`_get_crew_root()` acquires `self._lock` to read `_current_crew_event_id` and `_crew_roots`. It must never be called while `self._lock` is already held. In `_on_agent_exec_start`, the fallback to the crew root must be split into two separate critical sections:
+
+```python
+# WRONG — deadlocks when task_name is None: _get_crew_root() tries to
+# acquire self._lock which the outer `with` block already holds.
+with self._lock:
+    parent_ctx = (
+        self._task_nodes.get(task_name) if task_name else None
+    ) or self._get_crew_root()
+
+# CORRECT — release the lock before calling _get_crew_root()
+with self._lock:
+    parent_ctx = self._task_nodes.get(task_name) if task_name else None
+if parent_ctx is None:
+    parent_ctx = self._get_crew_root()   # acquires its own lock internally
+```
+
+Because `threading.Lock` is not reentrant, a single deadlocked handler stalls one thread in the `ThreadPoolExecutor`. With accumulated listeners (as seen in repeated test runs where handlers cannot be deregistered), this could exhaust the pool and block every subsequent `emit()` call.
+
+### Task name derivation
+
+`AgentExecutionStartedEvent` does not carry an explicit `task_name` field — it carries a `task` object. The listener derives the canonical name with the same three-step chain used by `_on_task_start`:
+
+```
+event.task_name  →  task.name  →  _first_words(task.description, 6)
+```
+
+Using identical derivation logic guarantees the key stored in `_task_nodes` by `_on_task_start` matches the key looked up in `_on_agent_exec_start`, so agent nodes are correctly parented to the matching task node.
+
+### Auto vs manual mode
+
+| | Auto mode | Manual mode |
+|---|---|---|
+| Constructor | `VapCrewAIListener()` | `VapCrewAIListener(run=run)` |
+| Run creation | New `RunContext` per `kickoff()` | Provided `RunContext` is used |
+| Store | `vap.store.default_store` | `run._store` |
+| Crew node kind | `agent` (becomes the run root) | `step` (child of run root) |
+| Run lifecycle | Listener opens and closes the run | Caller's `with vap.trace(...)` controls it |
+
+Manual mode also provides **test isolation**: each test creates its own `MemoryStore` + `RunContext` + `VapCrewAIListener(run=run)`. Because `_get_store()` returns `run._store`, all events from that listener write only to that store — other accumulated listener instances write to their own stores and never contaminate the assertions.
+
+### Event flow diagram
+
+```
+crew.kickoff(inputs={...})
+       │
+       ▼
+CrewAI event bus (crewai_event_bus)
+       │  ThreadPoolExecutor.submit(handler, source, event)
+       ▼
+VapCrewAIListener handlers
+  _on_crew_start    → create RunContext or step node; populate _crew_roots
+  _on_task_start    → create task/ step node; populate _task_nodes
+  _on_agent_exec_start → create agent/ step node; populate _agent_by_id
+  _on_tool_start    → create tool node; populate _tool_nodes
+  _on_llm_start     → create llm/ node; populate _llm_nodes
+  _on_llm_end       → pop from _llm_nodes; attach usage + cost_usd
+  _on_tool_end      → pop from _tool_nodes
+  _on_agent_exec_end → pop from _agent_exec_nodes + _agent_by_id
+  _on_task_end      → pop from _task_nodes
+  _on_crew_end      → pop from _crew_roots; close run (auto) or step (manual)
+       │
+       │  ctx._emit(EventType.*)  [same as all other integrations]
+       ▼
+RunStore.add_event(VapEvent)
+       │
+       ▼
+FastAPI SSE → React UI
+```
+
+---
+
 ## Extension Guide
 
 ### Adding a new node kind
@@ -560,7 +681,13 @@ Raises `ImportError` at instantiation time if `langchain-core` is not installed.
 
 ### Adding a new integration
 
-Create `vap/integrations/<framework>.py` following the pattern in `anthropic_sdk.py`:
+Two patterns are available depending on how the target framework exposes its hooks.
+
+**Pattern A — monkey-patch** (OpenAI, Anthropic style): intercept a specific method on a client object. Best when the framework provides a single callable to wrap and the call is made on the same thread as the VaP trace context.
+
+**Pattern B — event-bus listener** (CrewAI style): subclass the framework's listener base class and register handlers. Best when the framework has its own internal event system and dispatches callbacks from background threads that have no VaP `ContextVar` context. Use explicit parent-tracking dicts instead of relying on `ContextVar`.
+
+**Pattern A example** — follows `anthropic_sdk.py`:
 
 ```python
 from ..tracer import _current_step, _uid, NodeKind, StepContext
@@ -599,6 +726,59 @@ def patch_myframework(client):
 ```
 
 For an async integration, use `async def patched` and `await original(...)` — otherwise the structure is identical.
+
+**Pattern B example** — event-bus listener with explicit parent tracking:
+
+```python
+import threading
+from ..tracer import _uid, NodeKind, StepContext, RunContext
+from ..events import EventType
+
+class VapMyFrameworkListener(MyFrameworkBaseListener):
+    def __init__(self, run=None):
+        self._provided_run = run
+        self._lock = threading.Lock()
+        self._open_nodes: dict[str, StepContext] = {}  # started_event_id -> ctx
+        super().__init__()  # triggers setup_listeners() — must come LAST
+
+    def _get_store(self):
+        if self._provided_run is not None:
+            return self._provided_run._store
+        import vap.store as _sm
+        return _sm.default_store
+
+    def setup_listeners(self, bus):
+
+        @bus.on(SomeStartEvent)
+        def on_start(source, event):
+            run_id = self._provided_run.run_id if self._provided_run else ...
+            ctx = StepContext(
+                run_id=run_id,
+                node_id=_uid(),
+                node_kind=NodeKind.STEP,
+                label=f"step/{event.name}",
+                parent_id=...,           # look up from explicit tracking dict
+                store=self._get_store(),
+            )
+            ctx._emit(EventType.STEP_START)
+            with self._lock:
+                self._open_nodes[event.event_id] = ctx
+
+        @bus.on(SomeEndEvent)
+        def on_end(source, event):
+            started_id = getattr(event, "started_event_id", None)
+            with self._lock:
+                ctx = self._open_nodes.pop(started_id, None)
+            if ctx is None:
+                return
+            ctx.set_output({"result": event.output})
+            ctx._emit(EventType.STEP_END, {"input": ctx._input, "output": ctx._output})
+```
+
+Key rules for Pattern B:
+- Initialise all state before `super().__init__()`
+- Never call a method that acquires `self._lock` while already inside `with self._lock:`
+- Do not rely on `_current_step` `ContextVar` — the bus handler runs on a background thread with no VaP context chain
 
 ### Implementing a custom store backend
 
