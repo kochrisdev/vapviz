@@ -33,7 +33,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 
 New to VaP? The **[step-by-step tutorial](docs/TUTORIAL.md)** walks you from installation to a
 fully instrumented agent — covering tracing, async, error handling, cost tracking, OpenAI/Anthropic
-auto-instrumentation, LangGraph, remote ingest, run comparison, and export.
+auto-instrumentation, LangGraph, CrewAI, remote ingest, run comparison, and export.
 
 ---
 
@@ -356,6 +356,8 @@ vap/                          Python package
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
 └── integrations/
     ├── anthropic_sdk.py      patch_anthropic() — sync + async client support
+    ├── openai_sdk.py         patch_openai() — sync + async client support
+    ├── langchain.py          VapCallbackHandler — LangGraph / LangChain integration
     └── crewai_listener.py    VapCrewAIListener — CrewAI event bus integration
 
 ui/src/                       Vite + React + TypeScript
@@ -555,6 +557,12 @@ with tracer.trace("isolated run") as run:
 - [x] **`GET /runs/compare?a={id}&b={id}`** — server endpoint returning both graphs in one request
 - [x] **Compare mode in sidebar** — hover any run to see the ⊕ compare button; amber highlight + banner when active
 
+### v0.6.0 — Phase 5 (complete)
+- [x] **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native `BaseEventListener` event bus; traces Crews, Tasks, Agent executions, Tool calls, and LLM round-trips automatically
+- [x] **Auto + manual mode** — auto mode creates a new VaP run per `kickoff()`; manual mode attaches the crew as a sub-section of an existing `vap.trace()` pipeline
+- [x] **LLM cost on CrewAI nodes** — `cost_usd` auto-attached via LiteLLM usage dict; `pip install "vap[crewai]"`
+- [x] **19-test suite** — `tests/test_crewai_listener.py` covers crew lifecycle, task/agent/tool/LLM nodes, cost tracking, and import guard
+
 ---
 
 ## Dependencies
@@ -569,6 +577,7 @@ with tracer.trace("isolated run") as run:
 | `anthropic` *(optional)* | Anthropic SDK integration (`pip install "vap[anthropic]"`) |
 | `openai` *(optional)* | OpenAI SDK integration (`pip install "vap[openai]"`) |
 | `langchain-core` *(optional)* | LangGraph/LangChain integration (`pip install "vap[langchain]"`) |
+| `crewai` *(optional)* | CrewAI integration (`pip install "vap[crewai]"`) |
 
 `sqlite3` is part of the Python standard library — no extra install needed for persistence.
 
