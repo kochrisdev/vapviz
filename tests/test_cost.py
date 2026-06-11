@@ -36,6 +36,30 @@ class TestCalculateCost:
         cost = calculate_cost("gpt-4o-2099-01-01", 1000, 1000)
         assert cost is not None  # prefix matched to "gpt-4o"
 
+    def test_longest_prefix_wins_for_mini_variants(self):
+        # Regression (M1): unknown "gpt-4o-mini-*" versions must price as
+        # gpt-4o-mini, not as the shorter (and ~17x pricier) gpt-4o prefix.
+        cost = calculate_cost("gpt-4o-mini-2099-01-01", 1000, 1000)
+        assert cost == pytest.approx(0.000150 + 0.000600, rel=1e-6)
+
+    def test_longest_prefix_wins_for_o1_mini(self):
+        # Regression (M1): "o1-mini-*" must price as o1-mini, not o1.
+        cost = calculate_cost("o1-mini-2099", 1000, 1000)
+        assert cost == pytest.approx(0.003 + 0.012, rel=1e-6)
+
+    def test_provider_prefix_stripped(self):
+        # Regression (L2): LiteLLM/OpenRouter-style ids carry a provider
+        # prefix; the bare model name must still match the pricing table.
+        cost = calculate_cost("openai/gpt-4o-mini", 1000, 1000)
+        assert cost == pytest.approx(0.000150 + 0.000600, rel=1e-6)
+
+    def test_double_provider_prefix_stripped(self):
+        cost = calculate_cost("openrouter/openai/gpt-4o-mini", 1000, 1000)
+        assert cost == pytest.approx(0.000150 + 0.000600, rel=1e-6)
+
+    def test_provider_prefixed_unknown_model_returns_none(self):
+        assert calculate_cost("openai/some-unknown-model-xyz", 1000, 500) is None
+
     def test_all_known_models_return_float(self):
         for model in PRICING:
             cost = calculate_cost(model, 1000, 500)
