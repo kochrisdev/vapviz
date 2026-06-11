@@ -27,3 +27,6 @@ vap = "vap.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["vap"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
