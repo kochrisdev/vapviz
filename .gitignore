@@ -34,3 +34,18 @@ Thumbs.db
 
 # Temp
 /C:/Temp/
+
+# Claude Code
+CLAUDE.md
+.claude/settings.local.json
+
+# VaP generated databases (SQLite + WAL sidecars)
+*.db
+*.db-wal
+*.db-shm
+
+# Scratch / throwaway test & demo scripts (kept out of the repo)
+scratch/
+
+# Personal notes — session findings + reference (not committed)
+docs/notes/
