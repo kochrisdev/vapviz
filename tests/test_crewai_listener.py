@@ -224,6 +224,32 @@ class TestAgentNodes:
         task_label = next(l for l in nodes if l.startswith("task/"))
         assert nodes["agent/Researcher"].parent_id == nodes[task_label].id
 
+    def test_agent_parented_to_task_with_long_description(self, agent_a):
+        """Regression test for H1: agents must nest under their task.
+
+        With a description longer than 6 words, name-based matching breaks:
+        TaskStartedEvent.task_name is the full description (auto-filled by
+        crewai) while AgentExecutionStartedEvent carries task_name=None —
+        only event.task.id is populated. Matching must use the stable id.
+        """
+        listener, store, run = _setup()
+        task = Task(
+            description="Research the latest developments in quantum computing hardware thoroughly",
+            expected_output="Findings",
+            agent=agent_a,
+        )
+
+        _fire(CrewKickoffStartedEvent, crew_name="AgLongDesc", inputs={})
+        _fire(TaskStartedEvent, task=task, context=None)
+        _fire(AgentExecutionStartedEvent,
+              agent=agent_a, task=task, tools=[], task_prompt="Go")
+
+        nodes = _nodes(store, run.run_id)
+        task_label = next(l for l in nodes if l.startswith("task/"))
+        assert nodes["agent/Researcher"].parent_id == nodes[task_label].id
+        # The node label stays short even though the description is long
+        assert len(task_label.split()) <= 7  # "task/" prefix + ≤6 words
+
     def test_agent_node_closed_on_complete(self, agent_a, task_research):
         listener, store, run = _setup()
 

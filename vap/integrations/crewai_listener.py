@@ -168,10 +168,13 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
         # Current active crew event_id (for sequential single-crew runs)
         self._current_crew_event_id: Optional[str] = None
 
-        # Task nodes keyed by task_name (human label)
+        # Task nodes keyed by stable task id (str(task.id)); the human
+        # label lives only on the node. AgentExecutionStartedEvent carries
+        # no task_name/task_id (crewai 1.14.6) — only event.task.id — so
+        # the id is the one key shared by all task-related events.
         self._task_nodes: dict[str, StepContext] = {}
-        # started_event_id -> task_name (for matching task end/fail events)
-        self._task_event_to_name: dict[str, str] = {}
+        # started_event_id -> task key (for matching task end/fail events)
+        self._task_event_to_key: dict[str, str] = {}
 
         # Agent execution nodes: started event_id -> StepContext
         self._agent_exec_nodes: dict[str, StepContext] = {}
@@ -334,11 +337,14 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
         def _on_task_start(source, event) -> None:
             task_obj = getattr(event, "task", None)
             task_name = (
-                getattr(event, "task_name", None)
-                or (getattr(task_obj, "name", None) if task_obj else None)
-                or (_first_words(getattr(task_obj, "description", ""), 6) if task_obj else None)
+                (getattr(task_obj, "name", None) if task_obj else None)
+                or getattr(event, "task_name", None)
+                or (getattr(task_obj, "description", "") if task_obj else None)
                 or "task"
             )
+            # crewai fills task_name with the full description when the task
+            # has no explicit name — keep the node label short.
+            task_name = _first_words(_safe_str(task_name), 6) or "task"
 
             run_id = self._get_run_id()
             if run_id is None:
@@ -363,20 +369,21 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
             ctx.set_input(input_data)
             ctx._emit(EventType.STEP_START)
 
+            task_key = _task_key(event) or event.event_id
             with self._lock:
-                self._task_nodes[task_name] = ctx
-                self._task_event_to_name[event.event_id] = task_name
+                self._task_nodes[task_key] = ctx
+                self._task_event_to_key[event.event_id] = task_key
 
         @bus.on(TaskCompletedEvent)
         def _on_task_end(source, event) -> None:
             started_id = getattr(event, "started_event_id", None)
             with self._lock:
-                task_name = (
-                    self._task_event_to_name.pop(started_id, None)
+                task_key = (
+                    self._task_event_to_key.pop(started_id, None)
                     if started_id
-                    else getattr(event, "task_name", None)
-                )
-                ctx = self._task_nodes.pop(task_name, None) if task_name else None
+                    else None
+                ) or _task_key(event)
+                ctx = self._task_nodes.pop(task_key, None) if task_key else None
 
             if ctx is None:
                 return
@@ -397,12 +404,12 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
                 started_id = getattr(event, "started_event_id", None)
                 error = getattr(event, "error", None) or "Task failed"
                 with self._lock:
-                    task_name = (
-                        self._task_event_to_name.pop(started_id, None)
+                    task_key = (
+                        self._task_event_to_key.pop(started_id, None)
                         if started_id
-                        else getattr(event, "task_name", None)
-                    )
-                    ctx = self._task_nodes.pop(task_name, None) if task_name else None
+                        else None
+                    ) or _task_key(event)
+                    ctx = self._task_nodes.pop(task_key, None) if task_key else None
                 if ctx is not None:
                     ctx._emit(EventType.ERROR, {
                         "error": _safe_str(error),
@@ -424,18 +431,10 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
                 or (_safe_str(getattr(agent_obj, "id", None)) if agent_obj else None)
                 or agent_role
             )
-            # Derive task_name the same way _on_task_start does so we can look
-            # up the matching task StepContext as the agent's parent node.
-            task_obj_for_parent = getattr(event, "task", None)
-            task_name = (
-                getattr(event, "task_name", None)
-                or (getattr(task_obj_for_parent, "name", None) if task_obj_for_parent else None)
-                or (
-                    _first_words(getattr(task_obj_for_parent, "description", ""), 6)
-                    if task_obj_for_parent
-                    else None
-                )
-            )
+            # The agent's parent task is matched by stable task id —
+            # AgentExecutionStartedEvent has task_name/task_id = None
+            # (crewai 1.14.6); only event.task.id is populated.
+            task_key = _task_key(event)
 
             run_id = self._get_run_id()
             if run_id is None:
@@ -445,7 +444,7 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
             # NOTE: _get_crew_root() acquires self._lock internally, so it must
             # be called *outside* any self._lock block to avoid a deadlock.
             with self._lock:
-                parent_ctx = self._task_nodes.get(task_name) if task_name else None
+                parent_ctx = self._task_nodes.get(task_key) if task_key else None
             if parent_ctx is None:
                 parent_ctx = self._get_crew_root()
             parent_id = parent_ctx.node_id if parent_ctx else None
@@ -749,12 +748,28 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
                     "input": ctx._input, "output": ctx._output,
                 })
             self._task_nodes.clear()
-            self._task_event_to_name.clear()
+            self._task_event_to_key.clear()
 
 
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _task_key(event: Any) -> Optional[str]:
+    """Stable identity for a task, shared by all task-related events.
+
+    Prefers ``event.task.id`` (the only populated field on
+    AgentExecutionStartedEvent in crewai 1.14.6), falling back to the
+    event's own ``task_id``.
+    """
+    task_obj = getattr(event, "task", None)
+    task_id = (
+        (getattr(task_obj, "id", None) if task_obj is not None else None)
+        or getattr(event, "task_id", None)
+    )
+    key = _safe_str(task_id)
+    return key or None
 
 
 def _safe_str(value: Any) -> str:
