@@ -75,3 +75,6 @@ packages = ["vapviz"]
 # (the default `python -m build` flow) still bundles it.
 [tool.hatch.build.targets.sdist]
 artifacts = ["ui/dist/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
