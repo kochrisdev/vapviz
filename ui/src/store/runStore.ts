@@ -64,6 +64,10 @@ export const useRunStore = create<Store>((set) => ({
         events: [],
       };
 
+      // Skip duplicates — the server replays full history on every SSE
+      // (re)connect, so a reconnect would otherwise double the timeline.
+      if (prev.events.some((e) => e.id === event.id)) return s;
+
       let nodes = [...prev.nodes];
       let edges = [...prev.edges];
       let status = prev.status;

@@ -20,7 +20,7 @@ function RunViewer() {
   const selectNode     = useRunStore((s) => s.selectNode);
   const setCompareRun  = useRunStore((s) => s.setCompareRun);
 
-  useRunStream(selectedRunId);
+  const streamStatus = useRunStream(selectedRunId);
 
   const state        = selectedRunId ? runStates[selectedRunId] : null;
   const selectedNode = state?.nodes.find((n) => n.id === selectedNodeId) ?? null;
@@ -67,6 +67,11 @@ function RunViewer() {
             <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-700 bg-slate-900 shrink-0">
               <span className="font-semibold text-slate-100 truncate">{state.label}</span>
               <StatusBadge status={state.status} />
+              {streamStatus === "reconnecting" && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+                  reconnecting…
+                </span>
+              )}
               {state.started_at && state.ended_at && (
                 <span className="text-xs text-slate-400 font-mono tabular-nums">
                   {((state.ended_at - state.started_at) * 1000).toFixed(0)} ms
