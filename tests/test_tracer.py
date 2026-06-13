@@ -6,7 +6,7 @@ import pytest
 
 from vap.events import EventType, NodeKind, NodeStatus
 from vap.store import MemoryStore
-from vap.tracer import Tracer, _current_step
+from vap.tracer import Tracer, RunContext, _current_step
 
 
 # ---------------------------------------------------------------------------
@@ -317,3 +317,44 @@ class TestMultipleRuns:
         summaries = store.list_runs()
         assert summaries[0].label == "second"
         assert summaries[1].label == "first"
+
+
+# ---------------------------------------------------------------------------
+# Public API export (U2) + cross-thread close (L1)
+# ---------------------------------------------------------------------------
+
+class TestPublicApi:
+    def test_run_context_exported(self):
+        # Regression (U2): three bundled demos annotate with vap.RunContext;
+        # it must be importable from the top-level package.
+        import vap
+        assert vap.RunContext is RunContext
+        assert "RunContext" in vap.__all__
+
+
+class TestCrossThreadClose:
+    def test_end_on_different_thread_does_not_raise(self, store):
+        # Regression (L1): in CrewAI auto mode the run is opened on one bus
+        # thread (sets the ContextVar token) and closed on another, where
+        # ContextVar.reset(token) raises "created in a different Context".
+        # _end must swallow that and still emit agent_end.
+        import threading
+
+        run = RunContext(label="cross-thread", store=store)
+        run._start()  # sets _current_step token in THIS thread
+
+        error: list[Exception] = []
+
+        def _close_elsewhere():
+            try:
+                run._end()
+            except Exception as exc:  # pragma: no cover - failure path
+                error.append(exc)
+
+        t = threading.Thread(target=_close_elsewhere)
+        t.start()
+        t.join()
+
+        assert not error, f"_end raised across threads: {error}"
+        summary = store.get_run(run.run_id)
+        assert summary.status == NodeStatus.SUCCESS

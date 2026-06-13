@@ -174,7 +174,15 @@ class RunContext:
                 data=extra,
             )
         )
-        _current_step.reset(self._token)
+        # In CrewAI auto mode the run is opened on one bus thread and closed on
+        # another, so this token belongs to a different context — reset() would
+        # raise "Token created in a different Context". The listener tracks
+        # parents via its own dicts and doesn't rely on this ContextVar, so a
+        # plain clear is enough in that case.
+        try:
+            _current_step.reset(self._token)
+        except ValueError:
+            _current_step.set(None)
 
     # ------------------------------------------------------------------
     # Synchronous step context manager

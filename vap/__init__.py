@@ -1,4 +1,4 @@
-from .tracer import trace, atrace, get_current_step, Tracer
+from .tracer import trace, atrace, get_current_step, Tracer, RunContext
 from .store import default_store, RunStore, MemoryStore
 from .server import create_app, app
 from .integrations.anthropic_sdk import patch_anthropic
@@ -40,6 +40,7 @@ __all__ = [
     "atrace",
     "get_current_step",
     "Tracer",
+    "RunContext",
     # Store
     "default_store",
     "RunStore",
