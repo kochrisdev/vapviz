@@ -116,6 +116,22 @@ class TestMemoryStore:
     def test_get_events_empty_run(self, store):
         assert store.get_events("nonexistent") == []
 
+    def test_duplicate_event_id_ignored(self, store):
+        # Regression (U6): MemoryStore must dedupe by event.id like
+        # SqliteStore does — e.g. retried remote ingest or SSE replay.
+        e = _agent_start("r1")
+        store.add_event(e)
+        store.add_event(e)
+        assert len(store.get_events("r1")) == 1
+        assert store.get_run("r1").event_count == 1
+
+    def test_duplicate_id_cleared_on_delete(self, store):
+        e = _agent_start("r1")
+        store.add_event(e)
+        store.delete_run("r1")
+        store.add_event(e)
+        assert len(store.get_events("r1")) == 1
+
     def test_list_runs_empty(self, store):
         assert store.list_runs() == []
 

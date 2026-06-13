@@ -175,6 +175,7 @@ class MemoryStore(RunStore):
 
     def __init__(self) -> None:
         self._events: dict[str, list[VapEvent]] = {}
+        self._event_ids: dict[str, set[str]] = {}   # run_id -> set of event IDs for dedup
         self._graphs: dict[str, RunGraph] = {}
         self._tags: dict[str, list[str]] = {}
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
@@ -190,6 +191,12 @@ class MemoryStore(RunStore):
 
     def add_event(self, event: VapEvent) -> None:
         with self._lock:
+            # Skip duplicates (mirrors SqliteStore — e.g. retried remote ingest)
+            known_ids = self._event_ids.setdefault(event.run_id, set())
+            if event.id in known_ids:
+                return
+            known_ids.add(event.id)
+
             if event.run_id not in self._events:
                 self._events[event.run_id] = []
                 self._graphs[event.run_id] = RunGraph(
@@ -208,12 +215,14 @@ class MemoryStore(RunStore):
     def delete_run(self, run_id: str) -> None:
         with self._lock:
             self._events.pop(run_id, None)
+            self._event_ids.pop(run_id, None)
             self._graphs.pop(run_id, None)
             self._tags.pop(run_id, None)
 
     def clear(self) -> None:
         with self._lock:
             self._events.clear()
+            self._event_ids.clear()
             self._graphs.clear()
             self._tags.clear()
 
