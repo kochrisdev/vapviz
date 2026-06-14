@@ -49,3 +49,6 @@ scratch/
 
 # Personal notes — session findings + reference (not committed)
 docs/notes/
+
+# External agent used for manual VaP tracing tests (separate project, own git)
+crewai-agent/
