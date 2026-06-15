@@ -17,6 +17,8 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **OpenAI SDK auto-instrumentation** — `vap.patch_openai(client)` traces every `chat.completions.create` call (sync **and** async)
 - **LangGraph / LangChain integration** — `VapCallbackHandler` captures all chain, tool, and LLM calls from any LangChain-compatible framework
 - **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native event bus to trace Crews, Tasks, Agents, Tools, and LLM calls automatically
+- **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync` to trace each model request (tokens + cost) and tool call as nested nodes
+- **Analytics dashboard** — cross-run metrics (cost, tokens, success rate, per-model breakdown) at `GET /metrics` and in the UI
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -52,7 +54,7 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for full production deployment 
 git clone https://github.com/kochrisdev/vap.git
 cd vap
 pip install -e .                  # core only
-pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI integrations
+pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI, Pydantic AI
 ```
 
 ### 2. React UI
@@ -307,6 +309,40 @@ CrewAI's native event bus — no `verbose=True` noise, no monkey-patching.
 
 ---
 
+### Pydantic AI
+
+Instantiate `VapPydanticAI` once; every `agent.run()` / `run_sync()` is then traced — the agent,
+each model request (with tokens and cost), and each tool call (with args and result):
+
+```python
+import vap
+from vap.integrations.pydantic_ai import VapPydanticAI
+
+vap.configure(db="vap.db")
+VapPydanticAI()              # auto mode — one new VaP run per agent.run()
+
+result = agent.run_sync("What's the weather in Paris?")
+```
+
+Or attach to an existing run (**manual mode**) to nest the agent inside a larger pipeline:
+
+```python
+with vap.trace("Trip planner") as run:
+    with run.step("load_preferences", kind="step") as step: ...
+
+    VapPydanticAI(run)       # agent runs appear as children of this run
+    agent.run_sync("Is Lisbon warm enough for a beach trip?")
+```
+
+```bash
+pip install "vap[pydantic-ai]"
+```
+
+Tool calls are parented under the model request that invoked them. Call `.detach()` to restore the
+original `Agent` methods.
+
+---
+
 ## REST API
 
 The FastAPI server (`http://localhost:8001`) exposes:
@@ -360,7 +396,8 @@ vap/                          Python package
     ├── anthropic_sdk.py      patch_anthropic() — sync + async client support
     ├── openai_sdk.py         patch_openai() — sync + async client support
     ├── langchain.py          VapCallbackHandler — LangGraph / LangChain integration
-    └── crewai_listener.py    VapCrewAIListener — CrewAI event bus integration
+    ├── crewai_listener.py    VapCrewAIListener — CrewAI event bus integration
+    └── pydantic_ai.py        VapPydanticAI — Pydantic AI Agent.run wrapper
 
 ui/src/                       Vite + React + TypeScript
 ├── App.tsx                   Root layout — sidebar / graph / timeline / detail panel
@@ -388,7 +425,8 @@ examples/
 ├── anthropic_demo.py         Real Claude API calls with auto-tracing
 ├── openai_demo.py            OpenAI chat.completions with auto-tracing
 ├── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
-└── crewai_demo.py            CrewAI multi-agent crew with VapCrewAIListener
+├── crewai_demo.py            CrewAI multi-agent crew with VapCrewAIListener
+└── pydantic_ai_demo.py       Pydantic AI agent with VapPydanticAI — no API key needed
 
 docs/
 ├── TUTORIAL.md               Step-by-step learning guide (start here)
@@ -404,7 +442,9 @@ tests/
 ├── test_openai_patch.py      OpenAI integration (mock, no API key)
 ├── test_langchain.py         LangChain handler (skipped if langchain-core absent)
 ├── test_cost.py              Pricing table, calculate_cost(), integration cost output
-└── test_crewai_listener.py   CrewAI listener (skipped if crewai absent)
+├── test_metrics.py           compute_metrics() aggregation + /metrics endpoint
+├── test_crewai_listener.py   CrewAI listener (skipped if crewai absent)
+└── test_pydantic_ai.py       Pydantic AI integration (skipped if pydantic-ai absent)
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
@@ -511,6 +551,15 @@ Runs two traces:
 1. **Auto mode** — a two-agent sequential crew (researcher → writer). `VapCrewAIListener()` is registered once and auto-creates a VaP run per `kickoff()`.
 2. **Manual mode** — the same crew embedded inside a larger `vap.trace()` pipeline with pre/post-processing steps on either side.
 
+### Pydantic AI demo
+
+```bash
+pip install "vap[pydantic-ai]"
+python examples/pydantic_ai_demo.py        # no API key needed — uses TestModel
+```
+
+Runs two traces — a weather agent (auto mode) and a trip planner embedded in a pipeline (manual mode). Each model request and tool call appears as a nested node, with tools parented under the model request that called them.
+
 ---
 
 ## Configuration Reference
@@ -572,6 +621,12 @@ with tracer.trace("isolated run") as run:
 - [x] **Cost-over-time chart** + nodes-by-kind breakdown; auto-refreshes every 5s
 - [x] **`GET /metrics`** — `compute_metrics()` aggregates every stored run into one snapshot; 14-test suite in `tests/test_metrics.py`
 
+### v0.8.0 — Phase 7 (complete)
+- [x] **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync`; reconstructs the agent, each model request, and each tool call as nested nodes from the run's message history
+- [x] **Auto + manual mode** — auto mode creates a new VaP run per `agent.run()`; manual mode nests the agent inside an existing `vap.trace()` pipeline
+- [x] **Per-request tokens & cost** — `cost_usd` attached per model request via the pricing table; tools parented under the model request that called them
+- [x] **13-test suite** — `tests/test_pydantic_ai.py` (TestModel/FunctionModel, no API key); `pip install "vap[pydantic-ai]"`
+
 ---
 
 ## Dependencies
@@ -587,6 +642,7 @@ with tracer.trace("isolated run") as run:
 | `openai` *(optional)* | OpenAI SDK integration (`pip install "vap[openai]"`) |
 | `langchain-core` *(optional)* | LangGraph/LangChain integration (`pip install "vap[langchain]"`) |
 | `crewai` *(optional)* | CrewAI integration (`pip install "vap[crewai]"`) |
+| `pydantic-ai-slim` *(optional)* | Pydantic AI integration (`pip install "vap[pydantic-ai]"`) |
 
 `sqlite3` is part of the Python standard library — no extra install needed for persistence.
 

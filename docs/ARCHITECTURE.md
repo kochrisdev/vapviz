@@ -719,6 +719,60 @@ FastAPI SSE → React UI
 
 ---
 
+## Pydantic AI Integration (`integrations/pydantic_ai.py`)
+
+Pydantic AI has no global event bus, so `VapPydanticAI` takes a different tack from the
+other integrations: it **monkey-patches `Agent.run` / `Agent.run_sync`** and reconstructs
+the graph from the run's message history *after* the call returns. This trades live
+streaming for a complete, accurate snapshot (per-request usage and cost, tool args and
+results) with no dependency on Pydantic AI's streaming internals.
+
+### Wrapping and the re-entrancy guard
+
+Both `run` (async) and `run_sync` (sync) are wrapped so either entry point is traced.
+Because `run_sync` delegates to `run` internally, naively wrapping both would record the
+same run twice. A `ContextVar` (`_recording`) guards against this: the outer wrapper sets
+it, and any nested wrapped call sees it set and passes straight through to the original.
+The ContextVar (rather than a plain flag) keeps the guard correct across the asyncio task
+that `run_sync` spawns.
+
+`_wrap()` always recovers the pristine original (stashed on the wrapper as
+`_vap_pydantic_ai_original`) before re-wrapping, so patching twice never stacks wrappers,
+and `detach()` restores the saved originals.
+
+### Graph reconstruction from `result.all_messages()`
+
+After the wrapped call returns, `_record()` walks the message history once:
+
+```
+agent node (kind=agent in auto mode / step "agent/<name>" in manual mode)
+  for each ModelResponse:
+      llm node "llm/<model_name>"
+        usage  → input/output tokens          (RequestUsage on the response)
+        cost   → calculate_cost(model_name)    (aggregated onto the agent node)
+        record each ToolCallPart by tool_call_id → (tool_name, args, this llm node)
+  for each ModelRequest with a ToolReturnPart:
+      tool node, parent = the llm node that issued the matching tool_call_id
+        input  = the call's args, output = the return content
+```
+
+Events are emitted with **explicit timestamps** taken from the message objects
+(`ModelResponse.timestamp`, `ToolReturnPart.timestamp`) rather than `time.time()`, so the
+graph reflects real wall-clock ordering. A small `_emit()` helper constructs `VapEvent`s
+directly (the public `StepContext._emit` always stamps "now", which would collapse a
+post-hoc reconstruction to a single instant). Tracing is best-effort: `_record` is wrapped
+so a failure never breaks the user's agent run.
+
+### Auto vs manual mode
+
+| | Manual mode (`VapPydanticAI(run)`) | Auto mode (`VapPydanticAI()`) |
+|---|---|---|
+| Store / run id | the provided run's | `default_store`, fresh id per call |
+| Agent node | `step` `agent/<name>` under the run root | `agent` node *is* the run root |
+| Lifecycle | nests inside an existing `vap.trace()` | one VaP run per `agent.run()` |
+
+---
+
 ## Extension Guide
 
 ### Adding a new node kind

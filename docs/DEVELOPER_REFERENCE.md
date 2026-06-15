@@ -810,6 +810,71 @@ Requires: `pip install "vap[crewai]"`
 
 ---
 
+### `VapPydanticAI`
+
+Pydantic AI integration. Import from `vap.integrations.pydantic_ai`.
+
+```python
+from vap.integrations.pydantic_ai import VapPydanticAI
+
+VapPydanticAI(run: RunContext | None = None, *, patch: bool = True)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `run` | `RunContext \| None` | `None` | Optional existing run context (manual mode). When `None`, a new VaP run is created for each `agent.run()` / `run_sync()` call (auto mode). |
+| `patch` | `bool` | `True` | Patch `Agent` immediately. Set `False` to defer to `.patch()`. |
+
+Raises `ImportError` at instantiation time if `pydantic-ai` is not installed.
+
+It wraps `Agent.run` and `Agent.run_sync` (a re-entrancy guard prevents double-counting when `run_sync` delegates to `run`). After each run completes, the graph is reconstructed from `result.all_messages()`.
+
+**Auto mode** — instantiate once; every subsequent agent run becomes its own VaP run:
+
+```python
+import vap
+from vap.integrations.pydantic_ai import VapPydanticAI
+
+vap.configure(db="vap.db")
+VapPydanticAI()                       # patch before any agent.run()
+
+result = agent.run_sync("What's the weather in Paris?")
+```
+
+**Manual mode** — attach to an existing `RunContext` so the agent nests inside a pipeline:
+
+```python
+with vap.trace("Trip planner") as run:
+    VapPydanticAI(run)
+    result = agent.run_sync("Is Lisbon warm?")
+```
+
+**Pydantic AI → VaP node mapping:**
+
+| Source | VaP node kind | Parent |
+|---|---|---|
+| the agent run | `agent` (auto) or `step` (`agent/<name>`, manual) | none / run root |
+| each `ModelResponse` | `llm` (`llm/<model_name>`) | agent node |
+| each tool call (`ToolCallPart` → `ToolReturnPart`) | `tool` | the model request that called it |
+
+**Cost & tokens:** each `ModelResponse` carries `usage` (input/output tokens) and `model_name`; the listener calls `vap.calculate_cost(model_name, …)` per request and aggregates totals onto the agent node. Node timings come from the messages' timestamps.
+
+**`detach()`** restores the original `Agent` methods:
+
+```python
+listener = VapPydanticAI(run)
+agent.run_sync("...")
+listener.detach()
+```
+
+`patch_pydantic_ai(run=None)` is a convenience wrapper equivalent to `VapPydanticAI(run)`.
+
+> **Scope:** the streaming methods (`run_stream` / `run_stream_events`) are not traced yet.
+
+Requires: `pip install "vap[pydantic-ai]"`
+
+---
+
 ## CLI
 
 ```
@@ -1334,6 +1399,16 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.8.0
+
+- **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync` and reconstructs the agent, each model request (tokens + cost), and each tool call as nested VaP nodes from `result.all_messages()`; tool nodes are parented under the model request that called them
+- **Two usage modes** — auto mode (new VaP run per `agent.run()`) and manual mode (agent nests inside an existing `RunContext`); `.detach()` restores the original methods
+- **`patch_pydantic_ai(run=None)`** convenience wrapper; re-entrancy guard prevents double-counting when `run_sync` delegates to `run`
+- **`vap/integrations/pydantic_ai.py`** + `examples/pydantic_ai_demo.py` (runs with no API key via `TestModel`)
+- **`pip install "vap[pydantic-ai]"`** — new optional extra (`pydantic-ai-slim>=1.0.0`)
+- **Test suite** — `tests/test_pydantic_ai.py` with 13 tests (manual/auto/async modes, tool parenting, cost wiring, error path, detach, double-patch guard); **164 passing** total
+- **Package version** bumped to `0.8.0` (was stale at `0.6.0`)
 
 ### v0.7.0
 

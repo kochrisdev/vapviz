@@ -20,12 +20,13 @@ the last, so work through them in order. No prior VaP knowledge required.
 11. [Anthropic Auto-Instrumentation](#11-anthropic-auto-instrumentation)
 12. [LangGraph / LangChain Integration](#12-langgraph--langchain-integration)
 13. [CrewAI Integration](#13-crewai-integration)
-14. [Remote Ingest (any language)](#14-remote-ingest-any-language)
-15. [Comparing Runs](#15-comparing-runs)
-16. [Exporting Runs](#16-exporting-runs)
-17. [Persistence with SQLite](#17-persistence-with-sqlite)
-18. [Analytics Dashboard](#18-analytics-dashboard)
-19. [What's Next?](#19-whats-next)
+14. [Pydantic AI Integration](#14-pydantic-ai-integration)
+15. [Remote Ingest (any language)](#15-remote-ingest-any-language)
+16. [Comparing Runs](#16-comparing-runs)
+17. [Exporting Runs](#17-exporting-runs)
+18. [Persistence with SQLite](#18-persistence-with-sqlite)
+19. [Analytics Dashboard](#19-analytics-dashboard)
+20. [What's Next?](#20-whats-next)
 
 ---
 
@@ -703,7 +704,72 @@ and `store_report` all sit side by side as siblings.
 
 ---
 
-## 14. Remote Ingest (any language)
+## 14. Pydantic AI Integration
+
+`VapPydanticAI` traces [Pydantic AI](https://ai.pydantic.dev/) agents. Instantiate it once and
+every `agent.run()` / `run_sync()` is captured — the agent, each model request (with tokens and
+cost), and each tool call (with its arguments and result) — with no changes to your agent code.
+
+```bash
+pip install "vap[pydantic-ai]"
+```
+
+**Auto mode** — one fresh VaP run per `agent.run()`:
+
+```python
+import vap
+from pydantic_ai import Agent
+from vap.integrations.pydantic_ai import VapPydanticAI
+
+vap.configure(db="vap.db")
+
+agent = Agent("openai:gpt-4o-mini", name="weather-agent")
+
+@agent.tool_plain
+def get_weather(city: str) -> str:
+    return f"{city}: 21°C, partly cloudy"
+
+VapPydanticAI()                       # patch once, before any run
+result = agent.run_sync("What's the weather in Paris?")
+```
+
+The graph for that run looks like:
+
+```
+weather-agent                 (agent — the run root)
+├── llm/gpt-4o-mini           (first model request — decides to call the tool)
+│   └── get_weather           (tool — parented under the request that called it)
+└── llm/gpt-4o-mini           (final model response)
+```
+
+**Manual mode** — nest the agent inside a larger pipeline by passing a `RunContext`:
+
+```python
+with vap.trace("Trip planner") as run:
+    with run.step("load_preferences", kind="step") as step:
+        step.set_output({"prefers": "warm cities"})
+
+    listener = VapPydanticAI(run)     # agent runs become children of this run
+    result = agent.run_sync("Is Lisbon warm enough for a beach trip?")
+    listener.detach()                 # optional — restore Agent.run/run_sync
+
+    with run.step("format_itinerary", kind="step") as step:
+        step.set_output({"itinerary": "Day 1: beach, Day 2: old town"})
+```
+
+Each model request becomes an `llm` node with token usage and (for priced models) `cost_usd`;
+the totals are aggregated onto the agent node. Tool calls are matched to their results by
+`tool_call_id` and parented under the model request that issued them.
+
+> **Try it with no API key:** `python examples/pydantic_ai_demo.py` uses Pydantic AI's built-in
+> `TestModel`, so it runs fully offline.
+
+> **Note:** the graph is reconstructed from the run's message history after it completes, so node
+> timings come from the message timestamps. Streaming methods (`run_stream`) aren't traced yet.
+
+---
+
+## 15. Remote Ingest (any language)
 
 You don't need to import `vap` in the process that runs your agent. Any process — including
 non-Python code — can push events by POSTing JSON to `POST /runs/{run_id}/events`.
@@ -789,7 +855,7 @@ though the agent process has no knowledge of VaP internals.
 
 ---
 
-## 15. Comparing Runs
+## 16. Comparing Runs
 
 Once you have two or more runs you can diff them side by side to understand what changed — useful
 for comparing model variants, prompt changes, or pipeline refactors.
@@ -820,7 +886,7 @@ run in the sidebar normally.
 
 ---
 
-## 16. Exporting Runs
+## 17. Exporting Runs
 
 Every run can be exported in two formats from the **Export ▾** button in the top-right toolbar
 (only visible when a run is selected).
@@ -849,7 +915,7 @@ screenshot includes the layout exactly as you see it — useful for reports or d
 
 ---
 
-## 17. Persistence with SQLite
+## 18. Persistence with SQLite
 
 By default VaP uses an in-memory store — fast, zero setup, but all runs are lost when the
 process exits. Switch to SQLite with one line:
@@ -893,7 +959,7 @@ sqlite3 vap.db ".backup vap_backup_$(date +%Y%m%d).db"
 
 ---
 
-## 18. Analytics Dashboard
+## 19. Analytics Dashboard
 
 Once you have several runs stored, the **Analytics** dashboard gives you a bird's-eye view across
 all of them — no extra instrumentation required, it reads the same data your traces already
@@ -933,7 +999,7 @@ See the [`GET /metrics`](DEVELOPER_REFERENCE.md#get-metrics) reference for the f
 
 ---
 
-## 19. What's Next?
+## 20. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -945,6 +1011,7 @@ python examples/simple_demo.py
 python examples/error_handling_demo.py
 python examples/cost_tracking_demo.py
 python examples/remote_ingest_demo.py
+python examples/pydantic_ai_demo.py   # uses TestModel — requires pip install "vap[pydantic-ai]"
 
 # Requires an API key:
 python examples/openai_demo.py
