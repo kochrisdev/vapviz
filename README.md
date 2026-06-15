@@ -664,6 +664,8 @@ with tracer.trace("isolated run") as run:
 
 ## Development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide. Quick start:
+
 ```bash
 # Install with all integration + dev dependencies
 pip install -e ".[dev]"
