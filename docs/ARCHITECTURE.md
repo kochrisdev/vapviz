@@ -773,6 +773,62 @@ so a failure never breaks the user's agent run.
 
 ---
 
+## OpenTelemetry Export (`integrations/otel.py`)
+
+This is an **export sink**, not a framework integration: it reads completed VaP runs and
+reproduces them as OpenTelemetry traces, so VaP can feed an existing observability stack
+(Jaeger, Grafana Tempo, Datadog) in parallel with its own UI.
+
+### Reconstruction, not interception
+
+Rather than emit spans live as events arrive, `enable_otel_export()` wraps the store's
+`add_event` and waits for a run's `agent_end` event, then converts the whole `RunGraph` to
+spans in one pass (`build_spans`). This mirrors the Pydantic AI integration's "reconstruct
+from the finished structure" approach and keeps the mapping trivial: the graph is already
+complete, so parent/child links, timings, and aggregates are all known.
+
+```
+store.add_event(event)
+       │  (original call runs first — UI/SSE unaffected)
+       ▼
+event.type == AGENT_END ?
+       │ yes
+       ▼
+build_spans(store.get_graph(run_id), tracer)
+   roots = nodes with no parent (or parent absent from graph)
+   for each node, depth-first:
+       span = tracer.start_span(label, context=parent_ctx, start_time=ns(started_at))
+       set gen_ai.* / vap.* attributes; set OK/ERROR status
+       recurse into children with set_span_in_context(span)
+       span.end(end_time=ns(ended_at))
+```
+
+Each run becomes its own trace because every root span is started with no parent context.
+Timestamps are converted from epoch-seconds floats to integer nanoseconds.
+
+### Wiring and threading
+
+`enable_otel_export` resolves a `TracerProvider` three ways: an explicit `tracer_provider`,
+a new provider built around an OTLP exporter when an `endpoint` is given (the exporter is
+imported lazily so the gRPC/HTTP deps are only needed when actually used), or the global
+provider when both are omitted (so VaP slots into an already-configured OpenTelemetry stack).
+
+Auto-export runs inside `add_event`, i.e. on the agent's own thread. Using a
+`BatchSpanProcessor` keeps that non-blocking — `start_span`/`end` just enqueue; a background
+thread does the network export. Export is best-effort: any failure in `build_spans` is
+swallowed so it can never break the traced agent. `OtelExportHandle.disable()` removes the
+instance-level `add_event` override (reverting to the class method); `.shutdown()` also
+flushes the provider.
+
+### Attribute mapping
+
+Spans follow OpenTelemetry's GenAI semantic conventions where they apply
+(`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`) and use a
+`vap.*` namespace for the rest (`vap.node.kind`, `vap.node.status`, `vap.run_id`,
+`vap.cost_usd`, and bounded `vap.input` / `vap.output` snapshots).
+
+---
+
 ## Extension Guide
 
 ### Adding a new node kind

@@ -875,6 +875,72 @@ Requires: `pip install "vap[pydantic-ai]"`
 
 ---
 
+### OpenTelemetry export
+
+Mirror VaP runs into OpenTelemetry. Import from `vap.integrations.otel`. One **trace per run**; each
+node becomes a span whose parent is the node's parent. Requires `pip install "vap[otel]"`.
+
+#### `enable_otel_export(...)`
+
+```python
+enable_otel_export(
+    *,
+    tracer_provider=None,
+    endpoint: str | None = None,
+    protocol: str = "grpc",          # "grpc" or "http"
+    service_name: str = "vap",
+    insecure: bool = True,
+    store=None,
+) -> OtelExportHandle
+```
+
+Wraps a store's `add_event` so that each run is exported when its `agent_end` event is recorded.
+
+| Parameter | Description |
+|---|---|
+| `tracer_provider` | Use this provider. If `None` and `endpoint` is set, a provider with an OTLP exporter is built; if both are `None`, the **global** `TracerProvider` is used. |
+| `endpoint` | OTLP collector, e.g. `"http://localhost:4317"` (gRPC) or `"http://localhost:4318/v1/traces"` (HTTP). |
+| `protocol` | `"grpc"` (default) or `"http"` — selects the OTLP exporter (imported lazily). |
+| `service_name` | `service.name` resource attribute when a provider is created here. |
+| `insecure` | gRPC insecure channel (default `True`). |
+| `store` | Store to wrap. Defaults to `vap.store.default_store`. |
+
+Returns an `OtelExportHandle` with `.disable()` (restore the original `add_event`) and `.shutdown()`
+(disable + flush the provider). Only runs that complete **after** the call are exported.
+
+```python
+import vap
+from vap.integrations.otel import enable_otel_export
+
+vap.configure(db="vap.db")
+handle = enable_otel_export(endpoint="http://localhost:4317")
+# ... run agents ...
+handle.shutdown()
+```
+
+#### `export_run(graph, *, tracer=None, tracer_provider=None) -> int`
+
+Export a single `RunGraph` on demand; returns the number of spans created (`0` if `graph` is `None`).
+Uses the global `TracerProvider` unless a `tracer` or `tracer_provider` is given.
+
+#### `build_spans(graph, tracer) -> int`
+
+Low-level: emit spans for every node in `graph` using an OpenTelemetry `Tracer`, parent-first with
+explicit start/end times. Returns the span count.
+
+**Span mapping:**
+
+| VaP | OpenTelemetry |
+|---|---|
+| run | one trace |
+| node (`agent`/`step`/`tool`/`llm`) | span (parent = parent node's span) |
+| `started_at` / `ended_at` | span start / end (nanoseconds) |
+| `error` status | span `Status(ERROR)` with the error message |
+| LLM model / tokens / cost | `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd` |
+| kind / status / run id / I-O | `vap.node.kind`, `vap.node.status`, `vap.run_id`, `vap.input`, `vap.output` |
+
+---
+
 ## CLI
 
 ```
@@ -1399,6 +1465,15 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.9.0
+
+- **OpenTelemetry export** — `vap/integrations/otel.py`: `enable_otel_export(...)` wraps a store to emit each completed run as an OTLP trace (one trace per run; node hierarchy → span parent/child) via a BatchSpanProcessor; `export_run()` / `build_spans()` for one-shot export
+- **GenAI semantics** — spans carry `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd`, `vap.node.*`, real node start/end times, and ERROR status
+- **Flexible wiring** — bring your own `TracerProvider`, pass an OTLP `endpoint` (gRPC/HTTP), or use the global provider; OTLP exporter imported lazily; `OtelExportHandle.disable()` / `.shutdown()`
+- **`pip install "vap[otel]"`** — new optional extra (`opentelemetry-sdk`, `opentelemetry-exporter-otlp`) + `examples/otel_demo.py` (ConsoleSpanExporter, no network)
+- **Test suite** — `tests/test_otel.py` with 11 tests (in-memory exporter); **175 passing** total
+- **Package version** bumped to `0.9.0`
 
 ### v0.8.0
 

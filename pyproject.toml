@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vap"
-version = "0.8.0"
+version = "0.9.0"
 description = "Visualization Agentic Process — trace and visualize AI agent workflows"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -53,8 +53,9 @@ openai      = ["openai>=1.0.0"]
 langchain   = ["langchain-core>=0.1.0"]
 crewai      = ["crewai>=1.0.0"]
 pydantic-ai = ["pydantic-ai-slim>=1.0.0"]
-all         = ["anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "crewai>=1.0.0", "pydantic-ai-slim>=1.0.0"]
-dev         = ["pytest", "httpx", "pytest-asyncio", "anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "pydantic-ai-slim>=1.0.0"]
+otel        = ["opentelemetry-sdk>=1.20.0", "opentelemetry-exporter-otlp>=1.20.0"]
+all         = ["anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "crewai>=1.0.0", "pydantic-ai-slim>=1.0.0", "opentelemetry-sdk>=1.20.0", "opentelemetry-exporter-otlp>=1.20.0"]
+dev         = ["pytest", "httpx", "pytest-asyncio", "anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "pydantic-ai-slim>=1.0.0", "opentelemetry-sdk>=1.20.0"]
 
 [project.scripts]
 vap = "vap.cli:main"

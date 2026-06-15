@@ -23,6 +23,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native event bus to trace Crews, Tasks, Agents, Tools, and LLM calls automatically
 - **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync` to trace each model request (tokens + cost) and tool call as nested nodes
 - **Analytics dashboard** — cross-run metrics (cost, tokens, success rate, per-model breakdown) at `GET /metrics` and in the UI
+- **OpenTelemetry export** — `enable_otel_export(...)` mirrors every run into OTLP spans for Jaeger / Grafana Tempo / Datadog
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -347,6 +348,36 @@ original `Agent` methods.
 
 ---
 
+## OpenTelemetry Export
+
+VaP can mirror every run into OpenTelemetry — one **trace per run**, with each node (agent / step /
+tool / LLM) becoming a span whose parent is the node's parent. Node timings, token usage, USD cost,
+and error status ride along as span timings, attributes (incl. `gen_ai.*` semantic conventions), and
+status. Point it at any OTLP backend (Jaeger, Grafana Tempo, Datadog, …):
+
+```python
+import vap
+from vap.integrations.otel import enable_otel_export
+
+vap.configure(db="vap.db")
+enable_otel_export(endpoint="http://localhost:4317")    # OTLP/gRPC
+
+with vap.trace("My agent") as run:
+    ...                                                 # exported to OTel on completion
+```
+
+Already have an OpenTelemetry stack configured globally? Call `enable_otel_export()` with no
+arguments to use the existing `TracerProvider`. Or export a single run on demand with
+`export_run(graph, tracer_provider=...)`.
+
+```bash
+pip install "vap[otel]"
+```
+
+This is **export**, not replacement — runs still appear in the VaP UI as usual; OTel just gets a copy.
+
+---
+
 ## REST API
 
 The FastAPI server (`http://localhost:8001`) exposes:
@@ -401,7 +432,8 @@ vap/                          Python package
     ├── openai_sdk.py         patch_openai() — sync + async client support
     ├── langchain.py          VapCallbackHandler — LangGraph / LangChain integration
     ├── crewai_listener.py    VapCrewAIListener — CrewAI event bus integration
-    └── pydantic_ai.py        VapPydanticAI — Pydantic AI Agent.run wrapper
+    ├── pydantic_ai.py        VapPydanticAI — Pydantic AI Agent.run wrapper
+    └── otel.py               OpenTelemetry export — runs → OTLP spans
 
 ui/src/                       Vite + React + TypeScript
 ├── App.tsx                   Root layout — sidebar / graph / timeline / detail panel
@@ -430,7 +462,8 @@ examples/
 ├── openai_demo.py            OpenAI chat.completions with auto-tracing
 ├── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
 ├── crewai_demo.py            CrewAI multi-agent crew with VapCrewAIListener
-└── pydantic_ai_demo.py       Pydantic AI agent with VapPydanticAI — no API key needed
+├── pydantic_ai_demo.py       Pydantic AI agent with VapPydanticAI — no API key needed
+└── otel_demo.py              OpenTelemetry export to the console — no API key needed
 
 docs/
 ├── TUTORIAL.md               Step-by-step learning guide (start here)
@@ -448,7 +481,8 @@ tests/
 ├── test_cost.py              Pricing table, calculate_cost(), integration cost output
 ├── test_metrics.py           compute_metrics() aggregation + /metrics endpoint
 ├── test_crewai_listener.py   CrewAI listener (skipped if crewai absent)
-└── test_pydantic_ai.py       Pydantic AI integration (skipped if pydantic-ai absent)
+├── test_pydantic_ai.py       Pydantic AI integration (skipped if pydantic-ai absent)
+└── test_otel.py              OpenTelemetry export (skipped if opentelemetry-sdk absent)
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
@@ -564,6 +598,15 @@ python examples/pydantic_ai_demo.py        # no API key needed — uses TestMode
 
 Runs two traces — a weather agent (auto mode) and a trip planner embedded in a pipeline (manual mode). Each model request and tool call appears as a nested node, with tools parented under the model request that called them.
 
+### OpenTelemetry export demo
+
+```bash
+pip install "vap[otel]"
+python examples/otel_demo.py        # no API key, no collector — prints spans to the console
+```
+
+Traces a small agent and exports it to OpenTelemetry via the `ConsoleSpanExporter`, so you can see the run reproduced as a single OTel trace (swap in an OTLP endpoint to send it to Jaeger/Tempo/Datadog).
+
 ---
 
 ## Configuration Reference
@@ -631,6 +674,12 @@ with tracer.trace("isolated run") as run:
 - [x] **Per-request tokens & cost** — `cost_usd` attached per model request via the pricing table; tools parented under the model request that called them
 - [x] **13-test suite** — `tests/test_pydantic_ai.py` (TestModel/FunctionModel, no API key); `pip install "vap[pydantic-ai]"`
 
+### v0.9.0 — Phase 8 (complete)
+- [x] **OpenTelemetry export** — `enable_otel_export(...)` mirrors each completed run into OTLP spans (one trace per run; node hierarchy → span parent/child) for Jaeger / Grafana Tempo / Datadog
+- [x] **GenAI semantics** — `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd`, and ERROR status carried as span attributes/status with real node timings
+- [x] **Flexible wiring** — bring your own `TracerProvider`, pass an OTLP `endpoint`, or use a globally-configured OpenTelemetry stack; `export_run()` for one-shot export
+- [x] **11-test suite** — `tests/test_otel.py` (in-memory exporter, no network); `pip install "vap[otel]"`
+
 ---
 
 ## Dependencies
@@ -647,6 +696,7 @@ with tracer.trace("isolated run") as run:
 | `langchain-core` *(optional)* | LangGraph/LangChain integration (`pip install "vap[langchain]"`) |
 | `crewai` *(optional)* | CrewAI integration (`pip install "vap[crewai]"`) |
 | `pydantic-ai-slim` *(optional)* | Pydantic AI integration (`pip install "vap[pydantic-ai]"`) |
+| `opentelemetry-sdk` + `opentelemetry-exporter-otlp` *(optional)* | OpenTelemetry export (`pip install "vap[otel]"`) |
 
 `sqlite3` is part of the Python standard library — no extra install needed for persistence.
 

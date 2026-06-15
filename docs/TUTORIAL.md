@@ -26,7 +26,8 @@ the last, so work through them in order. No prior VaP knowledge required.
 17. [Exporting Runs](#17-exporting-runs)
 18. [Persistence with SQLite](#18-persistence-with-sqlite)
 19. [Analytics Dashboard](#19-analytics-dashboard)
-20. [What's Next?](#20-whats-next)
+20. [OpenTelemetry Export](#20-opentelemetry-export)
+21. [What's Next?](#21-whats-next)
 
 ---
 
@@ -999,7 +1000,55 @@ See the [`GET /metrics`](DEVELOPER_REFERENCE.md#get-metrics) reference for the f
 
 ---
 
-## 20. What's Next?
+## 20. OpenTelemetry Export
+
+VaP can mirror every run into [OpenTelemetry](https://opentelemetry.io/) — useful when you already
+run Jaeger, Grafana Tempo, or Datadog and want your agent traces alongside the rest of your service
+telemetry. Each run becomes **one OTel trace**; each node (agent / step / tool / LLM) becomes a span
+nested exactly like the VaP graph.
+
+```bash
+pip install "vap[otel]"
+```
+
+Point it at an OTLP collector and every completed run is exported automatically:
+
+```python
+import vap
+from vap.integrations.otel import enable_otel_export
+
+vap.configure(db="vap.db")
+enable_otel_export(endpoint="http://localhost:4317")   # OTLP/gRPC (use protocol="http" for 4318)
+
+with vap.trace("My agent") as run:
+    with run.step("ask", kind="llm") as s:
+        s.set_input({"model": "gpt-4o"})
+        s.set_output({"usage": {"input_tokens": 1200, "output_tokens": 180}, "cost_usd": 0.0048})
+# → exported to OpenTelemetry when the run completes
+```
+
+LLM spans use the OTel **GenAI semantic conventions** (`gen_ai.request.model`,
+`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`), cost rides along as `vap.cost_usd`, and a
+failed node sets the span's status to `ERROR`.
+
+**Already have OpenTelemetry configured?** Call `enable_otel_export()` with no arguments to use your
+existing global `TracerProvider`, or pass your own with `enable_otel_export(tracer_provider=...)`.
+
+**Export on demand** (instead of auto-export) — convert any stored run to spans yourself:
+
+```python
+from vap.integrations.otel import export_run
+export_run(store.get_graph(run_id), tracer_provider=my_provider)
+```
+
+> **Try it with no collector:** `python examples/otel_demo.py` exports a run to the console via
+> OpenTelemetry's `ConsoleSpanExporter`, so you can see the spans without any backend.
+
+This is **export**, not replacement — runs still stream into the VaP UI as usual.
+
+---
+
+## 21. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -1012,6 +1061,7 @@ python examples/error_handling_demo.py
 python examples/cost_tracking_demo.py
 python examples/remote_ingest_demo.py
 python examples/pydantic_ai_demo.py   # uses TestModel — requires pip install "vap[pydantic-ai]"
+python examples/otel_demo.py          # console OTel export — requires pip install "vap[otel]"
 
 # Requires an API key:
 python examples/openai_demo.py
