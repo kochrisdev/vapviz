@@ -314,6 +314,7 @@ The FastAPI server (`http://localhost:8001`) exposes:
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/runs` | List all runs (summary) |
+| `GET` | `/metrics` | Cross-run analytics: cost, tokens, success rate, per-model breakdown |
 | `GET` | `/runs/{id}` | Single run summary |
 | `GET` | `/runs/{id}/graph` | Full graph snapshot (nodes + edges) |
 | `GET` | `/runs/{id}/export` | Download run graph as a JSON file attachment |
@@ -351,6 +352,7 @@ vap/                          Python package
 ├── server.py                 FastAPI app — REST + SSE endpoints
 ├── cli.py                    vap serve command
 ├── cost.py                   Token cost — 20+ model pricing table, calculate_cost()
+├── metrics.py                Cross-run analytics — compute_metrics() aggregation
 ├── backends/
 │   ├── __init__.py
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
@@ -364,11 +366,12 @@ ui/src/                       Vite + React + TypeScript
 ├── App.tsx                   Root layout — sidebar / graph / timeline / detail panel
 ├── components/
 │   ├── AgentGraph.tsx        ReactFlow DAG with dagre auto-layout
+│   ├── Dashboard.tsx         Cross-run analytics view (GET /metrics)
 │   ├── EventTimeline.tsx     Chronological event log
 │   ├── ExportMenu.tsx        Export dropdown (JSON download + PNG capture)
 │   ├── NodeDetail.tsx        Selected-node inspector
 │   ├── RunComparison.tsx     Side-by-side diff of two runs
-│   └── RunList.tsx           Sidebar run list with compare button
+│   └── RunList.tsx           Sidebar run list with compare + dashboard toggle
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
 ├── store/
@@ -562,6 +565,12 @@ with tracer.trace("isolated run") as run:
 - [x] **Auto + manual mode** — auto mode creates a new VaP run per `kickoff()`; manual mode attaches the crew as a sub-section of an existing `vap.trace()` pipeline
 - [x] **LLM cost on CrewAI nodes** — `cost_usd` auto-attached via LiteLLM usage dict; `pip install "vap[crewai]"`
 - [x] **19-test suite** — `tests/test_crewai_listener.py` covers crew lifecycle, task/agent/tool/LLM nodes, cost tracking, and import guard
+
+### v0.7.0 — Phase 6 (complete)
+- [x] **Analytics dashboard** — cross-run overview in the UI: run/success counts, total & average cost, average duration, LLM-call and token totals
+- [x] **Per-model breakdown** — calls, tokens, and USD cost grouped by model, sorted by spend
+- [x] **Cost-over-time chart** + nodes-by-kind breakdown; auto-refreshes every 5s
+- [x] **`GET /metrics`** — `compute_metrics()` aggregates every stored run into one snapshot; 14-test suite in `tests/test_metrics.py`
 
 ---
 

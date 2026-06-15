@@ -35,8 +35,9 @@ This document describes the internal design of the Visualization Agentic Process
 │  • Hold asyncio.Queue per SSE subscriber                            │
 │  • Use loop.call_soon_threadsafe() for thread→asyncio hand-off      │
 │                                                                     │
-│  vap/cost.py   — pricing table, calculate_cost(), format_cost()     │
+│  vap/cost.py    — pricing table, calculate_cost(), format_cost()    │
 │  (used by integrations to attach cost_usd to llm_response events)  │
+│  vap/metrics.py — compute_metrics(): cross-run aggregation          │
 └──────────────────────────┬───────────────────────────────────────────┘
                            │  asyncio.Queue (per subscriber)
                            ▼
@@ -44,6 +45,7 @@ This document describes the internal design of the Visualization Agentic Process
 │  FastAPI Server  (vap/server.py)                                    │
 │                                                                     │
 │  GET    /runs                  → list[RunSummary]                   │
+│  GET    /metrics               → Metrics (cross-run analytics)      │
 │  GET    /runs/compare?a=&b=    → {a: RunGraph, b: RunGraph}         │
 │  GET    /runs/{id}             → RunSummary                         │
 │  GET    /runs/{id}/graph       → RunGraph snapshot                  │
@@ -63,6 +65,7 @@ This document describes the internal design of the Visualization Agentic Process
 │  AgentGraph.tsx                ReactFlow DAG with dagre layout       │
 │  EventTimeline.tsx             Chronological event log               │
 │  NodeDetail.tsx                Selected-node inspector               │
+│  Dashboard.tsx                 Cross-run analytics (GET /metrics)    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -352,6 +355,36 @@ Display helper used by both the Python server (not currently exposed) and the Re
 
 ---
 
+### Metrics Module (`vap/metrics.py`)
+
+Like `cost.py`, this is a pure, dependency-free aggregation layer — no I/O, no store coupling. `compute_metrics(graphs: list[RunGraph]) -> Metrics` is a single pass over the supplied graphs:
+
+```
+for each RunGraph:
+    tally status (success / error / running)
+    add (ended_at − started_at) to the duration total
+    bucket the run's day for cost_over_time
+    for each node:
+        increment by_kind[node.kind]
+        if node.kind == llm:
+            model  = node.data["input"]["model"]  (fallback: strip "llm/" label prefix)
+            usage  = node.data["output"]["usage"]    -> token totals + per-model tally
+            cost   = node.data["output"]["cost_usd"] -> cost totals + per-model tally + daily bucket
+derive: success_rate, avg_cost_usd, avg_duration_ms
+sort by_model by (cost, calls) desc; emit cost_over_time chronologically
+```
+
+**Key design points:**
+
+- **Reads the shared node-data shape, not events.** Every integration (`patch_*`, `VapCallbackHandler`, `VapCrewAIListener`) and the raw tracer write `input.model`, `output.usage`, and `output.cost_usd` the same way, so metrics need no integration-specific code.
+- **Averages are denominator-aware.** `avg_cost_usd` divides by the number of runs that actually contributed cost (not `run_count`), and `avg_duration_ms` divides by completed runs with a measurable duration — both are `None` rather than `0` when the denominator is empty, so the UI can render "—".
+- **`success_rate` excludes running runs** — it is `success / (success + error)`, so an in-flight run never drags the rate down.
+- **Response models** (`Metrics`, `ModelStat`, `TokenTotals`, `KindCounts`, `DailyCost`) are pydantic, so FastAPI validates and serialises them directly and the TypeScript interfaces mirror them 1:1.
+
+The `GET /metrics` route fetches `store.get_graph()` for every `store.list_runs()` entry and passes the list straight to `compute_metrics()` — the route holds no logic of its own.
+
+---
+
 ### Configuration (`vap/__init__.py`)
 
 `vap.configure(db=...)` is the public API for switching the module-level store:
@@ -397,6 +430,8 @@ Zustand subscribers re-render
   └── RunList (run summary; total_cost_usd shown in purple when non-null)
 ```
 
+The store also holds a `view: "runs" | "dashboard"` flag (with `setView`). `App.tsx` renders the `Dashboard` component when `view === "dashboard"`; `selectRun` always resets `view` to `"runs"` so picking a run from the dashboard returns to the graph.
+
 **Cost aggregation in `runStore.ts`:**
 
 After every `applyEvent` call, `total_cost_usd` is recomputed by summing `node.data.output.cost_usd` across all nodes in the run. The result is stored in `RunSummary.total_cost_usd` — `null` if no LLM node has a cost entry (e.g. the model is unknown), otherwise the running sum as a `number`. This is a pure client-side recalculation with no extra network round-trip.
@@ -433,6 +468,20 @@ The `ExportMenu` dropdown lives in the run header and offers two actions:
 - Dynamically imports `html2canvas` (loaded only on demand to avoid bundle bloat).
 - Captures the graph container `<div>` (the `ref` is wired in `App.tsx`) including the ReactFlow viewport.
 - Converts the canvas to a PNG blob and triggers a download.
+
+---
+
+### Analytics dashboard (`Dashboard.tsx`)
+
+`Dashboard` is rendered instead of the graph/comparison views whenever `view === "dashboard"` in the Zustand store (toggled by the `BarChart3` button in the `RunList` header).
+
+**Data flow:**
+1. On mount it `fetch`es `/metrics` and re-polls every 5 s (mirroring `RunList`'s run polling), holding the result in local component state — it does not touch the run-event store.
+2. The `Metrics` payload drives four blocks: a row of stat cards (runs, success rate, total/avg cost, avg duration, LLM calls, tokens), a cost-over-time bar chart, a by-model table, and a nodes-by-kind breakdown.
+
+**Rendering notes:**
+- Charts are dependency-free — CSS flex bars, not a charting library — to keep the bundle lean. Bars use `height: %` of an `h-full` flex column; the column **must** carry `h-full` because the row uses `items-end`, which otherwise collapses children to content height.
+- All formatting (cost tiers, `k`/`M` token abbreviation, `ms`/`s`/`m` durations, percentage) lives in local helpers, matching the colour conventions used elsewhere (purple for cost, kind colours for the breakdown bars).
 
 ---
 

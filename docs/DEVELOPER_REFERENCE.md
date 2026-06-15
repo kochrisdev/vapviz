@@ -277,6 +277,54 @@ vap.format_cost(0.05)      # -> "$0.0500"
 
 ---
 
+#### `vap.compute_metrics(graphs)`
+
+Aggregate a list of `RunGraph` snapshots into a single cross-run analytics object. This is the pure function behind the `GET /metrics` endpoint and the UI analytics dashboard — it reads only the node data every integration already produces, so no extra instrumentation is required.
+
+```python
+vap.compute_metrics(graphs: list[RunGraph]) -> Metrics
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `graphs` | `list[RunGraph]` | Run-graph snapshots, e.g. `[store.get_graph(s.run_id) for s in store.list_runs()]`. |
+
+**Returns:** a `Metrics` pydantic model:
+
+| Field | Type | Description |
+|---|---|---|
+| `run_count` | `int` | Number of runs in the input. |
+| `success_count` / `error_count` / `running_count` | `int` | Run counts by terminal status. |
+| `success_rate` | `float \| None` | `success / (success + error)`, over **completed** runs only; `None` when none have finished. |
+| `total_cost_usd` | `float` | Sum of every LLM node's `cost_usd`. |
+| `avg_cost_usd` | `float \| None` | Mean cost per run that contributed any cost; `None` when no run did. |
+| `total_duration_ms` / `avg_duration_ms` | `float` / `float \| None` | Wall-clock totals; the average is over completed runs with a measurable duration. |
+| `total_nodes` | `int` | Node count across all graphs. |
+| `total_llm_calls` | `int` | Number of `llm` nodes. |
+| `total_tokens` | `TokenTotals` | `{input, output}` token sums. |
+| `by_model` | `list[ModelStat]` | `{model, calls, cost_usd, input_tokens, output_tokens}` per model, sorted by cost then calls. |
+| `by_kind` | `KindCounts` | `{agent, step, tool, llm}` node counts. |
+| `cost_over_time` | `list[DailyCost]` | `{date, cost_usd, run_count}` per UTC day, chronological. |
+
+The model name for each LLM node is taken from `node.data["input"]["model"]`, falling back to the `llm/` label prefix.
+
+```python
+import vap
+from vap.backends.sqlite import SqliteStore
+
+store = SqliteStore("vap.db")
+graphs = [g for g in (store.get_graph(s.run_id) for s in store.list_runs()) if g]
+metrics = vap.compute_metrics(graphs)
+
+print(metrics.total_cost_usd, metrics.success_rate)
+for m in metrics.by_model:
+    print(m.model, m.calls, m.cost_usd)
+```
+
+Available as `vap.compute_metrics` / `vap.Metrics`, or `from vap.metrics import compute_metrics`.
+
+---
+
 #### `vap.create_app(store=None)`
 
 Create a new FastAPI application instance.
@@ -830,6 +878,40 @@ List all runs, newest first.
 
 ---
 
+### `GET /metrics`
+
+Cross-run analytics aggregated over every stored run. Computed by `compute_metrics()` (see the Python API section for the full field reference).
+
+**Response** `200 OK` — `application/json`
+
+```json
+{
+  "run_count": 7,
+  "success_count": 7,
+  "error_count": 0,
+  "running_count": 0,
+  "success_rate": 1.0,
+  "total_cost_usd": 0.04526,
+  "avg_cost_usd": 0.009052,
+  "total_duration_ms": 1113.42,
+  "avg_duration_ms": 159.06,
+  "total_nodes": 37,
+  "total_llm_calls": 5,
+  "total_tokens": { "input": 7900, "output": 2590 },
+  "by_model": [
+    { "model": "claude-3-5-sonnet", "calls": 1, "cost_usd": 0.0231, "input_tokens": 3200, "output_tokens": 900 }
+  ],
+  "by_kind": { "agent": 7, "step": 11, "tool": 14, "llm": 5 },
+  "cost_over_time": [
+    { "date": "2026-06-15", "cost_usd": 0.04526, "run_count": 5 }
+  ]
+}
+```
+
+An empty store returns all-zero counts with `success_rate`, `avg_cost_usd`, and `avg_duration_ms` set to `null`, and empty `by_model` / `cost_over_time` arrays.
+
+---
+
 ### `GET /runs/{run_id}`
 
 Retrieve a single run summary.
@@ -1252,6 +1334,16 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.7.0
+
+- **Analytics dashboard** — cross-run overview in the UI: run/success counts, total & average cost, average duration, LLM-call and token totals, a per-model breakdown table, a cost-over-time bar chart, and a nodes-by-kind breakdown. Toggled from the sidebar header; auto-refreshes every 5 s
+- **`GET /metrics`** — aggregates every stored run into one `Metrics` snapshot
+- **`vap.compute_metrics(graphs)`** — pure aggregation function over `RunGraph` snapshots; exported as `vap.compute_metrics` / `vap.Metrics`
+- **`vap/metrics.py`** — `Metrics`, `ModelStat`, `TokenTotals`, `KindCounts`, `DailyCost` pydantic models + `compute_metrics()`
+- **`Dashboard.tsx`** + `view` state in `runStore` (`"runs" | "dashboard"`); selecting a run returns to the graph view
+- **Test suite** — `tests/test_metrics.py` with 14 tests (empty input, status/duration/cost aggregation, model breakdown + label fallback, daily bucketing, and the endpoint); **151 passing** total
+- **Fix: test isolation** — an `autouse` fixture in `tests/conftest.py` resets the `_current_step` ContextVar between tests, so a `RunContext._start()` without a matching `_end()` (as in the CrewAI listener tests) no longer leaks into later test files
 
 ### v0.6.0
 

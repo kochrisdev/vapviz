@@ -24,7 +24,8 @@ the last, so work through them in order. No prior VaP knowledge required.
 15. [Comparing Runs](#15-comparing-runs)
 16. [Exporting Runs](#16-exporting-runs)
 17. [Persistence with SQLite](#17-persistence-with-sqlite)
-18. [What's Next?](#18-whats-next)
+18. [Analytics Dashboard](#18-analytics-dashboard)
+19. [What's Next?](#19-whats-next)
 
 ---
 
@@ -892,7 +893,47 @@ sqlite3 vap.db ".backup vap_backup_$(date +%Y%m%d).db"
 
 ---
 
-## 18. What's Next?
+## 18. Analytics Dashboard
+
+Once you have several runs stored, the **Analytics** dashboard gives you a bird's-eye view across
+all of them — no extra instrumentation required, it reads the same data your traces already
+capture. Click the bar-chart icon in the sidebar header to toggle it (click any run to return to
+the graph view).
+
+It shows:
+
+- **Overview cards** — run count, success rate, total & average cost, average duration, LLM-call
+  count, and total tokens
+- **Cost over time** — total LLM spend bucketed per day
+- **By model** — calls, tokens, and USD cost for each model, sorted by spend
+- **Nodes by kind** — how your runs break down across agent / step / tool / LLM nodes
+
+The dashboard auto-refreshes every few seconds, so it stays current while live runs complete.
+
+**Programmatic access:** the same numbers are available without the UI.
+
+```bash
+curl http://localhost:8001/metrics
+```
+
+```python
+import vap
+from vap.backends.sqlite import SqliteStore
+
+store = SqliteStore("vap.db")
+graphs = [g for g in (store.get_graph(s.run_id) for s in store.list_runs()) if g]
+metrics = vap.compute_metrics(graphs)
+
+print(f"{metrics.run_count} runs · {vap.format_cost(metrics.total_cost_usd)} total")
+for m in metrics.by_model:
+    print(f"  {m.model}: {m.calls} calls, {vap.format_cost(m.cost_usd)}")
+```
+
+See the [`GET /metrics`](DEVELOPER_REFERENCE.md#get-metrics) reference for the full field list.
+
+---
+
+## 19. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 

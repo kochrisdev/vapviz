@@ -34,3 +34,13 @@ Thumbs.db
 
 # Temp
 /C:/Temp/
+
+# Runtime data — local SQLite stores and server logs
+vap.db
+vap.db-shm
+vap.db-wal
+*.db
+*.db-shm
+*.db-wal
+.vap_server.out
+.vap_server.err

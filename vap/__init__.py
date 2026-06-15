@@ -5,6 +5,7 @@ from .integrations.anthropic_sdk import patch_anthropic
 from .integrations.openai_sdk import patch_openai
 from .backends.sqlite import SqliteStore
 from .cost import calculate_cost, format_cost
+from .metrics import compute_metrics, Metrics
 
 
 def configure(db: str | None = None) -> None:
@@ -54,6 +55,9 @@ __all__ = [
     # Cost
     "calculate_cost",
     "format_cost",
+    # Metrics
+    "compute_metrics",
+    "Metrics",
     # Configuration
     "configure",
 ]

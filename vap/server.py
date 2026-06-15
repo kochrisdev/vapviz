@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
 from .events import RunGraph, RunSummary, VapEvent
+from .metrics import Metrics, compute_metrics
 from .store import RunStore, default_store
 
 
@@ -39,6 +40,20 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
     @app.get("/runs", response_model=list[RunSummary])
     async def list_runs():
         return _store.list_runs()
+
+    # ------------------------------------------------------------------
+    # Cross-run analytics
+    # ------------------------------------------------------------------
+
+    @app.get("/metrics", response_model=Metrics)
+    async def metrics():
+        """Aggregate statistics across every stored run."""
+        graphs = [
+            g
+            for g in (_store.get_graph(s.run_id) for s in _store.list_runs())
+            if g is not None
+        ]
+        return compute_metrics(graphs)
 
     # NOTE: /runs/compare must be registered BEFORE /runs/{run_id} so that
     # FastAPI treats "compare" as a literal path segment, not a run_id.

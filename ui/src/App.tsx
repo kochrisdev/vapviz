@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Activity } from "lucide-react";
 import { AgentGraph } from "./components/AgentGraph";
+import { Dashboard } from "./components/Dashboard";
 import { EventTimeline } from "./components/EventTimeline";
 import { ExportMenu } from "./components/ExportMenu";
 import { NodeDetail } from "./components/NodeDetail";
@@ -16,6 +17,7 @@ function RunViewer() {
   const runStates      = useRunStore((s) => s.runStates);
   const selectedNodeId = useRunStore((s) => s.selectedNodeId);
   const runs           = useRunStore((s) => s.runs);
+  const view           = useRunStore((s) => s.view);
   const selectRun      = useRunStore((s) => s.selectRun);
   const selectNode     = useRunStore((s) => s.selectNode);
   const setCompareRun  = useRunStore((s) => s.setCompareRun);
@@ -49,7 +51,10 @@ function RunViewer() {
       </div>
 
       {/* Main area */}
-      {compareRunId && selectedRunId ? (
+      {view === "dashboard" ? (
+        /* ── Analytics dashboard ───────────────────────────────── */
+        <Dashboard />
+      ) : compareRunId && selectedRunId ? (
         /* ── Comparison mode ───────────────────────────────────── */
         <RunComparison
           runIdA={selectedRunId}

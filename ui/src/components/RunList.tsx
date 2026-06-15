@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitCompare, Search, Trash2, X } from "lucide-react";
+import { BarChart3, GitCompare, Search, Trash2, X } from "lucide-react";
 import type { NodeStatus, RunSummary } from "../types/events";
 import { useRunStore } from "../store/runStore";
 
@@ -36,6 +36,8 @@ export function RunList({ onSelect }: Props) {
   const compareRunId  = useRunStore((s) => s.compareRunId);
   const setRuns       = useRunStore((s) => s.setRuns);
   const setCompareRun = useRunStore((s) => s.setCompareRun);
+  const view          = useRunStore((s) => s.view);
+  const setView       = useRunStore((s) => s.setView);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -67,11 +69,24 @@ export function RunList({ onSelect }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 shrink-0">
         <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Runs</span>
-        {runs.length > 0 && (
-          <span className="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-            {runs.length}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {runs.length > 0 && (
+            <span className="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+              {runs.length}
+            </span>
+          )}
+          <button
+            onClick={() => setView(view === "dashboard" ? "runs" : "dashboard")}
+            title="Analytics dashboard"
+            className={`p-1 rounded transition-colors ${
+              view === "dashboard"
+                ? "text-indigo-400 bg-indigo-500/10"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <BarChart3 size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Search — only shown once there are enough runs to need it */}
