@@ -1,5 +1,9 @@
 # VaP — Visualization Agentic Process
 
+[![CI](https://github.com/kochrisdev/vap/actions/workflows/ci.yml/badge.svg)](https://github.com/kochrisdev/vap/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A lightweight Python + React framework for **tracing and visualizing AI agent pipelines** in real time.
 
 Instrument your agent with a single context manager. Every step, tool call, and LLM invocation appears instantly as a live interactive graph in the browser — with inputs, outputs, durations, and error states.
@@ -658,6 +662,41 @@ with tracer.trace("isolated run") as run:
 
 ---
 
+## Development
+
+```bash
+# Install with all integration + dev dependencies
+pip install -e ".[dev]"
+
+# Run the Python test suite (164 tests; integration tests skip if the
+# corresponding framework isn't installed)
+pytest -q
+
+# Build and type-check the React UI
+cd ui && npm ci && npm run build
+
+# Build the distributable package and validate its metadata
+python -m build
+python -m twine check dist/*
+```
+
+**Continuous integration** — [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the test
+suite on Python 3.11 / 3.12 / 3.13, builds and type-checks the UI, and builds + `twine check`s the
+package on every push and pull request to `main`.
+
+**Releasing** — bump `version` in [`pyproject.toml`](pyproject.toml), then push a matching tag:
+
+```bash
+git tag v0.8.0 && git push origin v0.8.0
+```
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds the distribution, verifies
+the tag matches the package version, and publishes to PyPI via
+[Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC — no API token needed; requires
+a one-time PyPI publisher configured for the `release.yml` workflow and the `pypi` environment).
+
+---
+
 ## License
 
-MIT
+[MIT](LICENSE) © kochrisdev

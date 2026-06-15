@@ -6,13 +6,46 @@ build-backend = "hatchling.build"
 name = "vap"
 version = "0.8.0"
 description = "Visualization Agentic Process — trace and visualize AI agent workflows"
+readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "kochrisdev", email = "christophertun.dev@gmail.com" }]
+keywords = [
+    "agent",
+    "tracing",
+    "observability",
+    "llm",
+    "visualization",
+    "crewai",
+    "langchain",
+    "pydantic-ai",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.7.0",
     "sse-starlette>=2.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/kochrisdev/vap"
+Repository = "https://github.com/kochrisdev/vap"
+Documentation = "https://github.com/kochrisdev/vap/tree/main/docs"
+Issues = "https://github.com/kochrisdev/vap/issues"
+Changelog = "https://github.com/kochrisdev/vap/blob/main/docs/DEVELOPER_REFERENCE.md#changelog"
 
 [project.optional-dependencies]
 anthropic   = ["anthropic>=0.28.0"]
