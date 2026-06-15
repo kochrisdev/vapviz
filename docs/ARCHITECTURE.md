@@ -773,6 +773,58 @@ so a failure never breaks the user's agent run.
 
 ---
 
+## LlamaIndex Integration (`integrations/llamaindex.py`)
+
+LlamaIndex ships its own instrumentation system — a dispatcher with **span handlers** (function
+enter/exit/error) and **event handlers** (granular typed events). `VapLlamaIndex` is a span
+handler, because LlamaIndex's span tree is already shaped exactly like a VaP graph: every
+instrumented method call is a span with an `id_` and a `parent_span_id`.
+
+### Span handler, not monkey-patching
+
+`VapLlamaIndex` subclasses `BaseSpanHandler` and registers on the **root** dispatcher
+(`get_dispatcher().add_span_handler(self)`), so it sees spans from every sub-dispatcher.
+The base class is a pydantic model; private state (`_provided_run`, `_spans`, `_lock`) is set
+explicitly in `__init__` rather than via `PrivateAttr` factories, which aren't reliably applied
+when the base's `__init__` is overridden.
+
+Three callbacks drive everything:
+
+```
+new_span(id_, bound_args, instance, parent_span_id)   → open a node
+prepare_to_exit_span(id_, ..., result)                → close it (success)
+prepare_to_drop_span(id_, ..., err)                   → close it (error)
+```
+
+Each is wrapped so a tracing failure can never break the traced call. `_spans` maps a
+LlamaIndex `id_` to the VaP `(store, run_id, node_id, parent_id, kind)` it created, so a child
+span resolves its parent by looking up `parent_span_id`. Timings come from `time.time()` at open
+and close — these are **live, real durations** (unlike the post-hoc Pydantic AI reconstruction).
+
+### Parent resolution and the two modes
+
+For each span, the parent is resolved in order:
+
+1. `parent_span_id` is a span we've already seen → same run, parent = that node.
+2. No tracked parent, **manual mode** (a run was provided) → parent = the run's root node.
+3. No tracked parent, **auto mode** → this span *becomes* a new run's `agent` root.
+
+Manual mode is the recommended pattern: one `vap.trace()` block captures an entire RAG workflow
+as a single run. Auto mode makes each top-level instrumented call its own run (LlamaIndex emits
+several root spans — indexing, then querying — so a workflow yields several runs).
+
+### Kind classification and labels
+
+The span `id_` is `"<qualname>-<uuid>"`; stripping the trailing UUID (a fixed 5 hyphen-groups)
+yields the node label, e.g. `RetrieverQueryEngine.query`. Kind is inferred from the bound
+`instance`'s class plus the method name: classes ending in `LLM` (or LLM methods like
+`chat`/`complete`/`predict`) → `llm`; classes ending in `Retriever` or a `retrieve` call, and
+classes containing `Embedding` → `tool`; everything else → `step`. Using `endswith` rather than a
+substring keeps the orchestrators honest — `RetrieverQueryEngine` is a `step`, while
+`VectorIndexRetriever` is a `tool`.
+
+---
+
 ## OpenTelemetry Export (`integrations/otel.py`)
 
 This is an **export sink**, not a framework integration: it reads completed VaP runs and

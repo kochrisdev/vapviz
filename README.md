@@ -22,6 +22,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **LangGraph / LangChain integration** — `VapCallbackHandler` captures all chain, tool, and LLM calls from any LangChain-compatible framework
 - **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native event bus to trace Crews, Tasks, Agents, Tools, and LLM calls automatically
 - **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync` to trace each model request (tokens + cost) and tool call as nested nodes
+- **LlamaIndex integration** — `VapLlamaIndex` hooks the instrumentation dispatcher to trace query engines, retrievers, embeddings, and LLM calls
 - **Analytics dashboard** — cross-run metrics (cost, tokens, success rate, per-model breakdown) at `GET /metrics` and in the UI
 - **OpenTelemetry export** — `enable_otel_export(...)` mirrors every run into OTLP spans for Jaeger / Grafana Tempo / Datadog
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
@@ -59,7 +60,7 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for full production deployment 
 git clone https://github.com/kochrisdev/vap.git
 cd vap
 pip install -e .                  # core only
-pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI, Pydantic AI
+pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI, Pydantic AI, LlamaIndex, OTel
 ```
 
 ### 2. React UI
@@ -348,6 +349,34 @@ original `Agent` methods.
 
 ---
 
+### LlamaIndex
+
+`VapLlamaIndex` registers a span handler on LlamaIndex's instrumentation dispatcher, so a whole RAG
+workflow — query engine, retriever, embeddings, response synthesizer, LLM calls — is reproduced as a
+nested VaP graph with real timings. Wrap your work in a `vap.trace()` (manual mode):
+
+```python
+import vap
+from llama_index.core import VectorStoreIndex
+from vap.integrations.llamaindex import VapLlamaIndex
+
+with vap.trace("RAG query") as run:
+    VapLlamaIndex(run)
+    index = VectorStoreIndex.from_documents(docs)
+    response = index.as_query_engine().query("…")
+```
+
+Or instantiate `VapLlamaIndex()` with no run (auto mode) to make each top-level call its own VaP run.
+
+```bash
+pip install "vap[llamaindex]"
+```
+
+Spans are classified by kind — retrievers and embeddings as `tool`, LLM calls as `llm`, the rest as
+`step` — and nested exactly as LlamaIndex calls them. Call `.detach()` to remove the handler.
+
+---
+
 ## OpenTelemetry Export
 
 VaP can mirror every run into OpenTelemetry — one **trace per run**, with each node (agent / step /
@@ -433,6 +462,7 @@ vap/                          Python package
     ├── langchain.py          VapCallbackHandler — LangGraph / LangChain integration
     ├── crewai_listener.py    VapCrewAIListener — CrewAI event bus integration
     ├── pydantic_ai.py        VapPydanticAI — Pydantic AI Agent.run wrapper
+    ├── llamaindex.py         VapLlamaIndex — LlamaIndex span handler
     └── otel.py               OpenTelemetry export — runs → OTLP spans
 
 ui/src/                       Vite + React + TypeScript
@@ -463,6 +493,7 @@ examples/
 ├── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
 ├── crewai_demo.py            CrewAI multi-agent crew with VapCrewAIListener
 ├── pydantic_ai_demo.py       Pydantic AI agent with VapPydanticAI — no API key needed
+├── llamaindex_demo.py        LlamaIndex RAG query with VapLlamaIndex — no API key needed
 └── otel_demo.py              OpenTelemetry export to the console — no API key needed
 
 docs/
@@ -482,6 +513,7 @@ tests/
 ├── test_metrics.py           compute_metrics() aggregation + /metrics endpoint
 ├── test_crewai_listener.py   CrewAI listener (skipped if crewai absent)
 ├── test_pydantic_ai.py       Pydantic AI integration (skipped if pydantic-ai absent)
+├── test_llamaindex.py        LlamaIndex integration (skipped if llama-index-core absent)
 └── test_otel.py              OpenTelemetry export (skipped if opentelemetry-sdk absent)
 
 run_dev.py                    One-command dev entry point (server + demo agent)
@@ -598,6 +630,15 @@ python examples/pydantic_ai_demo.py        # no API key needed — uses TestMode
 
 Runs two traces — a weather agent (auto mode) and a trip planner embedded in a pipeline (manual mode). Each model request and tool call appears as a nested node, with tools parented under the model request that called them.
 
+### LlamaIndex demo
+
+```bash
+pip install "vap[llamaindex]"
+python examples/llamaindex_demo.py        # no API key needed — uses MockLLM + MockEmbedding
+```
+
+Builds a small index and runs a RAG query, traced under one VaP run. The graph shows the full pipeline — query engine → retriever → embeddings → response synthesizer → LLM — with retrievers/embeddings as `tool` nodes and LLM calls as `llm` nodes.
+
 ### OpenTelemetry export demo
 
 ```bash
@@ -680,6 +721,12 @@ with tracer.trace("isolated run") as run:
 - [x] **Flexible wiring** — bring your own `TracerProvider`, pass an OTLP `endpoint`, or use a globally-configured OpenTelemetry stack; `export_run()` for one-shot export
 - [x] **11-test suite** — `tests/test_otel.py` (in-memory exporter, no network); `pip install "vap[otel]"`
 
+### v0.10.0 — Phase 9 (complete)
+- [x] **LlamaIndex integration** — `VapLlamaIndex` registers a span handler on the instrumentation dispatcher; query engines, retrievers, embeddings, response synthesizers, and LLM calls become nested VaP nodes with real timings
+- [x] **Kind classification** — retrievers/embeddings → `tool`, LLM calls → `llm`, the rest → `step`; span tree maps onto the node hierarchy via `parent_span_id`
+- [x] **Auto + manual mode** — manual nests a whole RAG workflow under one `vap.trace()`; auto makes each top-level call its own run
+- [x] **8-test suite** — `tests/test_llamaindex.py` (MockLLM/MockEmbedding, no API key); `pip install "vap[llamaindex]"`
+
 ---
 
 ## Dependencies
@@ -696,6 +743,7 @@ with tracer.trace("isolated run") as run:
 | `langchain-core` *(optional)* | LangGraph/LangChain integration (`pip install "vap[langchain]"`) |
 | `crewai` *(optional)* | CrewAI integration (`pip install "vap[crewai]"`) |
 | `pydantic-ai-slim` *(optional)* | Pydantic AI integration (`pip install "vap[pydantic-ai]"`) |
+| `llama-index-core` *(optional)* | LlamaIndex integration (`pip install "vap[llamaindex]"`) |
 | `opentelemetry-sdk` + `opentelemetry-exporter-otlp` *(optional)* | OpenTelemetry export (`pip install "vap[otel]"`) |
 
 `sqlite3` is part of the Python standard library — no extra install needed for persistence.

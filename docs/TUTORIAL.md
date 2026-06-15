@@ -21,13 +21,14 @@ the last, so work through them in order. No prior VaP knowledge required.
 12. [LangGraph / LangChain Integration](#12-langgraph--langchain-integration)
 13. [CrewAI Integration](#13-crewai-integration)
 14. [Pydantic AI Integration](#14-pydantic-ai-integration)
-15. [Remote Ingest (any language)](#15-remote-ingest-any-language)
-16. [Comparing Runs](#16-comparing-runs)
-17. [Exporting Runs](#17-exporting-runs)
-18. [Persistence with SQLite](#18-persistence-with-sqlite)
-19. [Analytics Dashboard](#19-analytics-dashboard)
-20. [OpenTelemetry Export](#20-opentelemetry-export)
-21. [What's Next?](#21-whats-next)
+15. [LlamaIndex Integration](#15-llamaindex-integration)
+16. [Remote Ingest (any language)](#16-remote-ingest-any-language)
+17. [Comparing Runs](#17-comparing-runs)
+18. [Exporting Runs](#18-exporting-runs)
+19. [Persistence with SQLite](#19-persistence-with-sqlite)
+20. [Analytics Dashboard](#20-analytics-dashboard)
+21. [OpenTelemetry Export](#21-opentelemetry-export)
+22. [What's Next?](#22-whats-next)
 
 ---
 
@@ -770,7 +771,57 @@ the totals are aggregated onto the agent node. Tool calls are matched to their r
 
 ---
 
-## 15. Remote Ingest (any language)
+## 15. LlamaIndex Integration
+
+`VapLlamaIndex` traces [LlamaIndex](https://docs.llamaindex.ai/) by registering a span handler on
+its instrumentation dispatcher. A whole RAG query — query engine, retriever, embeddings, response
+synthesizer, and LLM calls — shows up as a nested VaP graph with real timings, no changes to your
+LlamaIndex code.
+
+```bash
+pip install "vap[llamaindex]"
+```
+
+The recommended pattern is **manual mode**: wrap your indexing/query work in a `vap.trace()` so the
+whole workflow is one run.
+
+```python
+import vap
+from llama_index.core import VectorStoreIndex, Document
+from vap.integrations.llamaindex import VapLlamaIndex
+
+with vap.trace("RAG query") as run:
+    VapLlamaIndex(run)
+    index = VectorStoreIndex.from_documents([Document(text="VaP traces AI agents.")])
+    response = index.as_query_engine().query("What does VaP do?")
+```
+
+The resulting graph reflects LlamaIndex's real call tree, for example:
+
+```
+RAG query                          (the trace's run root)
+└── RetrieverQueryEngine.query     (step)
+    ├── VectorIndexRetriever.retrieve         (tool)
+    │   └── MockEmbedding.get_query_embedding (tool)
+    └── CompactAndRefine.synthesize           (step)
+        └── …                                 (step)
+            └── MockLLM.predict               (llm)
+```
+
+Spans are classified by kind — **retrievers and embeddings** become `tool` nodes, **LLM calls**
+become `llm` nodes, and orchestration (query engines, synthesizers, splitters) stays `step`. Node
+timings are captured live, so durations are real.
+
+Prefer one run per top-level call instead? Use **auto mode** — `VapLlamaIndex()` with no run — and
+each top-level instrumented call (e.g. each `.query(...)`) becomes its own VaP run. Call `.detach()`
+to remove the handler when you're done.
+
+> **Try it with no API key:** `python examples/llamaindex_demo.py` uses LlamaIndex's `MockLLM` and
+> `MockEmbedding`, so it runs fully offline.
+
+---
+
+## 16. Remote Ingest (any language)
 
 You don't need to import `vap` in the process that runs your agent. Any process — including
 non-Python code — can push events by POSTing JSON to `POST /runs/{run_id}/events`.
@@ -856,7 +907,7 @@ though the agent process has no knowledge of VaP internals.
 
 ---
 
-## 16. Comparing Runs
+## 17. Comparing Runs
 
 Once you have two or more runs you can diff them side by side to understand what changed — useful
 for comparing model variants, prompt changes, or pipeline refactors.
@@ -887,7 +938,7 @@ run in the sidebar normally.
 
 ---
 
-## 17. Exporting Runs
+## 18. Exporting Runs
 
 Every run can be exported in two formats from the **Export ▾** button in the top-right toolbar
 (only visible when a run is selected).
@@ -916,7 +967,7 @@ screenshot includes the layout exactly as you see it — useful for reports or d
 
 ---
 
-## 18. Persistence with SQLite
+## 19. Persistence with SQLite
 
 By default VaP uses an in-memory store — fast, zero setup, but all runs are lost when the
 process exits. Switch to SQLite with one line:
@@ -960,7 +1011,7 @@ sqlite3 vap.db ".backup vap_backup_$(date +%Y%m%d).db"
 
 ---
 
-## 19. Analytics Dashboard
+## 20. Analytics Dashboard
 
 Once you have several runs stored, the **Analytics** dashboard gives you a bird's-eye view across
 all of them — no extra instrumentation required, it reads the same data your traces already
@@ -1000,7 +1051,7 @@ See the [`GET /metrics`](DEVELOPER_REFERENCE.md#get-metrics) reference for the f
 
 ---
 
-## 20. OpenTelemetry Export
+## 21. OpenTelemetry Export
 
 VaP can mirror every run into [OpenTelemetry](https://opentelemetry.io/) — useful when you already
 run Jaeger, Grafana Tempo, or Datadog and want your agent traces alongside the rest of your service
@@ -1048,7 +1099,7 @@ This is **export**, not replacement — runs still stream into the VaP UI as usu
 
 ---
 
-## 21. What's Next?
+## 22. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -1061,6 +1112,7 @@ python examples/error_handling_demo.py
 python examples/cost_tracking_demo.py
 python examples/remote_ingest_demo.py
 python examples/pydantic_ai_demo.py   # uses TestModel — requires pip install "vap[pydantic-ai]"
+python examples/llamaindex_demo.py    # uses MockLLM — requires pip install "vap[llamaindex]"
 python examples/otel_demo.py          # console OTel export — requires pip install "vap[otel]"
 
 # Requires an API key:

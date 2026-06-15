@@ -875,6 +875,59 @@ Requires: `pip install "vap[pydantic-ai]"`
 
 ---
 
+### `VapLlamaIndex`
+
+LlamaIndex integration. Import from `vap.integrations.llamaindex`. Registers a span handler on
+LlamaIndex's instrumentation dispatcher; every instrumented span becomes a VaP node.
+
+```python
+from vap.integrations.llamaindex import VapLlamaIndex
+
+VapLlamaIndex(run: RunContext | None = None, *, register: bool = True)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `run` | `RunContext \| None` | `None` | Existing run context (manual mode) — all spans attach under it. When `None` (auto mode), each top-level span starts its own VaP run. |
+| `register` | `bool` | `True` | Register on the root dispatcher immediately. Set `False` to defer. |
+
+Raises `ImportError` at instantiation time if `llama-index-core` is not installed.
+
+**Manual mode** — wrap a whole RAG workflow in one run (recommended):
+
+```python
+import vap
+from llama_index.core import VectorStoreIndex
+from vap.integrations.llamaindex import VapLlamaIndex
+
+with vap.trace("RAG query") as run:
+    VapLlamaIndex(run)
+    index = VectorStoreIndex.from_documents(docs)
+    index.as_query_engine().query("…")
+```
+
+**Span → VaP node mapping:**
+
+| LlamaIndex | VaP node kind |
+|---|---|
+| span whose instance class ends with `LLM` (or an LLM method: `chat`/`complete`/`predict`/…) | `llm` |
+| span whose instance class ends with `Retriever`, or a `retrieve` call | `tool` |
+| span whose instance class contains `Embedding` | `tool` |
+| everything else (query engines, synthesizers, splitters, …) | `step` |
+
+The span `id_` (`"<qualname>-<uuid>"`) becomes the node label (`qualname`); `parent_span_id`
+becomes the parent node. Node start/end times are captured live, and a dropped span (an error)
+marks the node `error`.
+
+**`register()` / `detach()`** add and remove the handler from the dispatcher's `span_handlers`.
+
+> **Scope:** v1 captures the span structure and timings; per-call token/cost enrichment (via the
+> event handler) is a planned follow-up.
+
+Requires: `pip install "vap[llamaindex]"`
+
+---
+
 ### OpenTelemetry export
 
 Mirror VaP runs into OpenTelemetry. Import from `vap.integrations.otel`. One **trace per run**; each
@@ -1465,6 +1518,15 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.10.0
+
+- **LlamaIndex integration** — `vap/integrations/llamaindex.py`: `VapLlamaIndex` registers a span handler on LlamaIndex's instrumentation dispatcher and reproduces every span (query engines, retrievers, embeddings, synthesizers, LLM calls) as a VaP node, with `parent_span_id` → node hierarchy and live timings
+- **Kind classification** — retrievers/embeddings → `tool`, LLM spans → `llm`, the rest → `step`; dropped spans mark the node `error`
+- **Two usage modes** — manual (all spans under a provided run) and auto (each top-level span = its own run); `register()` / `detach()` manage the dispatcher hook
+- **`pip install "vap[llamaindex]"`** — new optional extra (`llama-index-core`) + `examples/llamaindex_demo.py` (MockLLM/MockEmbedding, no API key)
+- **Test suite** — `tests/test_llamaindex.py` with 8 tests; **183 passing** total
+- **Package version** bumped to `0.10.0`
 
 ### v0.9.0
 
