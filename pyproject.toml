@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vap"
-version = "0.12.0"
+version = "0.13.0"
 description = "Visualization Agentic Process — trace and visualize AI agent workflows"
 readme = "README.md"
 requires-python = ">=3.11"

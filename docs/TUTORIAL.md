@@ -30,7 +30,8 @@ the last, so work through them in order. No prior VaP knowledge required.
 21. [Analytics Dashboard](#21-analytics-dashboard)
 22. [OpenTelemetry Export](#22-opentelemetry-export)
 23. [Cost & Latency Budgets](#23-cost--latency-budgets)
-24. [What's Next?](#24-whats-next)
+24. [Agent Evals & Scoring](#24-agent-evals--scoring)
+25. [What's Next?](#25-whats-next)
 
 ---
 
@@ -1202,7 +1203,70 @@ curl "http://localhost:8001/runs/{run_id}/budget?max_cost_usd=0.02&max_duration_
 
 ---
 
-## 24. What's Next?
+## 24. Agent Evals & Scoring
+
+Budgets catch runs that are *too expensive or slow*. **Evals** go further: they assert a run did the
+*right thing* — turning VaP into a regression-testing tool for your agents. Trace a run, then check it
+against a list of assertions and get a pass/fail with a score.
+
+```python
+import vap
+from vap.evals import eval_run, max_cost, max_latency, no_errors, output_contains
+
+with vap.trace("support agent") as run:
+    answer_support_ticket("How do I reset my password?")    # your agent
+
+result = eval_run(run, [
+    max_cost(0.02),
+    max_latency(3.0),
+    no_errors(),
+    output_contains("reset password"),
+])
+
+print(result.summary())
+assert result.passed          # <- drop this straight into pytest / CI
+```
+
+`result.summary()` prints a per-check report:
+
+```
+PASSED (100%)
+  PASS  max_cost<=$0.02 — cost $0.0013 (limit $0.02)
+  PASS  max_latency<=3.0s — 51 ms (limit 3000 ms)
+  PASS  no_errors — no error nodes
+  PASS  output_contains('reset password') — found in node 'answer'
+```
+
+**Built-in checks:** `max_cost`, `max_latency`, `max_tokens`, `no_errors`, `output_contains`. Each
+check produces a 0–1 score; `result.score` is their mean and `result.passed` is true only if every
+check passed.
+
+**Your own checks** — `custom` for a quick predicate, `judge` for an LLM-as-judge (you supply the
+scoring function, so VaP stays provider-agnostic):
+
+```python
+from vap.evals import custom, judge
+
+eval_run(run, [
+    custom("two_tool_calls", lambda g: sum(n.kind.value == "tool" for n in g.nodes) == 2),
+    judge("helpfulness", my_llm_scorer),   # returns (passed, detail, score)
+])
+```
+
+**Over HTTP / from another language** — declarative check specs via `POST /runs/{id}/eval`:
+
+```bash
+curl -X POST http://localhost:8001/runs/{run_id}/eval \
+  -H "Content-Type: application/json" \
+  -d '[{"type":"max_cost","value":0.02},{"type":"output_contains","value":"reset"}]'
+```
+
+> **Try it with no API key:** `python examples/evals_demo.py` traces a fake support agent and asserts
+> five checks against it — the exact shape you'd use in a test.
+
+---
+
+## 25. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -1219,6 +1283,7 @@ python examples/llamaindex_demo.py    # uses MockLLM — requires pip install "v
 python examples/autogen_demo.py       # offline agents — requires pip install "vap[autogen]"
 python examples/otel_demo.py          # console OTel export — requires pip install "vap[otel]"
 python examples/budgets_demo.py       # cost/latency budget alerting
+python examples/evals_demo.py         # agent evals / assertions
 
 # Requires an API key:
 python examples/openai_demo.py

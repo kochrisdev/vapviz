@@ -365,6 +365,49 @@ handle = enable_budget_alerts(
 
 ---
 
+#### `vap.eval_run` and checks
+
+Run pass/fail assertions against a run — regression testing for agents. Import from `vap` or
+`vap.evals`.
+
+**`eval_run(run_or_graph, checks: list[Check]) -> EvalResult`** — accepts a `RunGraph` or a
+`RunContext` (from `vap.trace()`). Returns an `EvalResult`:
+
+| Field | Description |
+|---|---|
+| `run_id` | the run |
+| `passed` | `True` only if **every** check passed |
+| `score` | mean of the checks' 0–1 scores |
+| `checks` | list of `{name, passed, score, detail}` |
+
+`EvalResult.summary()` returns a printable multi-line report.
+
+**Built-in checks** (each returns a `Check`):
+
+| Check | Passes when |
+|---|---|
+| `max_cost(usd)` | run cost ≤ `usd` |
+| `max_latency(seconds)` | run duration ≤ `seconds` |
+| `max_tokens(n)` | total tokens ≤ `n` |
+| `no_errors()` | no node has `error` status |
+| `output_contains(text, node_label=None, case_sensitive=False)` | `text` appears in a node's output |
+| `custom(name, fn)` | `fn(graph)` is truthy (may return `bool`, `(bool, detail)`, or `(bool, detail, score)`) |
+| `judge(name, fn)` | `fn(graph)` returns `(passed, detail, score)` — an LLM-as-judge or any scorer you supply |
+
+```python
+import vap
+from vap.evals import eval_run, max_cost, no_errors, output_contains
+
+result = eval_run(run, [max_cost(0.02), no_errors(), output_contains("ticket")])
+assert result.passed, result.summary()
+```
+
+**`run_checks(run_or_graph, specs: list[dict]) -> EvalResult`** — build checks from JSON-friendly
+specs (`{"type": "max_cost", "value": 0.02}`, `{"type": "output_contains", "value": "ticket"}`,
+`{"type": "no_errors"}`, …). Powers `POST /runs/{id}/eval`. Unknown types raise `ValueError`.
+
+---
+
 #### `vap.create_app(store=None)`
 
 Create a new FastAPI application instance.
@@ -1199,6 +1242,39 @@ Check a run against a budget supplied as query parameters. All are optional; omi
 
 ---
 
+### `POST /runs/{run_id}/eval`
+
+Evaluate a run against a list of declarative check specs (see `run_checks`).
+
+**Request body** — a JSON array of check specs:
+
+```json
+[
+  { "type": "max_cost", "value": 0.02 },
+  { "type": "max_latency", "value": 3.0 },
+  { "type": "no_errors" },
+  { "type": "output_contains", "value": "ticket", "node_label": null, "case_sensitive": false }
+]
+```
+
+**Response** `200 OK` — an `EvalResult`:
+
+```json
+{
+  "run_id": "a3f9c2e81b47",
+  "passed": false,
+  "score": 0.75,
+  "checks": [
+    { "name": "max_cost<=$0.02", "passed": true, "score": 1.0, "detail": "cost $0.01 (limit $0.02)" },
+    { "name": "output_contains('ticket')", "passed": false, "score": 0.0, "detail": "'ticket' not found in any node output" }
+  ]
+}
+```
+
+**Errors** `404` (unknown run), `400` (unknown check `type`).
+
+---
+
 ### `GET /runs/{run_id}`
 
 Retrieve a single run summary.
@@ -1621,6 +1697,15 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.13.0
+
+- **Agent evals & scoring** — `vap/evals.py`: `eval_run(run_or_graph, checks) -> EvalResult` (per-check `passed`/`score`/`detail` + overall `passed`/`score`); built-in `max_cost`, `max_latency`, `max_tokens`, `no_errors`, `output_contains`, plus `custom` and `judge` hooks
+- **Declarative checks** — `run_checks(graph, specs)` builds checks from JSON specs; powers `POST /runs/{id}/eval`
+- **Workflow** — accepts a `RunContext` or `RunGraph`; `assert eval_run(...).passed` for pytest/CI; a throwing check counts as a failure
+- **Exports** — `vap.eval_run`, `vap.run_checks`, `vap.EvalResult`, `vap.Check`, and the check builders; `examples/evals_demo.py`
+- **Test suite** — `tests/test_evals.py` with 20 tests; **238 passing** total
+- **Package version** bumped to `0.13.0`
 
 ### v0.12.0
 

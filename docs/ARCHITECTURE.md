@@ -405,6 +405,24 @@ the UI or ad-hoc use.
 
 ---
 
+### Evals Module (`vap/evals.py`)
+
+Where budgets are *passive guardrails*, evals are *active assertions* — VaP as a regression-testing
+tool for agents. A `Check` is just a named function `RunGraph -> (passed, detail[, score])`, wrapped
+so a throwing check is recorded as a failure rather than crashing the run. `eval_run` applies a list
+of checks and aggregates: `passed` is the AND of all checks, `score` is the mean of their 0–1 scores.
+
+Built-in checks reuse the same per-run measures as budgets (`_run_cost`, `_run_duration_ms`,
+`_run_tokens`), so "cost ≤ $0.02" means the same thing in a budget alert and an eval. `output_contains`
+scans node outputs (optionally a named node). `custom` and `judge` accept user predicates — VaP never
+calls an LLM itself for judging, keeping evals provider-agnostic and unit-testable offline.
+
+Two surfaces wrap the same core: the Python `eval_run(run, [...])` (drop into pytest/CI, accepts a
+`RunContext` or `RunGraph`) and a declarative `run_checks(graph, specs)` that builds checks from JSON
+specs — the latter backs `POST /runs/{id}/eval` so any language or the UI can score a run.
+
+---
+
 ### Configuration (`vap/__init__.py`)
 
 `vap.configure(db=...)` is the public API for switching the module-level store:

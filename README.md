@@ -27,6 +27,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Analytics dashboard** — cross-run metrics (cost, tokens, success rate, per-model breakdown) at `GET /metrics` and in the UI
 - **OpenTelemetry export** — `enable_otel_export(...)` mirrors every run into OTLP spans for Jaeger / Grafana Tempo / Datadog
 - **Cost & latency budgets** — `enable_budget_alerts(Budget(...))` flags and alerts on runs that exceed cost / duration / token limits
+- **Agent evals & scoring** — `eval_run(run, [checks...])` asserts cost/latency/output/custom/LLM-judge checks — regression testing for agents
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -473,6 +474,46 @@ Try it with no API key: `python examples/budgets_demo.py`.
 
 ---
 
+## Agent Evals & Scoring
+
+Treat a run like a test case: assert it meets cost, latency, and correctness checks. `eval_run`
+returns an `EvalResult` with a per-check breakdown and an overall score — drop it straight into pytest
+or CI to catch agent regressions.
+
+```python
+import vap
+from vap.evals import eval_run, max_cost, max_latency, no_errors, output_contains, judge
+
+with vap.trace("support agent") as run:
+    ...   # run your agent
+
+result = eval_run(run, [
+    max_cost(0.02),
+    max_latency(3.0),
+    no_errors(),
+    output_contains("ticket"),
+    judge("helpful", my_llm_scorer),     # you supply the scoring fn — stays provider-agnostic
+])
+
+assert result.passed, result.summary()
+```
+
+Built-in checks: `max_cost`, `max_latency`, `max_tokens`, `no_errors`, `output_contains`, plus
+`custom(name, fn)` and `judge(name, fn)` for your own predicates / LLM-as-judge. Each check yields a
+0–1 score; `result.score` is their mean.
+
+Run the same checks over HTTP with declarative specs (`POST /runs/{id}/eval`):
+
+```bash
+curl -X POST http://localhost:8001/runs/{run_id}/eval \
+  -H "Content-Type: application/json" \
+  -d '[{"type":"max_cost","value":0.02},{"type":"output_contains","value":"ticket"}]'
+```
+
+Try it with no API key: `python examples/evals_demo.py`.
+
+---
+
 ## REST API
 
 The FastAPI server (`http://localhost:8001`) exposes:
@@ -484,6 +525,7 @@ The FastAPI server (`http://localhost:8001`) exposes:
 | `GET` | `/runs/{id}` | Single run summary |
 | `GET` | `/runs/{id}/graph` | Full graph snapshot (nodes + edges) |
 | `GET` | `/runs/{id}/budget` | Check a run against a budget (`?max_cost_usd=&max_duration_ms=&max_total_tokens=`) |
+| `POST` | `/runs/{id}/eval` | Evaluate a run against declarative check specs → `EvalResult` |
 | `GET` | `/runs/{id}/export` | Download run graph as a JSON file attachment |
 | `GET` | `/runs/{id}/events` | **SSE stream** — replays history then pushes live |
 | `GET` | `/runs/compare?a={id}&b={id}` | Return two run graphs for comparison |
@@ -521,6 +563,7 @@ vap/                          Python package
 ├── cost.py                   Token cost — 20+ model pricing table, calculate_cost()
 ├── metrics.py                Cross-run analytics — compute_metrics() aggregation
 ├── budgets.py                Cost/latency budgets — check_budget(), enable_budget_alerts()
+├── evals.py                  Agent evals — eval_run(), checks, scoring
 ├── backends/
 │   ├── __init__.py
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
@@ -565,7 +608,8 @@ examples/
 ├── llamaindex_demo.py        LlamaIndex RAG query with VapLlamaIndex — no API key needed
 ├── autogen_demo.py           AutoGen multi-agent chat with VapAutoGen — no API key needed
 ├── otel_demo.py              OpenTelemetry export to the console — no API key needed
-└── budgets_demo.py           Cost/latency budget alerting — no API key needed
+├── budgets_demo.py           Cost/latency budget alerting — no API key needed
+└── evals_demo.py             Agent evals / assertions — no API key needed
 
 docs/
 ├── TUTORIAL.md               Step-by-step learning guide (start here)
@@ -587,7 +631,8 @@ tests/
 ├── test_llamaindex.py        LlamaIndex integration (skipped if llama-index-core absent)
 ├── test_autogen.py           AutoGen integration (skipped if autogen absent)
 ├── test_otel.py              OpenTelemetry export (skipped if opentelemetry-sdk absent)
-└── test_budgets.py           Budget checks, alerting, and the /budget endpoint
+├── test_budgets.py           Budget checks, alerting, and the /budget endpoint
+└── test_evals.py             Eval checks, scoring, declarative specs, /eval endpoint
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
@@ -819,6 +864,12 @@ with tracer.trace("isolated run") as run:
 - [x] **Alerting** — `enable_budget_alerts(budget, on_alert=…)` checks every completed run and fires a callback (default: logs a warning) on violations
 - [x] **`GET /runs/{id}/budget`** — check any run against a budget via query params
 - [x] **13-test suite** — `tests/test_budgets.py`; `vap.Budget` / `vap.check_budget` / `vap.enable_budget_alerts` exported
+
+### v0.13.0 — Phase 12 (complete)
+- [x] **Agent evals & scoring** — `eval_run(run, [checks…])` → `EvalResult` with per-check pass/fail and an overall score; built-in `max_cost` / `max_latency` / `max_tokens` / `no_errors` / `output_contains`, plus `custom` and `judge` (LLM-as-judge) hooks
+- [x] **Declarative checks** — JSON specs via `run_checks()` and `POST /runs/{id}/eval` for cross-language / UI use
+- [x] **Regression-testing workflow** — drop `assert eval_run(...).passed` into pytest/CI
+- [x] **20-test suite** — `tests/test_evals.py`; eval API exported from `vap`
 
 ---
 

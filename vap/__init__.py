@@ -7,6 +7,20 @@ from .backends.sqlite import SqliteStore
 from .cost import calculate_cost, format_cost
 from .metrics import compute_metrics, Metrics
 from .budgets import Budget, BudgetReport, check_budget, enable_budget_alerts
+from .evals import (
+    Check,
+    CheckResult,
+    EvalResult,
+    eval_run,
+    run_checks,
+    max_cost,
+    max_latency,
+    max_tokens,
+    no_errors,
+    output_contains,
+    custom,
+    judge,
+)
 
 
 def configure(db: str | None = None) -> None:
@@ -64,6 +78,19 @@ __all__ = [
     "BudgetReport",
     "check_budget",
     "enable_budget_alerts",
+    # Evals
+    "Check",
+    "CheckResult",
+    "EvalResult",
+    "eval_run",
+    "run_checks",
+    "max_cost",
+    "max_latency",
+    "max_tokens",
+    "no_errors",
+    "output_contains",
+    "custom",
+    "judge",
     # Configuration
     "configure",
 ]
