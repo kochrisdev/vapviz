@@ -928,6 +928,44 @@ Requires: `pip install "vap[llamaindex]"`
 
 ---
 
+### `VapAutoGen`
+
+AutoGen (AG2) integration. Import from `vap.integrations.autogen`. Wraps `ConversableAgent` so a
+multi-agent conversation becomes a VaP graph.
+
+```python
+from vap.integrations.autogen import VapAutoGen
+
+VapAutoGen(run: RunContext | None = None, *, patch: bool = True)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `run` | `RunContext \| None` | `None` | Existing run context (manual mode) — conversations attach under it. When `None` (auto mode), each `initiate_chat` starts its own VaP run. |
+| `patch` | `bool` | `True` | Patch `ConversableAgent` immediately. |
+
+Raises `ImportError` at instantiation time if `autogen` (ag2) is not installed.
+
+It monkey-patches three `ConversableAgent` methods and keeps a thread-local stack of open nodes so
+nesting (tools under the turn that called them, nested chats) is correct:
+
+| Patched method | VaP node kind | Meaning |
+|---|---|---|
+| `initiate_chat` | `step` `chat/<recipient>` (or `agent` run root in auto mode) | the conversation |
+| `generate_reply` | `step` `agent/<name>` | one agent turn |
+| `execute_function` | `tool` | a tool/function call |
+
+Agent turns are siblings under the chat node; tool calls nest under the turn that made them. Node
+timings are real (captured live). A method that raises marks its node `error`. Patching twice never
+stacks wrappers (the pristine original is recovered), and `detach()` restores the originals.
+
+> **Scope:** targets the classic `autogen.ConversableAgent` API (AG2 / `pyautogen`), not the newer
+> async `autogen-agentchat` (v0.4+) agents.
+
+Requires: `pip install "vap[autogen]"`
+
+---
+
 ### OpenTelemetry export
 
 Mirror VaP runs into OpenTelemetry. Import from `vap.integrations.otel`. One **trace per run**; each
@@ -1518,6 +1556,15 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.11.0
+
+- **AutoGen integration** — `vap/integrations/autogen.py`: `VapAutoGen` monkey-patches `ConversableAgent.initiate_chat` / `generate_reply` / `execute_function`, reproducing a multi-agent conversation as a chat root, an agent-turn node per reply, and tool nodes per function call
+- **Correct nesting** — a thread-local node stack parents tool calls under the turn that made them and supports nested chats; agent turns are siblings under the chat; timings are live
+- **Two usage modes** — manual (under a provided run) and auto (each `initiate_chat` = its own run); dropped/raised calls mark nodes `error`; double-patching never stacks wrappers; `detach()` restores originals
+- **`pip install "vap[autogen]"`** — new optional extra (`ag2`, classic `ConversableAgent` API) + `examples/autogen_demo.py` (offline `register_reply` agents, no API key)
+- **Test suite** — `tests/test_autogen.py` with 8 tests; **191 passing** total
+- **Package version** bumped to `0.11.0`
 
 ### v0.10.0
 

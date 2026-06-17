@@ -825,6 +825,44 @@ substring keeps the orchestrators honest — `RetrieverQueryEngine` is a `step`,
 
 ---
 
+## AutoGen Integration (`integrations/autogen.py`)
+
+AutoGen's classic API (`ConversableAgent`, shipped today as `ag2` / `pyautogen`) has no event bus or
+instrumentation dispatcher, so `VapAutoGen` monkey-patches three methods on `ConversableAgent` and
+reconstructs the conversation from the call flow:
+
+```
+initiate_chat   → the chat (step "chat/<recipient>", or the run's agent root in auto mode)
+generate_reply  → one agent turn (step "agent/<name>")
+execute_function→ a tool/function call (tool)
+```
+
+### A thread-local node stack
+
+The defining problem is *nesting*: tool calls happen inside an agent's `generate_reply`, and chats
+can nest (a tool may start another `initiate_chat`). AutoGen runs a conversation synchronously, so a
+**thread-local stack** of open node frames captures the structure exactly:
+
+- `_begin(kind, label)` resolves the parent as the current stack top → else the provided run's root
+  (manual) → else a fresh run root (auto), emits the start event, and pushes a frame.
+- `_end(...)` pops the frame and emits the end (or `error`) event.
+
+Each wrapper is `try/finally` around the original call, so frames are always popped — even when a
+reply raises. Because turns push and pop around the whole `generate_reply`, sequential turns end up
+as **siblings under the chat**, while a tool's `execute_function` (running inside a turn) finds that
+turn on top of the stack and nests beneath it. Timings come from `time.time()` at begin/end, so
+they're real. Tracing is best-effort: a failure in `_begin`/`_end` is swallowed so it can't break the
+conversation.
+
+### Modes and patch safety
+
+Manual mode nests the whole conversation under one `vap.trace()`; auto mode turns each top-level
+`initiate_chat` into its own run (its chat node becomes the run's `agent` root). `_wrap` always
+recovers the pristine original (stashed on the wrapper) before re-wrapping, so patching twice never
+stacks wrappers or double-counts, and `detach()` restores the originals.
+
+---
+
 ## OpenTelemetry Export (`integrations/otel.py`)
 
 This is an **export sink**, not a framework integration: it reads completed VaP runs and

@@ -23,6 +23,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native event bus to trace Crews, Tasks, Agents, Tools, and LLM calls automatically
 - **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync` to trace each model request (tokens + cost) and tool call as nested nodes
 - **LlamaIndex integration** — `VapLlamaIndex` hooks the instrumentation dispatcher to trace query engines, retrievers, embeddings, and LLM calls
+- **AutoGen integration** — `VapAutoGen` traces multi-agent conversations: the chat, each agent turn, and tool calls (AG2 / `ConversableAgent`)
 - **Analytics dashboard** — cross-run metrics (cost, tokens, success rate, per-model breakdown) at `GET /metrics` and in the UI
 - **OpenTelemetry export** — `enable_otel_export(...)` mirrors every run into OTLP spans for Jaeger / Grafana Tempo / Datadog
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
@@ -60,7 +61,7 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for full production deployment 
 git clone https://github.com/kochrisdev/vap.git
 cd vap
 pip install -e .                  # core only
-pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI, Pydantic AI, LlamaIndex, OTel
+pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI, Pydantic AI, LlamaIndex, AutoGen, OTel
 ```
 
 ### 2. React UI
@@ -377,6 +378,32 @@ Spans are classified by kind — retrievers and embeddings as `tool`, LLM calls 
 
 ---
 
+### AutoGen
+
+`VapAutoGen` traces AutoGen (AG2) multi-agent conversations by wrapping `ConversableAgent`. The chat
+becomes a root, each agent turn (`generate_reply`) a child node, and each tool/function call
+(`execute_function`) nests under the turn that made it — with real timings.
+
+```python
+import vap
+from vap.integrations.autogen import VapAutoGen
+
+with vap.trace("Support chat") as run:
+    VapAutoGen(run)
+    user.initiate_chat(assistant, message="How do I reset my password?")
+```
+
+Or instantiate `VapAutoGen()` with no run (auto mode) to make each `initiate_chat` its own VaP run.
+
+```bash
+pip install "vap[autogen]"
+```
+
+Targets the classic `autogen.ConversableAgent` API (`ag2` / `pyautogen`). Call `.detach()` to restore
+the original methods.
+
+---
+
 ## OpenTelemetry Export
 
 VaP can mirror every run into OpenTelemetry — one **trace per run**, with each node (agent / step /
@@ -463,6 +490,7 @@ vap/                          Python package
     ├── crewai_listener.py    VapCrewAIListener — CrewAI event bus integration
     ├── pydantic_ai.py        VapPydanticAI — Pydantic AI Agent.run wrapper
     ├── llamaindex.py         VapLlamaIndex — LlamaIndex span handler
+    ├── autogen.py            VapAutoGen — AutoGen ConversableAgent tracer
     └── otel.py               OpenTelemetry export — runs → OTLP spans
 
 ui/src/                       Vite + React + TypeScript
@@ -494,6 +522,7 @@ examples/
 ├── crewai_demo.py            CrewAI multi-agent crew with VapCrewAIListener
 ├── pydantic_ai_demo.py       Pydantic AI agent with VapPydanticAI — no API key needed
 ├── llamaindex_demo.py        LlamaIndex RAG query with VapLlamaIndex — no API key needed
+├── autogen_demo.py           AutoGen multi-agent chat with VapAutoGen — no API key needed
 └── otel_demo.py              OpenTelemetry export to the console — no API key needed
 
 docs/
@@ -514,6 +543,7 @@ tests/
 ├── test_crewai_listener.py   CrewAI listener (skipped if crewai absent)
 ├── test_pydantic_ai.py       Pydantic AI integration (skipped if pydantic-ai absent)
 ├── test_llamaindex.py        LlamaIndex integration (skipped if llama-index-core absent)
+├── test_autogen.py           AutoGen integration (skipped if autogen absent)
 └── test_otel.py              OpenTelemetry export (skipped if opentelemetry-sdk absent)
 
 run_dev.py                    One-command dev entry point (server + demo agent)
@@ -639,6 +669,15 @@ python examples/llamaindex_demo.py        # no API key needed — uses MockLLM +
 
 Builds a small index and runs a RAG query, traced under one VaP run. The graph shows the full pipeline — query engine → retriever → embeddings → response synthesizer → LLM — with retrievers/embeddings as `tool` nodes and LLM calls as `llm` nodes.
 
+### AutoGen demo
+
+```bash
+pip install "vap[autogen]"
+python examples/autogen_demo.py        # no API key needed — offline ConversableAgents
+```
+
+Runs a scripted two-agent conversation (researcher → writer), traced under one VaP run. The graph shows the chat with each agent turn nested beneath it.
+
 ### OpenTelemetry export demo
 
 ```bash
@@ -727,6 +766,11 @@ with tracer.trace("isolated run") as run:
 - [x] **Auto + manual mode** — manual nests a whole RAG workflow under one `vap.trace()`; auto makes each top-level call its own run
 - [x] **8-test suite** — `tests/test_llamaindex.py` (MockLLM/MockEmbedding, no API key); `pip install "vap[llamaindex]"`
 
+### v0.11.0 — Phase 10 (complete)
+- [x] **AutoGen integration** — `VapAutoGen` wraps `ConversableAgent` (AG2 / `pyautogen`); a multi-agent conversation becomes the chat root, an agent-turn node per `generate_reply`, and tool nodes per `execute_function`, nested with real timings
+- [x] **Auto + manual mode** — manual nests a conversation under one `vap.trace()`; auto makes each `initiate_chat` its own run; thread-local node stack handles nested chats and tool nesting
+- [x] **8-test suite** — `tests/test_autogen.py` (offline `register_reply` agents, no API key); `pip install "vap[autogen]"`
+
 ---
 
 ## Dependencies
@@ -744,6 +788,7 @@ with tracer.trace("isolated run") as run:
 | `crewai` *(optional)* | CrewAI integration (`pip install "vap[crewai]"`) |
 | `pydantic-ai-slim` *(optional)* | Pydantic AI integration (`pip install "vap[pydantic-ai]"`) |
 | `llama-index-core` *(optional)* | LlamaIndex integration (`pip install "vap[llamaindex]"`) |
+| `ag2` *(optional)* | AutoGen integration (`pip install "vap[autogen]"`) |
 | `opentelemetry-sdk` + `opentelemetry-exporter-otlp` *(optional)* | OpenTelemetry export (`pip install "vap[otel]"`) |
 
 `sqlite3` is part of the Python standard library — no extra install needed for persistence.

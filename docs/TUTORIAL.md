@@ -22,13 +22,14 @@ the last, so work through them in order. No prior VaP knowledge required.
 13. [CrewAI Integration](#13-crewai-integration)
 14. [Pydantic AI Integration](#14-pydantic-ai-integration)
 15. [LlamaIndex Integration](#15-llamaindex-integration)
-16. [Remote Ingest (any language)](#16-remote-ingest-any-language)
-17. [Comparing Runs](#17-comparing-runs)
-18. [Exporting Runs](#18-exporting-runs)
-19. [Persistence with SQLite](#19-persistence-with-sqlite)
-20. [Analytics Dashboard](#20-analytics-dashboard)
-21. [OpenTelemetry Export](#21-opentelemetry-export)
-22. [What's Next?](#22-whats-next)
+16. [AutoGen Integration](#16-autogen-integration)
+17. [Remote Ingest (any language)](#17-remote-ingest-any-language)
+18. [Comparing Runs](#18-comparing-runs)
+19. [Exporting Runs](#19-exporting-runs)
+20. [Persistence with SQLite](#20-persistence-with-sqlite)
+21. [Analytics Dashboard](#21-analytics-dashboard)
+22. [OpenTelemetry Export](#22-opentelemetry-export)
+23. [What's Next?](#23-whats-next)
 
 ---
 
@@ -821,7 +822,58 @@ to remove the handler when you're done.
 
 ---
 
-## 16. Remote Ingest (any language)
+## 16. AutoGen Integration
+
+`VapAutoGen` traces [AutoGen](https://microsoft.github.io/autogen/) (AG2) multi-agent conversations
+by wrapping `ConversableAgent`. The chat becomes a root, each agent turn becomes a child node, and
+any tool/function call nests under the turn that made it — with real timings and no changes to your
+agent code.
+
+```bash
+pip install "vap[autogen]"
+```
+
+Wrap your conversation in a `vap.trace()` (manual mode):
+
+```python
+import vap
+from autogen import ConversableAgent
+from vap.integrations.autogen import VapAutoGen
+
+assistant = ConversableAgent("assistant", llm_config={"model": "gpt-4o-mini"})
+user = ConversableAgent("user", human_input_mode="NEVER", max_consecutive_auto_reply=2)
+
+with vap.trace("Support chat") as run:
+    VapAutoGen(run)
+    user.initiate_chat(assistant, message="How do I reset my password?")
+```
+
+The resulting graph mirrors the conversation:
+
+```
+Support chat                 (the trace's run root)
+└── chat/assistant           (step — the initiate_chat)
+    ├── agent/assistant       (turn)
+    ├── agent/user            (turn)
+    └── agent/assistant       (turn)
+```
+
+Each `generate_reply` becomes an `agent/<name>` turn node; `execute_function` tool calls appear as
+`tool` nodes nested under the turn that called them. Turns are siblings under the chat in
+conversation order.
+
+Prefer one run per conversation instead? Use **auto mode** — `VapAutoGen()` with no run — and each
+`initiate_chat` becomes its own VaP run. Call `.detach()` to restore the original methods.
+
+> **Try it with no API key:** `python examples/autogen_demo.py` uses offline agents (registered reply
+> functions), so it runs fully offline.
+
+> **Note:** this targets the classic `autogen.ConversableAgent` API (AG2 / `pyautogen`), not the
+> newer async `autogen-agentchat` (v0.4+) agents.
+
+---
+
+## 17. Remote Ingest (any language)
 
 You don't need to import `vap` in the process that runs your agent. Any process — including
 non-Python code — can push events by POSTing JSON to `POST /runs/{run_id}/events`.
@@ -907,7 +959,7 @@ though the agent process has no knowledge of VaP internals.
 
 ---
 
-## 17. Comparing Runs
+## 18. Comparing Runs
 
 Once you have two or more runs you can diff them side by side to understand what changed — useful
 for comparing model variants, prompt changes, or pipeline refactors.
@@ -938,7 +990,7 @@ run in the sidebar normally.
 
 ---
 
-## 18. Exporting Runs
+## 19. Exporting Runs
 
 Every run can be exported in two formats from the **Export ▾** button in the top-right toolbar
 (only visible when a run is selected).
@@ -967,7 +1019,7 @@ screenshot includes the layout exactly as you see it — useful for reports or d
 
 ---
 
-## 19. Persistence with SQLite
+## 20. Persistence with SQLite
 
 By default VaP uses an in-memory store — fast, zero setup, but all runs are lost when the
 process exits. Switch to SQLite with one line:
@@ -1011,7 +1063,7 @@ sqlite3 vap.db ".backup vap_backup_$(date +%Y%m%d).db"
 
 ---
 
-## 20. Analytics Dashboard
+## 21. Analytics Dashboard
 
 Once you have several runs stored, the **Analytics** dashboard gives you a bird's-eye view across
 all of them — no extra instrumentation required, it reads the same data your traces already
@@ -1051,7 +1103,7 @@ See the [`GET /metrics`](DEVELOPER_REFERENCE.md#get-metrics) reference for the f
 
 ---
 
-## 21. OpenTelemetry Export
+## 22. OpenTelemetry Export
 
 VaP can mirror every run into [OpenTelemetry](https://opentelemetry.io/) — useful when you already
 run Jaeger, Grafana Tempo, or Datadog and want your agent traces alongside the rest of your service
@@ -1099,7 +1151,7 @@ This is **export**, not replacement — runs still stream into the VaP UI as usu
 
 ---
 
-## 22. What's Next?
+## 23. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -1113,6 +1165,7 @@ python examples/cost_tracking_demo.py
 python examples/remote_ingest_demo.py
 python examples/pydantic_ai_demo.py   # uses TestModel — requires pip install "vap[pydantic-ai]"
 python examples/llamaindex_demo.py    # uses MockLLM — requires pip install "vap[llamaindex]"
+python examples/autogen_demo.py       # offline agents — requires pip install "vap[autogen]"
 python examples/otel_demo.py          # console OTel export — requires pip install "vap[otel]"
 
 # Requires an API key:
