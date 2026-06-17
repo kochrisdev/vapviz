@@ -136,6 +136,35 @@ class RunStore(ABC):
     def unsubscribe(self, run_id: str, q: asyncio.Queue) -> None:
         """Remove *q* from the subscriber list."""
 
+    # ------------------------------------------------------------------
+    # Tags — concrete, in-memory by default; SqliteStore persists them.
+    # Subclasses provide ``self._tags`` (run_id -> list[str]) and ``self._lock``.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _norm_tags(tags: list[str]) -> list[str]:
+        """Strip, de-duplicate (preserving order), and drop empties."""
+        out: list[str] = []
+        for t in tags or []:
+            s = str(t).strip()
+            if s and s not in out:
+                out.append(s)
+        return out
+
+    def get_tags(self, run_id: str) -> list[str]:
+        with self._lock:  # type: ignore[attr-defined]
+            return list(self._tags.get(run_id, []))  # type: ignore[attr-defined]
+
+    def set_tags(self, run_id: str, tags: list[str]) -> list[str]:
+        """Replace the tags for *run_id*. Returns the normalised list."""
+        norm = self._norm_tags(tags)
+        with self._lock:  # type: ignore[attr-defined]
+            if norm:
+                self._tags[run_id] = norm  # type: ignore[attr-defined]
+            else:
+                self._tags.pop(run_id, None)  # type: ignore[attr-defined]
+        return norm
+
 
 # ---------------------------------------------------------------------------
 # In-memory implementation (default)
@@ -147,6 +176,7 @@ class MemoryStore(RunStore):
     def __init__(self) -> None:
         self._events: dict[str, list[VapEvent]] = {}
         self._graphs: dict[str, RunGraph] = {}
+        self._tags: dict[str, list[str]] = {}
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
         self._lock = Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -179,11 +209,13 @@ class MemoryStore(RunStore):
         with self._lock:
             self._events.pop(run_id, None)
             self._graphs.pop(run_id, None)
+            self._tags.pop(run_id, None)
 
     def clear(self) -> None:
         with self._lock:
             self._events.clear()
             self._graphs.clear()
+            self._tags.clear()
 
     # ------------------------------------------------------------------
     # Read path
@@ -202,6 +234,7 @@ class MemoryStore(RunStore):
                         node_count=len(g.nodes),
                         event_count=len(self._events.get(run_id, [])),
                         total_cost_usd=_total_cost(g),
+                        tags=list(self._tags.get(run_id, [])),
                     )
                     for run_id, g in self._graphs.items()
                 ],
@@ -223,6 +256,7 @@ class MemoryStore(RunStore):
                 node_count=len(g.nodes),
                 event_count=len(self._events.get(run_id, [])),
                 total_cost_usd=_total_cost(g),
+                tags=list(self._tags.get(run_id, [])),
             )
 
     def get_graph(self, run_id: str) -> Optional[RunGraph]:

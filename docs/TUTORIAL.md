@@ -31,7 +31,8 @@ the last, so work through them in order. No prior VaP knowledge required.
 22. [OpenTelemetry Export](#22-opentelemetry-export)
 23. [Cost & Latency Budgets](#23-cost--latency-budgets)
 24. [Agent Evals & Scoring](#24-agent-evals--scoring)
-25. [What's Next?](#25-whats-next)
+25. [Search & Tagging](#25-search--tagging)
+26. [What's Next?](#26-whats-next)
 
 ---
 
@@ -1266,7 +1267,38 @@ curl -X POST http://localhost:8001/runs/{run_id}/eval \
 
 ---
 
-## 25. What's Next?
+## 25. Search & Tagging
+
+Once you've accumulated a lot of runs, two features make them navigable: **search** (find runs by
+their contents) and **tags** (organise runs with labels).
+
+**Search** in the sidebar box matches your query against run labels *and* every node's input/output —
+so searching `paris` finds runs whose tools or LLM calls mention Paris, not just runs named "Paris".
+Over the API you can also filter structurally:
+
+```bash
+curl "http://localhost:8001/search?q=paris"                       # content search
+curl "http://localhost:8001/search?tool=search_web&status=error"  # failed runs that used a tool
+curl "http://localhost:8001/search?tag=prod"                      # runs tagged prod
+```
+
+**Tags** are persistent per-run labels. In the UI, select a run and use the **+ tag** editor in the
+header (remove a tag with its **×**); each run shows its tags as chips in the sidebar — click a chip
+to filter the list to that tag. From code or another language:
+
+```bash
+curl -X PUT http://localhost:8001/runs/{run_id}/tags \
+  -H "Content-Type: application/json" -d '{"tags": ["prod", "v2-prompt"]}'
+```
+
+When the server runs with `--db vap.db`, tags persist across restarts.
+
+> **Tip:** tag your baseline runs (e.g. `baseline`) and your experiments (`v2-prompt`), then use the
+> [comparison view](#18-comparing-runs) to diff one against the other.
+
+---
+
+## 26. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 

@@ -423,6 +423,28 @@ specs — the latter backs `POST /runs/{id}/eval` so any language or the UI can 
 
 ---
 
+### Search & Tags (`vap/search.py` + store)
+
+**Search** is a pure predicate, `run_matches(graph, query=, status=, kind=, tool=)`: it builds a text
+"haystack" per node (label + JSON-stringified input/output/error) and AND-combines the supplied
+filters. `GET /search` walks `list_runs()`, applies `tag` filtering at the summary level (tags aren't
+in the graph), fetches each graph, and keeps the matches. It's linear over stored runs — fine for the
+single-node scale VaP targets; a larger deployment would push this into the store/DB.
+
+**Tags** are the first piece of *mutable* per-run state in a system that's otherwise append-only
+events. They live beside the event log rather than in it: the `RunStore` ABC provides concrete
+`get_tags`/`set_tags` over a `self._tags` dict (so `MemoryStore` gets them for free), and `SqliteStore`
+overrides `set_tags` to persist to a `tags(run_id, tag)` table and loads them on startup. `RunSummary`
+gained a `tags` field, populated by reading `self._tags` **directly inside the already-held lock** —
+calling `get_tags()` there would re-enter the non-reentrant `Lock` and deadlock. `delete_run`/`clear`
+drop tags alongside events.
+
+On the client, `RunList` runs the content search against `/search` (debounced) and renders tag chips
+(click to filter); `TagEditor` in the run header does optimistic `PUT /runs/{id}/tags` writes that the
+3-second run poll reconciles.
+
+---
+
 ### Configuration (`vap/__init__.py`)
 
 `vap.configure(db=...)` is the public API for switching the module-level store:

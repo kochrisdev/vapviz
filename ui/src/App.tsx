@@ -8,6 +8,7 @@ import { ExportMenu } from "./components/ExportMenu";
 import { NodeDetail } from "./components/NodeDetail";
 import { RunComparison } from "./components/RunComparison";
 import { RunList } from "./components/RunList";
+import { TagEditor } from "./components/TagEditor";
 import { useRunStream } from "./hooks/useRunStream";
 import { useRunStore } from "./store/runStore";
 
@@ -77,6 +78,12 @@ function RunViewer() {
                   {((state.ended_at - state.started_at) * 1000).toFixed(0)} ms
                 </span>
               )}
+              <div className="border-l border-slate-700 pl-3">
+                <TagEditor
+                  runId={selectedRunId!}
+                  tags={runs.find((r) => r.run_id === selectedRunId)?.tags ?? []}
+                />
+              </div>
               <div className="ml-auto">
                 <ExportMenu
                   runId={selectedRunId!}

@@ -62,6 +62,7 @@ export interface RunSummary {
   node_count: number;
   event_count: number;
   total_cost_usd: number | null;
+  tags: string[];
 }
 
 // ── Cross-run analytics (GET /metrics) ──────────────────────────────────────

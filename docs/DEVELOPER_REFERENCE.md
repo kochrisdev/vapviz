@@ -1176,9 +1176,46 @@ List all runs, newest first.
     "ended_at": 1716720003.456,
     "node_count": 5,
     "event_count": 10,
-    "total_cost_usd": 0.0075
+    "total_cost_usd": 0.0075,
+    "tags": ["prod"]
   }
 ]
+```
+
+---
+
+### `GET /search`
+
+Search runs by free-text query and/or filters. Returns the matching `RunSummary` list (same shape as
+`/runs`).
+
+**Query parameters** (all optional; combined with AND):
+
+| Param | Matches |
+|---|---|
+| `q` | case-insensitive substring across the run label and every node's input / output / error |
+| `status` | run status equals this (`success` / `error` / `running` / `pending`) |
+| `kind` | at least one node of this kind (`agent` / `step` / `tool` / `llm`) |
+| `tool` | at least one `tool` node whose label contains this string |
+| `tag` | run is tagged with this exact tag |
+
+```bash
+curl "http://localhost:8001/search?q=paris&status=success"
+curl "http://localhost:8001/search?tool=search_web"
+curl "http://localhost:8001/search?tag=prod"
+```
+
+---
+
+### `GET` / `PUT /runs/{run_id}/tags`
+
+Get or replace a run's tags. `PUT` body is `{"tags": ["prod", "v2-prompt"]}`; tags are normalised
+(trimmed, de-duplicated, empties dropped) and the normalised list is returned. Tags are persisted in
+SQLite when the server runs with `--db`. `404` if the run is unknown.
+
+```bash
+curl -X PUT http://localhost:8001/runs/{id}/tags \
+  -H "Content-Type: application/json" -d '{"tags": ["prod"]}'
 ```
 
 ---
@@ -1697,6 +1734,14 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.14.0
+
+- **Run search** — `vap/search.py` `run_matches(graph, query=, status=, kind=, tool=)`; `GET /search` composes it with tag filtering and returns matching `RunSummary` list
+- **Tags** — persistent per-run tags: `RunStore.get_tags` / `set_tags` (in-memory default; `SqliteStore` persists to a `tags` table), `RunSummary.tags`, and `GET` / `PUT /runs/{id}/tags`
+- **UI** — content search box, clickable tag chips on runs (filter by tag), and an inline tag editor (`TagEditor.tsx`) in the run header
+- **Test suite** — `tests/test_search.py` with 18 tests (predicate, in-memory + SQLite tag persistence, endpoints); **256 passing** total
+- **Package version** bumped to `0.14.0`
 
 ### v0.13.0
 

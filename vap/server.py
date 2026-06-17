@@ -8,11 +8,18 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
+from pydantic import BaseModel
+
 from .budgets import Budget, BudgetReport, check_budget
 from .evals import EvalResult, run_checks
 from .events import RunGraph, RunSummary, VapEvent
 from .metrics import Metrics, compute_metrics
+from .search import run_matches
 from .store import RunStore, default_store
+
+
+class TagUpdate(BaseModel):
+    tags: list[str]
 
 
 def create_app(store: RunStore | None = None, static_dir: str | None = None) -> FastAPI:
@@ -56,6 +63,30 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
             if g is not None
         ]
         return compute_metrics(graphs)
+
+    # ------------------------------------------------------------------
+    # Search
+    # ------------------------------------------------------------------
+
+    @app.get("/search", response_model=list[RunSummary])
+    async def search(
+        q: str | None = None,
+        status: str | None = None,
+        kind: str | None = None,
+        tool: str | None = None,
+        tag: str | None = None,
+    ):
+        """Search runs by free-text query and/or filters (status, kind, tool, tag)."""
+        results: list[RunSummary] = []
+        for summary in _store.list_runs():
+            if tag is not None and tag not in summary.tags:
+                continue
+            graph = _store.get_graph(summary.run_id)
+            if graph is None:
+                continue
+            if run_matches(graph, query=q, status=status, kind=kind, tool=tool):
+                results.append(summary)
+        return results
 
     # NOTE: /runs/compare must be registered BEFORE /runs/{run_id} so that
     # FastAPI treats "compare" as a literal path segment, not a run_id.
@@ -105,6 +136,18 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
             max_total_tokens=max_total_tokens,
         )
         return check_budget(graph, budget)
+
+    @app.get("/runs/{run_id}/tags", response_model=list[str])
+    async def get_tags(run_id: str):
+        if not _store.get_run(run_id):
+            raise HTTPException(status_code=404, detail="Run not found")
+        return _store.get_tags(run_id)
+
+    @app.put("/runs/{run_id}/tags", response_model=list[str])
+    async def set_tags(run_id: str, body: TagUpdate):
+        if not _store.get_run(run_id):
+            raise HTTPException(status_code=404, detail="Run not found")
+        return _store.set_tags(run_id, body.tags)
 
     @app.post("/runs/{run_id}/eval", response_model=EvalResult)
     async def eval_run_endpoint(run_id: str, checks: list[dict]):

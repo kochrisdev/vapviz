@@ -28,6 +28,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **OpenTelemetry export** — `enable_otel_export(...)` mirrors every run into OTLP spans for Jaeger / Grafana Tempo / Datadog
 - **Cost & latency budgets** — `enable_budget_alerts(Budget(...))` flags and alerts on runs that exceed cost / duration / token limits
 - **Agent evals & scoring** — `eval_run(run, [checks...])` asserts cost/latency/output/custom/LLM-judge checks — regression testing for agents
+- **Search & tagging** — full-text search across run contents (`GET /search`) plus persistent per-run tags, surfaced in the UI
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -514,18 +515,45 @@ Try it with no API key: `python examples/evals_demo.py`.
 
 ---
 
+## Search & Tagging
+
+Find runs by content and organise them with tags — handy once a store holds hundreds of runs.
+
+**Search** matches a free-text query across run labels and every node's input/output, with optional
+structural filters (`status`, `kind`, `tool`, `tag`):
+
+```bash
+curl "http://localhost:8001/search?q=paris"             # any run whose contents mention "paris"
+curl "http://localhost:8001/search?tool=search_web&status=error"
+curl "http://localhost:8001/search?tag=prod"
+```
+
+**Tags** are persistent per-run labels (stored in SQLite when you use `--db`):
+
+```bash
+curl -X PUT http://localhost:8001/runs/{id}/tags \
+  -H "Content-Type: application/json" -d '{"tags": ["prod", "v2-prompt"]}'
+```
+
+In the UI, the search box does the content search, each run shows its tags as chips (click one to
+filter), and the run header has an inline tag editor (add with **+ tag**, remove with **×**).
+
+---
+
 ## REST API
 
 The FastAPI server (`http://localhost:8001`) exposes:
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/runs` | List all runs (summary) |
+| `GET` | `/runs` | List all runs (summary, incl. tags) |
+| `GET` | `/search` | Search runs by query / status / kind / tool / tag |
 | `GET` | `/metrics` | Cross-run analytics: cost, tokens, success rate, per-model breakdown |
 | `GET` | `/runs/{id}` | Single run summary |
 | `GET` | `/runs/{id}/graph` | Full graph snapshot (nodes + edges) |
 | `GET` | `/runs/{id}/budget` | Check a run against a budget (`?max_cost_usd=&max_duration_ms=&max_total_tokens=`) |
 | `POST` | `/runs/{id}/eval` | Evaluate a run against declarative check specs → `EvalResult` |
+| `GET` / `PUT` | `/runs/{id}/tags` | Get / replace a run's tags |
 | `GET` | `/runs/{id}/export` | Download run graph as a JSON file attachment |
 | `GET` | `/runs/{id}/events` | **SSE stream** — replays history then pushes live |
 | `GET` | `/runs/compare?a={id}&b={id}` | Return two run graphs for comparison |
@@ -564,6 +592,7 @@ vap/                          Python package
 ├── metrics.py                Cross-run analytics — compute_metrics() aggregation
 ├── budgets.py                Cost/latency budgets — check_budget(), enable_budget_alerts()
 ├── evals.py                  Agent evals — eval_run(), checks, scoring
+├── search.py                 Run search — run_matches() predicate
 ├── backends/
 │   ├── __init__.py
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
@@ -586,7 +615,8 @@ ui/src/                       Vite + React + TypeScript
 │   ├── ExportMenu.tsx        Export dropdown (JSON download + PNG capture)
 │   ├── NodeDetail.tsx        Selected-node inspector
 │   ├── RunComparison.tsx     Side-by-side diff of two runs
-│   └── RunList.tsx           Sidebar run list with compare + dashboard toggle
+│   ├── RunList.tsx           Sidebar run list with search, tags, compare + dashboard toggle
+│   └── TagEditor.tsx         Inline per-run tag editor
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
 ├── store/
@@ -632,7 +662,8 @@ tests/
 ├── test_autogen.py           AutoGen integration (skipped if autogen absent)
 ├── test_otel.py              OpenTelemetry export (skipped if opentelemetry-sdk absent)
 ├── test_budgets.py           Budget checks, alerting, and the /budget endpoint
-└── test_evals.py             Eval checks, scoring, declarative specs, /eval endpoint
+├── test_evals.py             Eval checks, scoring, declarative specs, /eval endpoint
+└── test_search.py            Search predicate, store tags (incl. SQLite), endpoints
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
@@ -870,6 +901,12 @@ with tracer.trace("isolated run") as run:
 - [x] **Declarative checks** — JSON specs via `run_checks()` and `POST /runs/{id}/eval` for cross-language / UI use
 - [x] **Regression-testing workflow** — drop `assert eval_run(...).passed` into pytest/CI
 - [x] **20-test suite** — `tests/test_evals.py`; eval API exported from `vap`
+
+### v0.14.0 — Phase 13 (complete)
+- [x] **Run search** — `GET /search` matches a free-text query across run labels and node inputs/outputs, with `status` / `kind` / `tool` / `tag` filters (`vap/search.py` `run_matches`)
+- [x] **Tags** — persistent per-run tags (`GET`/`PUT /runs/{id}/tags`), stored in SQLite, surfaced in `RunSummary.tags`
+- [x] **UI** — content search box, tag chips on runs (click to filter), and an inline tag editor in the run header
+- [x] **18-test suite** — `tests/test_search.py` (predicate, in-memory + SQLite tag persistence, endpoints)
 
 ---
 
