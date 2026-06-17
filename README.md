@@ -26,6 +26,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **AutoGen integration** — `VapAutoGen` traces multi-agent conversations: the chat, each agent turn, and tool calls (AG2 / `ConversableAgent`)
 - **Analytics dashboard** — cross-run metrics (cost, tokens, success rate, per-model breakdown) at `GET /metrics` and in the UI
 - **OpenTelemetry export** — `enable_otel_export(...)` mirrors every run into OTLP spans for Jaeger / Grafana Tempo / Datadog
+- **Cost & latency budgets** — `enable_budget_alerts(Budget(...))` flags and alerts on runs that exceed cost / duration / token limits
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -434,6 +435,44 @@ This is **export**, not replacement — runs still appear in the VaP UI as usual
 
 ---
 
+## Cost & Latency Budgets
+
+Define a `Budget` (max cost, duration, and/or tokens) and VaP will check every completed run against
+it — turning the metrics it already captures into **guardrails**:
+
+```python
+import vap
+from vap.budgets import Budget, enable_budget_alerts
+
+vap.configure(db="vap.db")
+enable_budget_alerts(Budget(max_cost_usd=0.05, max_duration_ms=5000))
+# over-budget runs now log a warning when they finish
+```
+
+Pass an `on_alert` callback to do something other than log — page someone, post to Slack, emit an
+OpenTelemetry event, etc.:
+
+```python
+enable_budget_alerts(
+    Budget(max_cost_usd=0.05),
+    on_alert=lambda report: notify(f"{report.run_id} cost ${report.cost_usd}"),
+)
+```
+
+Check a single run on demand, or via the API (`GET /runs/{id}/budget?max_cost_usd=0.02`):
+
+```python
+from vap.budgets import Budget, check_budget
+
+report = check_budget(store.get_graph(run_id), Budget(max_cost_usd=0.02, max_duration_ms=3000))
+for v in report.violations:
+    print(f"{v.metric}: {v.actual} > {v.limit}  (+{v.pct_over:.0f}%)")
+```
+
+Try it with no API key: `python examples/budgets_demo.py`.
+
+---
+
 ## REST API
 
 The FastAPI server (`http://localhost:8001`) exposes:
@@ -444,6 +483,7 @@ The FastAPI server (`http://localhost:8001`) exposes:
 | `GET` | `/metrics` | Cross-run analytics: cost, tokens, success rate, per-model breakdown |
 | `GET` | `/runs/{id}` | Single run summary |
 | `GET` | `/runs/{id}/graph` | Full graph snapshot (nodes + edges) |
+| `GET` | `/runs/{id}/budget` | Check a run against a budget (`?max_cost_usd=&max_duration_ms=&max_total_tokens=`) |
 | `GET` | `/runs/{id}/export` | Download run graph as a JSON file attachment |
 | `GET` | `/runs/{id}/events` | **SSE stream** — replays history then pushes live |
 | `GET` | `/runs/compare?a={id}&b={id}` | Return two run graphs for comparison |
@@ -480,6 +520,7 @@ vap/                          Python package
 ├── cli.py                    vap serve command
 ├── cost.py                   Token cost — 20+ model pricing table, calculate_cost()
 ├── metrics.py                Cross-run analytics — compute_metrics() aggregation
+├── budgets.py                Cost/latency budgets — check_budget(), enable_budget_alerts()
 ├── backends/
 │   ├── __init__.py
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
@@ -523,7 +564,8 @@ examples/
 ├── pydantic_ai_demo.py       Pydantic AI agent with VapPydanticAI — no API key needed
 ├── llamaindex_demo.py        LlamaIndex RAG query with VapLlamaIndex — no API key needed
 ├── autogen_demo.py           AutoGen multi-agent chat with VapAutoGen — no API key needed
-└── otel_demo.py              OpenTelemetry export to the console — no API key needed
+├── otel_demo.py              OpenTelemetry export to the console — no API key needed
+└── budgets_demo.py           Cost/latency budget alerting — no API key needed
 
 docs/
 ├── TUTORIAL.md               Step-by-step learning guide (start here)
@@ -544,7 +586,8 @@ tests/
 ├── test_pydantic_ai.py       Pydantic AI integration (skipped if pydantic-ai absent)
 ├── test_llamaindex.py        LlamaIndex integration (skipped if llama-index-core absent)
 ├── test_autogen.py           AutoGen integration (skipped if autogen absent)
-└── test_otel.py              OpenTelemetry export (skipped if opentelemetry-sdk absent)
+├── test_otel.py              OpenTelemetry export (skipped if opentelemetry-sdk absent)
+└── test_budgets.py           Budget checks, alerting, and the /budget endpoint
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
@@ -770,6 +813,12 @@ with tracer.trace("isolated run") as run:
 - [x] **AutoGen integration** — `VapAutoGen` wraps `ConversableAgent` (AG2 / `pyautogen`); a multi-agent conversation becomes the chat root, an agent-turn node per `generate_reply`, and tool nodes per `execute_function`, nested with real timings
 - [x] **Auto + manual mode** — manual nests a conversation under one `vap.trace()`; auto makes each `initiate_chat` its own run; thread-local node stack handles nested chats and tool nesting
 - [x] **8-test suite** — `tests/test_autogen.py` (offline `register_reply` agents, no API key); `pip install "vap[autogen]"`
+
+### v0.12.0 — Phase 11 (complete)
+- [x] **Cost & latency budgets** — `Budget` (max cost / duration / tokens) + `check_budget(graph, budget)` returning per-metric violations
+- [x] **Alerting** — `enable_budget_alerts(budget, on_alert=…)` checks every completed run and fires a callback (default: logs a warning) on violations
+- [x] **`GET /runs/{id}/budget`** — check any run against a budget via query params
+- [x] **13-test suite** — `tests/test_budgets.py`; `vap.Budget` / `vap.check_budget` / `vap.enable_budget_alerts` exported
 
 ---
 

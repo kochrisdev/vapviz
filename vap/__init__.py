@@ -6,6 +6,7 @@ from .integrations.openai_sdk import patch_openai
 from .backends.sqlite import SqliteStore
 from .cost import calculate_cost, format_cost
 from .metrics import compute_metrics, Metrics
+from .budgets import Budget, BudgetReport, check_budget, enable_budget_alerts
 
 
 def configure(db: str | None = None) -> None:
@@ -58,6 +59,11 @@ __all__ = [
     # Metrics
     "compute_metrics",
     "Metrics",
+    # Budgets
+    "Budget",
+    "BudgetReport",
+    "check_budget",
+    "enable_budget_alerts",
     # Configuration
     "configure",
 ]

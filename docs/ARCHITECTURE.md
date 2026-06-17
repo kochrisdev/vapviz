@@ -385,6 +385,26 @@ The `GET /metrics` route fetches `store.get_graph()` for every `store.list_runs(
 
 ---
 
+### Budgets Module (`vap/budgets.py`)
+
+Another pure layer over the graph, turning metrics into guardrails. `check_budget(graph, budget)`
+measures a single run's cost, duration, and token totals (the same way `metrics.py` does) and emits a
+`Violation` for every limit the run exceeds, returning a `BudgetReport` (`status`, the measured
+values, and the `violations` list).
+
+`enable_budget_alerts(budget, on_alert=…)` uses the **same store-wrapping pattern as the OTel
+exporter**: it overrides `add_event` on the instance so that when an `agent_end` event lands, the run
+is fetched and checked; on a violation it calls `on_alert(report)` (default: a `vap.budgets` logger
+warning). The check runs on the agent's thread but is cheap (a single graph pass) and best-effort —
+any failure is swallowed so alerting can't break the run. `BudgetAlertHandle.disable()` deletes the
+instance override, reverting to the class method.
+
+This keeps budgets composable: the same `add_event` override pattern powers OTel export and budget
+alerts independently, and `GET /runs/{id}/budget` exposes a stateless, query-param-driven check for
+the UI or ad-hoc use.
+
+---
+
 ### Configuration (`vap/__init__.py`)
 
 `vap.configure(db=...)` is the public API for switching the module-level store:

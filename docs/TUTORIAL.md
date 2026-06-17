@@ -29,7 +29,8 @@ the last, so work through them in order. No prior VaP knowledge required.
 20. [Persistence with SQLite](#20-persistence-with-sqlite)
 21. [Analytics Dashboard](#21-analytics-dashboard)
 22. [OpenTelemetry Export](#22-opentelemetry-export)
-23. [What's Next?](#23-whats-next)
+23. [Cost & Latency Budgets](#23-cost--latency-budgets)
+24. [What's Next?](#24-whats-next)
 
 ---
 
@@ -1151,7 +1152,57 @@ This is **export**, not replacement — runs still stream into the VaP UI as usu
 
 ---
 
-## 23. What's Next?
+## 23. Cost & Latency Budgets
+
+Once you're tracking cost and duration, you can set **budgets** — limits that VaP checks on every
+completed run, alerting you when one is exceeded. This turns passive metrics into active guardrails
+(catch a runaway agent, a prompt that 10×'d your token use, or a slow regression).
+
+Define a `Budget` and enable alerts:
+
+```python
+import vap
+from vap.budgets import Budget, enable_budget_alerts
+
+vap.configure(db="vap.db")
+
+# Any limit left unset is not enforced.
+enable_budget_alerts(Budget(max_cost_usd=0.05, max_duration_ms=5000, max_total_tokens=20_000))
+
+# From here on, any run that finishes over budget logs a warning:
+#   WARNING vap.budgets: VaP budget exceeded for run <id>: cost_usd 0.08 > 0.05 (+60%)
+```
+
+Do something custom on a violation by passing `on_alert` — page someone, post to Slack, raise, etc.:
+
+```python
+def on_over_budget(report):
+    print(f"OVER BUDGET: {report.run_id}")
+    for v in report.violations:
+        print(f"  {v.metric}: {v.actual} > {v.limit}  (+{v.pct_over:.0f}%)")
+
+enable_budget_alerts(Budget(max_cost_usd=0.05), on_alert=on_over_budget)
+```
+
+Check a single run on demand (no alerting), or from any language via the REST API:
+
+```python
+from vap.budgets import Budget, check_budget
+
+report = check_budget(store.get_graph(run_id), Budget(max_cost_usd=0.02, max_duration_ms=3000))
+print(report.status)        # "ok" or "exceeded"
+```
+
+```bash
+curl "http://localhost:8001/runs/{run_id}/budget?max_cost_usd=0.02&max_duration_ms=3000"
+```
+
+> **Try it with no API key:** `python examples/budgets_demo.py` runs one agent within budget and one
+> over it, so you can watch the alert fire.
+
+---
+
+## 24. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -1167,6 +1218,7 @@ python examples/pydantic_ai_demo.py   # uses TestModel — requires pip install 
 python examples/llamaindex_demo.py    # uses MockLLM — requires pip install "vap[llamaindex]"
 python examples/autogen_demo.py       # offline agents — requires pip install "vap[autogen]"
 python examples/otel_demo.py          # console OTel export — requires pip install "vap[otel]"
+python examples/budgets_demo.py       # cost/latency budget alerting
 
 # Requires an API key:
 python examples/openai_demo.py

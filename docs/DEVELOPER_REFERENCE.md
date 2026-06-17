@@ -325,6 +325,46 @@ Available as `vap.compute_metrics` / `vap.Metrics`, or `from vap.metrics import 
 
 ---
 
+#### `vap.Budget` / `vap.check_budget` / `vap.enable_budget_alerts`
+
+Cost & latency guardrails. Import from `vap` or `vap.budgets`.
+
+```python
+class Budget(BaseModel):
+    max_cost_usd: float | None = None
+    max_duration_ms: float | None = None
+    max_total_tokens: int | None = None
+```
+
+**`check_budget(graph: RunGraph, budget: Budget) -> BudgetReport`** — compute a run's cost, duration,
+and token totals and compare against the limits. Returns a `BudgetReport`:
+
+| Field | Description |
+|---|---|
+| `run_id` | the run |
+| `status` | `"ok"` or `"exceeded"` |
+| `cost_usd` / `duration_ms` / `total_tokens` | the measured values |
+| `violations` | list of `{metric, limit, actual, pct_over}` — one per breached limit |
+
+A limit left as `None` is ignored; a missing duration (a still-running run) skips the duration check.
+
+**`enable_budget_alerts(budget, *, store=None, on_alert=None) -> BudgetAlertHandle`** — wraps the
+store so every completed run (`agent_end`) is checked; on a violation it calls `on_alert(report)`
+(default: logs a warning on the `vap.budgets` logger). `handle.disable()` restores the store.
+
+```python
+import vap
+from vap.budgets import Budget, enable_budget_alerts
+
+vap.configure(db="vap.db")
+handle = enable_budget_alerts(
+    Budget(max_cost_usd=0.05, max_duration_ms=5000),
+    on_alert=lambda r: print("OVER BUDGET", r.run_id, r.violations),
+)
+```
+
+---
+
 #### `vap.create_app(store=None)`
 
 Create a new FastAPI application instance.
@@ -1134,6 +1174,31 @@ An empty store returns all-zero counts with `success_rate`, `avg_cost_usd`, and 
 
 ---
 
+### `GET /runs/{run_id}/budget`
+
+Check a run against a budget supplied as query parameters. All are optional; omitted limits are not enforced.
+
+**Query parameters:** `max_cost_usd`, `max_duration_ms`, `max_total_tokens`.
+
+**Response** `200 OK` — a `BudgetReport`:
+
+```json
+{
+  "run_id": "a3f9c2e81b47",
+  "status": "exceeded",
+  "cost_usd": 0.05,
+  "duration_ms": 701.2,
+  "total_tokens": 1200,
+  "violations": [
+    { "metric": "cost_usd", "limit": 0.02, "actual": 0.05, "pct_over": 150.0 }
+  ]
+}
+```
+
+**Error** `404 Not Found` — unknown run.
+
+---
+
 ### `GET /runs/{run_id}`
 
 Retrieve a single run summary.
@@ -1556,6 +1621,15 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v0.12.0
+
+- **Cost & latency budgets** — `vap/budgets.py`: `Budget` (max cost / duration / tokens), `check_budget(graph, budget) -> BudgetReport` with per-metric `violations`
+- **Alerting** — `enable_budget_alerts(budget, on_alert=…)` wraps the store and fires a callback (default: logs a warning) when a completed run exceeds the budget; `BudgetAlertHandle.disable()` restores the store
+- **`GET /runs/{id}/budget`** — check any run against a budget via query params
+- **Exports** — `vap.Budget`, `vap.BudgetReport`, `vap.check_budget`, `vap.enable_budget_alerts`; `examples/budgets_demo.py` (no API key)
+- **Test suite** — `tests/test_budgets.py` with 13 tests; **218 passing** total
+- **Package version** bumped to `0.12.0`
 
 ### v0.11.0
 

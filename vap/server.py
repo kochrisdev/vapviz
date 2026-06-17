@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
+from .budgets import Budget, BudgetReport, check_budget
 from .events import RunGraph, RunSummary, VapEvent
 from .metrics import Metrics, compute_metrics
 from .store import RunStore, default_store
@@ -85,6 +86,24 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
         if not graph:
             raise HTTPException(status_code=404, detail="Run not found")
         return graph
+
+    @app.get("/runs/{run_id}/budget", response_model=BudgetReport)
+    async def run_budget(
+        run_id: str,
+        max_cost_usd: float | None = None,
+        max_duration_ms: float | None = None,
+        max_total_tokens: int | None = None,
+    ):
+        """Check a run against a budget supplied as query parameters."""
+        graph = _store.get_graph(run_id)
+        if not graph:
+            raise HTTPException(status_code=404, detail="Run not found")
+        budget = Budget(
+            max_cost_usd=max_cost_usd,
+            max_duration_ms=max_duration_ms,
+            max_total_tokens=max_total_tokens,
+        )
+        return check_budget(graph, budget)
 
     @app.get("/runs/{run_id}/export")
     async def export_run(run_id: str):
