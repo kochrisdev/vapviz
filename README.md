@@ -29,6 +29,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Cost & latency budgets** — `enable_budget_alerts(Budget(...))` flags and alerts on runs that exceed cost / duration / token limits
 - **Agent evals & scoring** — `eval_run(run, [checks...])` asserts cost/latency/output/custom/LLM-judge checks — regression testing for agents
 - **Search & tagging** — full-text search across run contents (`GET /search`) plus persistent per-run tags, surfaced in the UI
+- **Trace replay** — scrub a run event-by-event in the UI; the graph fills in node by node as it happened
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -616,9 +617,12 @@ ui/src/                       Vite + React + TypeScript
 │   ├── NodeDetail.tsx        Selected-node inspector
 │   ├── RunComparison.tsx     Side-by-side diff of two runs
 │   ├── RunList.tsx           Sidebar run list with search, tags, compare + dashboard toggle
-│   └── TagEditor.tsx         Inline per-run tag editor
+│   ├── TagEditor.tsx         Inline per-run tag editor
+│   └── ReplayBar.tsx         Time-travel scrubber (play/step over a run's events)
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
+├── lib/
+│   └── replay.ts             buildGraphAt() — rebuild the graph as of event N
 ├── store/
 │   └── runStore.ts           Zustand store — builds graph state from events
 └── types/
@@ -907,6 +911,11 @@ with tracer.trace("isolated run") as run:
 - [x] **Tags** — persistent per-run tags (`GET`/`PUT /runs/{id}/tags`), stored in SQLite, surfaced in `RunSummary.tags`
 - [x] **UI** — content search box, tag chips on runs (click to filter), and an inline tag editor in the run header
 - [x] **18-test suite** — `tests/test_search.py` (predicate, in-memory + SQLite tag persistence, endpoints)
+
+### v0.15.0 — Phase 14 (complete)
+- [x] **Trace replay / time-travel** — a UI scrubber that replays a run event-by-event; the graph fills in node by node, with play/pause and step controls
+- [x] **`buildGraphAt(events, n)`** — pure client-side reducer that rebuilds the graph as of event *n* (mirrors the store's event→graph logic)
+- [x] **`ReplayBar.tsx`** + a Replay toggle in the run header; resets when the selected run changes
 
 ---
 

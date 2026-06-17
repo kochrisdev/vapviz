@@ -32,7 +32,8 @@ the last, so work through them in order. No prior VaP knowledge required.
 23. [Cost & Latency Budgets](#23-cost--latency-budgets)
 24. [Agent Evals & Scoring](#24-agent-evals--scoring)
 25. [Search & Tagging](#25-search--tagging)
-26. [What's Next?](#26-whats-next)
+26. [Trace Replay](#26-trace-replay)
+27. [What's Next?](#27-whats-next)
 
 ---
 
@@ -1298,7 +1299,24 @@ When the server runs with `--db vap.db`, tags persist across restarts.
 
 ---
 
-## 26. What's Next?
+## 26. Trace Replay
+
+A finished graph shows you *what* happened; **replay** shows you the *order* it happened in. Select a
+run and click **Replay** in the run header — a scrubber appears beneath the graph.
+
+- **Play / pause** steps through the run's events on a timer; the graph fills in node by node, exactly
+  as the agent executed.
+- **Step** (‹ ›) moves one event at a time — handy for understanding a specific branch or a retry.
+- **Drag the slider** to jump to any point; the graph shows the run "as of" that event.
+- **×** exits replay and returns to the full graph.
+
+This is especially useful for deep agent runs (a long ReAct loop, a multi-agent conversation, a RAG
+pipeline) where the final graph is dense — replay untangles the sequence. It's entirely client-side
+and reads the events already streamed for the run, so it works on live and historical runs alike.
+
+---
+
+## 27. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 

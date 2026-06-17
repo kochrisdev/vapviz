@@ -1735,6 +1735,14 @@ interface RunGraph {
 
 ## Changelog
 
+### v0.15.0
+
+- **Trace replay / time-travel (UI)** — a scrubber (`ReplayBar.tsx`) replays a run event-by-event with play/pause and step controls; the graph fills in node by node
+- **`buildGraphAt(events, n)`** (`ui/src/lib/replay.ts`) — a pure client-side reducer that rebuilds `{nodes, edges}` as of event *n*, mirroring the store's event→graph logic; `App` feeds the partial graph to `AgentGraph` during replay
+- **Replay toggle** in the run header; replay state resets when the selected run changes
+- UI-only — no Python API changes; **256 Python tests** still passing
+- **Package version** bumped to `0.15.0`
+
 ### v0.14.0
 
 - **Run search** — `vap/search.py` `run_matches(graph, query=, status=, kind=, tool=)`; `GET /search` composes it with tag filtering and returns matching `RunSummary` list

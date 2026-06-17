@@ -571,6 +571,17 @@ ReactFlow Node[] with { position: { x, y } }
 - Shows duration in ms when both `started_at` and `ended_at` are present
 - Shows a purple cost label below the duration for `llm` nodes when `data.output.cost_usd` is present
 
+### Trace replay (`ReplayBar.tsx` + `lib/replay.ts`)
+
+Replay reuses the fact that a run *is* its event log. `buildGraphAt(events, n)` is a pure reducer that
+replays the first `n` events into `{nodes, edges}` using the same START/END/ERROR rules as the store
+and `runStore`. When replay is active, `App` computes this partial graph (memoised on `n`) and hands
+it to `AgentGraph` instead of the live `state.nodes/edges` — so the existing graph component renders
+the run "as of" any point with no changes of its own. `ReplayBar` owns the scrubber: a range input
+bound to `n`, play/pause (a timer that advances `n`), and step buttons. Replay state lives in `App`
+(`replayIndex: number | null`, `null` = live) and resets when the selected run changes. dagre re-lays
+out as nodes appear, so the graph visibly fills in as you scrub or play.
+
 ### SSE hook (`useRunStream.ts`)
 
 ```typescript

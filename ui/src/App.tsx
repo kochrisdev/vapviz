@@ -1,14 +1,16 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
-import { Activity } from "lucide-react";
+import { Activity, History } from "lucide-react";
 import { AgentGraph } from "./components/AgentGraph";
 import { Dashboard } from "./components/Dashboard";
 import { EventTimeline } from "./components/EventTimeline";
 import { ExportMenu } from "./components/ExportMenu";
 import { NodeDetail } from "./components/NodeDetail";
+import { ReplayBar } from "./components/ReplayBar";
 import { RunComparison } from "./components/RunComparison";
 import { RunList } from "./components/RunList";
 import { TagEditor } from "./components/TagEditor";
+import { buildGraphAt } from "./lib/replay";
 import { useRunStream } from "./hooks/useRunStream";
 import { useRunStore } from "./store/runStore";
 
@@ -27,6 +29,24 @@ function RunViewer() {
 
   const state        = selectedRunId ? runStates[selectedRunId] : null;
   const selectedNode = state?.nodes.find((n) => n.id === selectedNodeId) ?? null;
+
+  // Replay / time-travel: null = live view; a number = events applied so far.
+  const [replayIndex, setReplayIndex] = useState<number | null>(null);
+  const [replayPlaying, setReplayPlaying] = useState(false);
+
+  // Reset replay when the selected run changes.
+  useEffect(() => {
+    setReplayIndex(null);
+    setReplayPlaying(false);
+  }, [selectedRunId]);
+
+  // The graph to render: live nodes/edges, or a partial graph during replay.
+  const replayGraph = useMemo(
+    () => (state && replayIndex !== null ? buildGraphAt(state.events, replayIndex) : null),
+    [state, replayIndex]
+  );
+  const shownNodes = replayGraph ? replayGraph.nodes : state?.nodes ?? [];
+  const shownEdges = replayGraph ? replayGraph.edges : state?.edges ?? [];
 
   // Ref passed to ExportMenu for PNG capture
   const graphRef = useRef<HTMLDivElement>(null);
@@ -84,7 +104,20 @@ function RunViewer() {
                   tags={runs.find((r) => r.run_id === selectedRunId)?.tags ?? []}
                 />
               </div>
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() =>
+                    setReplayIndex(replayIndex === null ? state.events.length : null)
+                  }
+                  title="Replay this run event by event"
+                  className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${
+                    replayIndex !== null
+                      ? "bg-indigo-500/20 text-indigo-300"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                  }`}
+                >
+                  <History size={13} /> Replay
+                </button>
                 <ExportMenu
                   runId={selectedRunId!}
                   label={state.label}
@@ -95,10 +128,23 @@ function RunViewer() {
 
             <div className="flex flex-1 min-h-0">
               {/* Graph canvas */}
-              <div className="flex-1 min-w-0" ref={graphRef}>
-                <ReactFlowProvider>
-                  <AgentGraph graphNodes={state.nodes} graphEdges={state.edges} />
-                </ReactFlowProvider>
+              <div className="flex-1 min-w-0 flex flex-col">
+                <div className="flex-1 min-h-0" ref={graphRef}>
+                  <ReactFlowProvider>
+                    <AgentGraph graphNodes={shownNodes} graphEdges={shownEdges} />
+                  </ReactFlowProvider>
+                </div>
+                {replayIndex !== null && (
+                  <ReplayBar
+                    events={state.events}
+                    startedAt={state.started_at ?? 0}
+                    index={replayIndex}
+                    setIndex={setReplayIndex}
+                    playing={replayPlaying}
+                    setPlaying={setReplayPlaying}
+                    onExit={() => { setReplayIndex(null); setReplayPlaying(false); }}
+                  />
+                )}
               </div>
 
               {/* Timeline panel */}
