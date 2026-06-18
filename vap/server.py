@@ -229,18 +229,28 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
     # Optional: serve the built React UI as static files
     # Must be mounted AFTER all API routes so the catch-all SPA fallback
     # does not shadow /runs/*, /docs, etc.
+    #
+    # Resolution order:
+    #   1. an explicit static_dir argument
+    #   2. the UI bundled into the installed package (vap/_static) — present in
+    #      the published wheel, so `pip install vap && vap serve` just works
     # ------------------------------------------------------------------
 
-    if static_dir is not None:
-        from pathlib import Path
-        from fastapi.staticfiles import StaticFiles
+    from pathlib import Path
+    from fastapi.staticfiles import StaticFiles
 
+    if static_dir is not None:
         dist = Path(static_dir)
         if not dist.is_dir():
             raise RuntimeError(
                 f"static_dir '{static_dir}' does not exist or is not a directory. "
                 "Run 'npm run build' inside the ui/ directory first."
             )
+    else:
+        bundled = Path(__file__).parent / "_static"
+        dist = bundled if (bundled / "index.html").is_file() else None
+
+    if dist is not None:
         # html=True enables SPA fallback: unknown paths → index.html
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="ui")
 

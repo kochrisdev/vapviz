@@ -64,3 +64,14 @@ vap = "vap.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["vap"]
+
+# Bundle the built React UI into the wheel so `pip install vap && vap serve`
+# serves the full UI with no Node build. Requires `ui/dist` to exist at build
+# time (CI/release build the UI first). force-include bypasses .gitignore.
+[tool.hatch.build.targets.wheel.force-include]
+"ui/dist" = "vap/_static"
+
+# Carry the built UI in the sdist too, so a wheel built from the sdist
+# (the default `python -m build` flow) still bundles it.
+[tool.hatch.build.targets.sdist]
+artifacts = ["ui/dist/**/*"]

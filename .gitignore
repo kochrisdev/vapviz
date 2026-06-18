@@ -18,6 +18,9 @@ ui/node_modules/
 ui/dist/
 ui/.vite/
 
+# Bundled UI copied into the package at build time
+vap/_static/
+
 # Logs
 *.log
 /logs/

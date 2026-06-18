@@ -68,6 +68,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build the UI (bundled into the wheel)
+        working-directory: ui
+        run: npm ci && npm run build
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -77,6 +88,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip build twine
           python -m build
+
+      - name: Verify the UI is bundled in the wheel
+        run: |
+          python - <<'PY'
+          import zipfile, glob
+          whl = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(whl).namelist()
+          assert "vap/_static/index.html" in names, "UI not bundled in wheel"
+          print("OK: UI bundled in", whl)
+          PY
 
       - name: Check distribution metadata
         run: python -m twine check dist/*

@@ -60,35 +60,33 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for full production deployment 
 
 ## Quick Start
 
-### 1. Python backend
+### Install (published package — UI bundled)
+
+The published wheel ships the built UI, so the server serves it out of the box — no Node needed:
 
 ```bash
-# Clone and install
+pip install vap            # or:  pip install "vap[all]"  for every integration
+vap serve --db vap.db      # UI + API at http://localhost:8001
+```
+
+Open **http://localhost:8001**.
+
+### From source (for development)
+
+```bash
 git clone https://github.com/kochrisdev/vap.git
 cd vap
-pip install -e .                  # core only
 pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI, Pydantic AI, LlamaIndex, AutoGen, OTel
+
+# the UI isn't bundled in an editable install — run the dev server:
+cd ui && npm install && npm run dev      # -> http://localhost:5173 (proxies to :8001)
+# in another terminal:
+vap serve --db vap.db                    # API on :8001
 ```
 
-### 2. React UI
-
-```bash
-cd ui
-npm install
-npm run dev        # -> http://localhost:5173
-```
-
-### 3. Start the server
-
-```bash
-# In-memory (resets on restart):
-vap serve
-
-# Persistent SQLite (survives restarts):
-vap serve --db vap.db
-```
-
-Open **http://localhost:5173** to see the live graph UI.
+Open **http://localhost:5173** for the hot-reloading dev UI, or build it once
+(`cd ui && npm run build`) and serve everything from one process with
+`vap serve --db vap.db --static-dir ui/dist`.
 
 ---
 
@@ -659,6 +657,7 @@ tests/
 ├── test_store.py             MemoryStore, SqliteStore, graph mutation
 ├── test_server.py            REST endpoints
 ├── test_openai_patch.py      OpenAI integration (mock, no API key)
+├── test_anthropic_patch.py   Anthropic integration (mock, no API key)
 ├── test_langchain.py         LangChain handler (skipped if langchain-core absent)
 ├── test_cost.py              Pricing table, calculate_cost(), integration cost output
 ├── test_metrics.py           compute_metrics() aggregation + /metrics endpoint
@@ -961,7 +960,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide. Quick sta
 # Install with all integration + dev dependencies
 pip install -e ".[dev]"
 
-# Run the Python test suite (256 tests; integration tests skip if the
+# Run the Python test suite (269 tests; integration tests skip if the
 # corresponding framework isn't installed)
 pytest -q
 
@@ -987,6 +986,28 @@ git tag v0.8.0 && git push origin v0.8.0
 the tag matches the package version, and publishes to PyPI via
 [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC — no API token needed; requires
 a one-time PyPI publisher configured for the `release.yml` workflow and the `pypi` environment).
+
+---
+
+## Versioning & Stability
+
+VaP follows [Semantic Versioning](https://semver.org/). Release notes live in
+[CHANGELOG.md](CHANGELOG.md) (and, in detail, the
+[Developer Reference changelog](docs/DEVELOPER_REFERENCE.md#changelog)).
+
+**Public, stability-tracked surface** (changes here follow semver):
+
+- The `vap` package's top-level exports — `trace` / `atrace`, `configure`, `Tracer`, `patch_openai`,
+  `patch_anthropic`, `calculate_cost`, `compute_metrics`, `Budget` / `check_budget` /
+  `enable_budget_alerts`, `eval_run` and the check builders, and the event/graph models.
+- The framework integrations under `vap.integrations.*` — `VapCrewAIListener`, `VapPydanticAI`,
+  `VapLlamaIndex`, `VapAutoGen`, `VapCallbackHandler`, and `enable_otel_export` (imported from their
+  modules, e.g. `from vap.integrations.llamaindex import VapLlamaIndex`).
+- The `vap serve` CLI flags and the documented [REST API](#rest-api) + SSE event schema
+  (`VapEvent.schema_version` tracks the wire format).
+
+**Not covered**: names prefixed with `_`, internal store layout, and the React UI's internal
+component structure.
 
 ---
 
