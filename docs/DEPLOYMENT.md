@@ -19,8 +19,9 @@ This document covers everything needed to run VaP in a production or shared envi
 8. [Environment Variables & Configuration](#environment-variables--configuration)
 9. [SQLite in Production](#sqlite-in-production)
 10. [Health Checks](#health-checks)
-11. [Multi-Process & Remote Ingest](#multi-process--remote-ingest)
-12. [Security Considerations](#security-considerations)
+11. [Observability (OpenTelemetry)](#observability-opentelemetry)
+12. [Multi-Process & Remote Ingest](#multi-process--remote-ingest)
+13. [Security Considerations](#security-considerations)
 
 ---
 
@@ -414,6 +415,29 @@ readinessProbe:
   initialDelaySeconds: 5
   periodSeconds: 10
 ```
+
+---
+
+## Observability (OpenTelemetry)
+
+In production you'll often already run an observability stack. VaP can mirror every completed run into
+OpenTelemetry — one OTLP trace per run — so your agent traces land in Jaeger, Grafana Tempo, or
+Datadog alongside the rest of your service telemetry, while still appearing in the VaP UI.
+
+```python
+import vap
+from vap.integrations.otel import enable_otel_export
+
+vap.configure(db="vap.db")
+enable_otel_export(endpoint="http://otel-collector:4317")   # OTLP/gRPC
+```
+
+Install the extra: `pip install "vap[otel]"`. Call `enable_otel_export()` with no arguments to use an
+OpenTelemetry SDK you've already configured globally. See the
+[Developer Reference](DEVELOPER_REFERENCE.md#opentelemetry-export) for protocols and options.
+
+For cost/latency guardrails, `vap.enable_budget_alerts(...)` can fire a callback (page, Slack, log)
+whenever a run exceeds a budget — see the [budgets guide](../README.md#cost--latency-budgets).
 
 ---
 

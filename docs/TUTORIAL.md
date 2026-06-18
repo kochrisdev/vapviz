@@ -79,7 +79,7 @@ cd vap
 # Core package (no LLM integrations)
 pip install -e .
 
-# Or install everything at once (Anthropic, OpenAI, LangChain support)
+# Or install everything at once (all integrations + OpenTelemetry export)
 pip install -e ".[all]"
 ```
 

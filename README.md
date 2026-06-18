@@ -45,8 +45,10 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 ## Tutorial
 
 New to VaP? The **[step-by-step tutorial](docs/TUTORIAL.md)** walks you from installation to a
-fully instrumented agent — covering tracing, async, error handling, cost tracking, OpenAI/Anthropic
-auto-instrumentation, LangGraph, CrewAI, remote ingest, run comparison, and export.
+fully instrumented agent — covering tracing, async, error handling, cost tracking, the OpenAI /
+Anthropic / LangGraph / CrewAI / Pydantic AI / LlamaIndex / AutoGen integrations, remote ingest, run
+comparison, export, the analytics dashboard, OpenTelemetry export, budgets, evals, search & tagging,
+and trace replay.
 
 ---
 
@@ -959,7 +961,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide. Quick sta
 # Install with all integration + dev dependencies
 pip install -e ".[dev]"
 
-# Run the Python test suite (164 tests; integration tests skip if the
+# Run the Python test suite (256 tests; integration tests skip if the
 # corresponding framework isn't installed)
 pytest -q
 
