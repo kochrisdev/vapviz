@@ -1735,6 +1735,14 @@ interface RunGraph {
 
 ## Changelog
 
+### v1.0.0
+
+- **First stable release** — the public API now follows semantic versioning (see [README → Versioning & Stability](../README.md#versioning--stability) for the tracked surface)
+- **UI bundled in the wheel** — `ui/dist` is force-included as `vap/_static`; `create_app` auto-serves it when `--static-dir` is omitted, so `pip install vap && vap serve` shows the full UI with no Node build. CI/release build the UI before packaging and assert it's bundled
+- **Anthropic integration tests** — `tests/test_anthropic_patch.py` (13 tests); **269 passing** total
+- **Docs** — root `CHANGELOG.md`, README stability policy, refreshed hero screenshot
+- Promoted to `Development Status :: 5 - Production/Stable`; no new tracing/integration features beyond 0.15.0
+
 ### v0.15.0
 
 - **Trace replay / time-travel (UI)** — a scrubber (`ReplayBar.tsx`) replays a run event-by-event with play/pause and step controls; the graph fills in node by node

@@ -11,6 +11,21 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 _Nothing yet._
 
+## [1.0.0]
+
+First stable release. The public API now follows [Semantic Versioning](https://semver.org/) — see
+the [Versioning & Stability](README.md#versioning--stability) section for the tracked surface.
+
+### Added
+- The published wheel bundles the built React UI, so `pip install vap && vap serve` serves the full UI with no Node build (`vap serve` auto-detects the bundled UI; `--static-dir` still overrides).
+- Root `CHANGELOG.md` and a documented public-API stability policy.
+- Anthropic integration tests (`tests/test_anthropic_patch.py`), closing the last integration coverage gap (269 tests).
+
+### Changed
+- Promoted to `Development Status :: 5 - Production/Stable`.
+
+This release adds no new tracing/integration features beyond 0.15.0 — it marks the project as stable. The capability set: 7 framework integrations (Anthropic, OpenAI, LangChain, CrewAI, Pydantic AI, LlamaIndex, AutoGen), OpenTelemetry export, an analytics dashboard, cost/latency budgets with alerting, agent evals & scoring, run search & tagging, and trace replay.
+
 ## [0.15.0]
 ### Added
 - Trace replay / time-travel: a UI scrubber (`ReplayBar`) that replays a run event-by-event; the graph fills in node by node.
@@ -73,5 +88,6 @@ _Nothing yet._
 ### Added
 - Initial release: sync tracer, in-memory store, FastAPI + SSE server, ReactFlow UI, Anthropic SDK integration.
 
-[Unreleased]: https://github.com/kochrisdev/vap/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/kochrisdev/vap/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/kochrisdev/vap/releases/tag/v1.0.0
 [0.15.0]: https://github.com/kochrisdev/vap/releases/tag/v0.15.0
