@@ -5,7 +5,7 @@ __pycache__/
 *.pyd
 .Python
 *.egg-info/
-dist/
+/dist/
 build/
 .venv/
 venv/
@@ -15,7 +15,8 @@ env/
 
 # Node
 ui/node_modules/
-ui/dist/
+ui/dist/*
+!ui/dist/.gitkeep
 ui/.vite/
 
 # Bundled UI copied into the package at build time
@@ -53,8 +54,9 @@ vap.db
 # Scratch / throwaway test & demo scripts (kept out of the repo)
 scratch/
 
-# Personal notes — session findings + reference (not committed)
+# Personal notes — session findings + reference + next-session starter (not committed)
 docs/notes/
+NEXT-SESSION-STARTER.md
 
 # External agent used for manual VaP tracing tests (separate project, own git)
 crewai-agent/
