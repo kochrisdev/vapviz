@@ -16,6 +16,9 @@ env/
 # Node
 ui/node_modules/
 ui/dist/
+# but keep a placeholder so the wheel's force-include of ui/dist always resolves
+# (a fresh `pip install -e` / CI checkout has no built UI). Releases build over it.
+!ui/dist/.gitkeep
 ui/.vite/
 
 # Bundled UI copied into the package at build time
