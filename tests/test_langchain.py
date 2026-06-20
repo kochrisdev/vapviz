@@ -70,9 +70,10 @@ class TestExtractName:
 
 
 class TestSafeDict:
-    def test_returns_dict_unchanged(self):
+    def test_returns_dict_value_equal(self):
+        # Now deep-coerces to a JSON-safe equivalent (not necessarily the same object).
         d = {"a": 1}
-        assert _safe_dict(d) is d
+        assert _safe_dict(d) == d
 
     def test_stringifies_non_dict(self):
         result = _safe_dict("hello")
@@ -81,6 +82,19 @@ class TestSafeDict:
     def test_stringifies_list(self):
         result = _safe_dict([1, 2, 3])
         assert "value" in result
+
+    def test_coerces_non_serializable_objects(self):
+        # LG2 regression: nested non-JSON objects (e.g. LangChain messages) must
+        # not raise — they're coerced so on_chain_end can emit STEP_END.
+        import json
+
+        class Msg:
+            def model_dump(self):
+                return {"content": "hi"}
+
+        result = _safe_dict({"messages": [Msg()]})
+        json.dumps(result)  # must not raise
+        assert result == {"messages": [{"content": "hi"}]}
 
 
 class TestExtractLlmResult:
@@ -141,6 +155,27 @@ class TestVapCallbackHandlerChain:
             ctx = handler._contexts.get(run_uuid)
             assert ctx is not None
             assert ctx.node_kind == NodeKind.STEP
+
+    def test_chain_label_prefers_langgraph_node(self):
+        # LG3/U4: multi-agent readability — the node name comes from metadata.
+        with _TraceHandle() as h:
+            handler = VapCallbackHandler(h.run)
+            run_uuid = uuid4()
+            handler.on_chain_start(
+                {"name": "RunnableSequence"}, {},
+                run_id=run_uuid, parent_run_id=None,
+                metadata={"langgraph_node": "math_expert"},
+            )
+            assert handler._contexts[run_uuid].label == "math_expert"
+
+    def test_chain_label_falls_back_when_no_langgraph_node(self):
+        with _TraceHandle() as h:
+            handler = VapCallbackHandler(h.run)
+            run_uuid = uuid4()
+            handler.on_chain_start(
+                {"name": "MyChain"}, {}, run_id=run_uuid, metadata={},
+            )
+            assert handler._contexts[run_uuid].label == "MyChain"
 
     def test_chain_end_removes_context_and_emits_step_end(self):
         with _TraceHandle() as h:

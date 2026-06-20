@@ -105,7 +105,10 @@ class VapCallbackHandler(_BaseCallbackHandler):  # type: ignore[misc]
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
-        name = _extract_name(serialized) or "chain"
+        # Prefer the LangGraph node name (e.g. "supervisor", "math_expert") so
+        # multi-agent graphs are readable; LangChain only exposes it via metadata.
+        # Without it every chain falls back to the anonymous label "chain" (U4/LG3).
+        name = (metadata or {}).get("langgraph_node") or _extract_name(serialized) or "chain"
         ctx = self._make_ctx(name, "step", parent_run_id)
         ctx.set_input(_safe_dict(inputs))
         if tags:
@@ -247,7 +250,8 @@ class VapCallbackHandler(_BaseCallbackHandler):  # type: ignore[misc]
     ) -> None:
         ctx = self._contexts.pop(run_id, None)
         if ctx:
-            output = _extract_llm_result(response)
+            model = (ctx._input or {}).get("model", "") if isinstance(ctx._input, dict) else ""
+            output = _extract_llm_result(response, model)
             ctx.set_output(output)
             ctx._emit(EventType.LLM_RESPONSE, {"input": ctx._input, "output": ctx._output})
 
@@ -298,15 +302,38 @@ def _serialize_message(msg: Any) -> dict:
     return {"content": str(msg)}
 
 
+def _json_default(o: Any) -> Any:
+    """JSON fallback for non-serializable values (e.g. LangChain message objects)."""
+    if hasattr(o, "model_dump"):
+        try:
+            return o.model_dump()
+        except Exception:
+            pass
+    if hasattr(o, "dict"):
+        try:
+            return o.dict()
+        except Exception:
+            pass
+    return str(o)
+
+
 def _safe_dict(value: Any) -> dict:
-    """Coerce a value to a plain dict; stringify if not dict-like."""
-    if isinstance(value, dict):
-        return value
-    return {"value": str(value)}
+    """Coerce a value to a plain, JSON-serializable dict.
+
+    LangGraph (``langchain.agents.create_agent``) nests raw message objects in
+    chain inputs/outputs; without deep coercion ``on_chain_end`` raises
+    ``TypeError: Object of type HumanMessage is not JSON serializable`` and the
+    node never receives its end event (left stuck "running").
+    """
+    if not isinstance(value, dict):
+        value = {"value": str(value)}
+    return json.loads(json.dumps(value, default=_json_default))
 
 
-def _extract_llm_result(response: Any) -> dict:
-    """Extract text and token usage from a LangChain LLMResult."""
+def _extract_llm_result(response: Any, model: str = "") -> dict:
+    """Extract text, token usage, and cost from a LangChain LLMResult."""
+    from ..cost import calculate_cost
+
     output: dict[str, Any] = {}
 
     if hasattr(response, "generations") and response.generations:
@@ -328,19 +355,23 @@ def _extract_llm_result(response: Any) -> dict:
             output["text"] = "\n".join(t for t in texts if t)
 
     if hasattr(response, "llm_output") and response.llm_output:
+        # The start-time label is the class name ("ChatOpenAI"); the real model
+        # id (e.g. "openai/gpt-4o-mini") is on the result — prefer it for pricing.
+        model = response.llm_output.get("model_name") or model
         usage = (
             response.llm_output.get("token_usage")
             or response.llm_output.get("usage")
             or {}
         )
         if usage:
+            input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens", 0)
+            output_tokens = usage.get("completion_tokens") or usage.get("output_tokens", 0)
             output["usage"] = {
-                "input_tokens": (
-                    usage.get("prompt_tokens") or usage.get("input_tokens", 0)
-                ),
-                "output_tokens": (
-                    usage.get("completion_tokens") or usage.get("output_tokens", 0)
-                ),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             }
+            cost = calculate_cost(model, input_tokens, output_tokens)
+            if cost is not None:
+                output["cost_usd"] = round(cost, 8)
 
     return output
