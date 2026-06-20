@@ -4,9 +4,35 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vap"
-version = "0.6.0"
+version = "1.0.0"
 description = "Visualization Agentic Process — trace and visualize AI agent workflows"
+readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "kochrisdev", email = "christophertun.dev@gmail.com" }]
+keywords = [
+    "agent",
+    "tracing",
+    "observability",
+    "llm",
+    "visualization",
+    "crewai",
+    "langchain",
+    "pydantic-ai",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.30.0",
@@ -14,13 +40,24 @@ dependencies = [
     "sse-starlette>=2.1.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/kochrisdev/vap"
+Repository = "https://github.com/kochrisdev/vap"
+Documentation = "https://github.com/kochrisdev/vap/tree/main/docs"
+Issues = "https://github.com/kochrisdev/vap/issues"
+Changelog = "https://github.com/kochrisdev/vap/blob/main/docs/DEVELOPER_REFERENCE.md#changelog"
+
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.28.0"]
-openai    = ["openai>=1.0.0"]
-langchain = ["langchain-core>=0.1.0"]
-crewai    = ["crewai>=1.0.0"]
-all       = ["anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "crewai>=1.0.0"]
-dev       = ["pytest", "httpx", "pytest-asyncio", "anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0"]
+anthropic   = ["anthropic>=0.28.0"]
+openai      = ["openai>=1.0.0"]
+langchain   = ["langchain-core>=0.1.0"]
+crewai      = ["crewai>=1.0.0"]
+pydantic-ai = ["pydantic-ai-slim>=1.0.0"]
+otel        = ["opentelemetry-sdk>=1.20.0", "opentelemetry-exporter-otlp>=1.20.0"]
+llamaindex  = ["llama-index-core>=0.11.0"]
+autogen     = ["ag2>=0.4"]
+all         = ["anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "crewai>=1.0.0", "pydantic-ai-slim>=1.0.0", "opentelemetry-sdk>=1.20.0", "opentelemetry-exporter-otlp>=1.20.0", "llama-index-core>=0.11.0", "ag2>=0.4"]
+dev         = ["pytest", "httpx", "pytest-asyncio", "anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "pydantic-ai-slim>=1.0.0", "opentelemetry-sdk>=1.20.0", "llama-index-core>=0.11.0"]
 
 [project.scripts]
 vap = "vap.cli:main"
@@ -30,3 +67,14 @@ packages = ["vap"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Bundle the built React UI into the wheel so `pip install vap && vap serve`
+# serves the full UI with no Node build. Requires `ui/dist` to exist at build
+# time (CI/release build the UI first). force-include bypasses .gitignore.
+[tool.hatch.build.targets.wheel.force-include]
+"ui/dist" = "vap/_static"
+
+# Carry the built UI in the sdist too, so a wheel built from the sdist
+# (the default `python -m build` flow) still bundles it.
+[tool.hatch.build.targets.sdist]
+artifacts = ["ui/dist/**/*"]

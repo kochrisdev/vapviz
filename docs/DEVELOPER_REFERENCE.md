@@ -277,6 +277,137 @@ vap.format_cost(0.05)      # -> "$0.0500"
 
 ---
 
+#### `vap.compute_metrics(graphs)`
+
+Aggregate a list of `RunGraph` snapshots into a single cross-run analytics object. This is the pure function behind the `GET /metrics` endpoint and the UI analytics dashboard — it reads only the node data every integration already produces, so no extra instrumentation is required.
+
+```python
+vap.compute_metrics(graphs: list[RunGraph]) -> Metrics
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `graphs` | `list[RunGraph]` | Run-graph snapshots, e.g. `[store.get_graph(s.run_id) for s in store.list_runs()]`. |
+
+**Returns:** a `Metrics` pydantic model:
+
+| Field | Type | Description |
+|---|---|---|
+| `run_count` | `int` | Number of runs in the input. |
+| `success_count` / `error_count` / `running_count` | `int` | Run counts by terminal status. |
+| `success_rate` | `float \| None` | `success / (success + error)`, over **completed** runs only; `None` when none have finished. |
+| `total_cost_usd` | `float` | Sum of every LLM node's `cost_usd`. |
+| `avg_cost_usd` | `float \| None` | Mean cost per run that contributed any cost; `None` when no run did. |
+| `total_duration_ms` / `avg_duration_ms` | `float` / `float \| None` | Wall-clock totals; the average is over completed runs with a measurable duration. |
+| `total_nodes` | `int` | Node count across all graphs. |
+| `total_llm_calls` | `int` | Number of `llm` nodes. |
+| `total_tokens` | `TokenTotals` | `{input, output}` token sums. |
+| `by_model` | `list[ModelStat]` | `{model, calls, cost_usd, input_tokens, output_tokens}` per model, sorted by cost then calls. |
+| `by_kind` | `KindCounts` | `{agent, step, tool, llm}` node counts. |
+| `cost_over_time` | `list[DailyCost]` | `{date, cost_usd, run_count}` per UTC day, chronological. |
+
+The model name for each LLM node is taken from `node.data["input"]["model"]`, falling back to the `llm/` label prefix.
+
+```python
+import vap
+from vap.backends.sqlite import SqliteStore
+
+store = SqliteStore("vap.db")
+graphs = [g for g in (store.get_graph(s.run_id) for s in store.list_runs()) if g]
+metrics = vap.compute_metrics(graphs)
+
+print(metrics.total_cost_usd, metrics.success_rate)
+for m in metrics.by_model:
+    print(m.model, m.calls, m.cost_usd)
+```
+
+Available as `vap.compute_metrics` / `vap.Metrics`, or `from vap.metrics import compute_metrics`.
+
+---
+
+#### `vap.Budget` / `vap.check_budget` / `vap.enable_budget_alerts`
+
+Cost & latency guardrails. Import from `vap` or `vap.budgets`.
+
+```python
+class Budget(BaseModel):
+    max_cost_usd: float | None = None
+    max_duration_ms: float | None = None
+    max_total_tokens: int | None = None
+```
+
+**`check_budget(graph: RunGraph, budget: Budget) -> BudgetReport`** — compute a run's cost, duration,
+and token totals and compare against the limits. Returns a `BudgetReport`:
+
+| Field | Description |
+|---|---|
+| `run_id` | the run |
+| `status` | `"ok"` or `"exceeded"` |
+| `cost_usd` / `duration_ms` / `total_tokens` | the measured values |
+| `violations` | list of `{metric, limit, actual, pct_over}` — one per breached limit |
+
+A limit left as `None` is ignored; a missing duration (a still-running run) skips the duration check.
+
+**`enable_budget_alerts(budget, *, store=None, on_alert=None) -> BudgetAlertHandle`** — wraps the
+store so every completed run (`agent_end`) is checked; on a violation it calls `on_alert(report)`
+(default: logs a warning on the `vap.budgets` logger). `handle.disable()` restores the store.
+
+```python
+import vap
+from vap.budgets import Budget, enable_budget_alerts
+
+vap.configure(db="vap.db")
+handle = enable_budget_alerts(
+    Budget(max_cost_usd=0.05, max_duration_ms=5000),
+    on_alert=lambda r: print("OVER BUDGET", r.run_id, r.violations),
+)
+```
+
+---
+
+#### `vap.eval_run` and checks
+
+Run pass/fail assertions against a run — regression testing for agents. Import from `vap` or
+`vap.evals`.
+
+**`eval_run(run_or_graph, checks: list[Check]) -> EvalResult`** — accepts a `RunGraph` or a
+`RunContext` (from `vap.trace()`). Returns an `EvalResult`:
+
+| Field | Description |
+|---|---|
+| `run_id` | the run |
+| `passed` | `True` only if **every** check passed |
+| `score` | mean of the checks' 0–1 scores |
+| `checks` | list of `{name, passed, score, detail}` |
+
+`EvalResult.summary()` returns a printable multi-line report.
+
+**Built-in checks** (each returns a `Check`):
+
+| Check | Passes when |
+|---|---|
+| `max_cost(usd)` | run cost ≤ `usd` |
+| `max_latency(seconds)` | run duration ≤ `seconds` |
+| `max_tokens(n)` | total tokens ≤ `n` |
+| `no_errors()` | no node has `error` status |
+| `output_contains(text, node_label=None, case_sensitive=False)` | `text` appears in a node's output |
+| `custom(name, fn)` | `fn(graph)` is truthy (may return `bool`, `(bool, detail)`, or `(bool, detail, score)`) |
+| `judge(name, fn)` | `fn(graph)` returns `(passed, detail, score)` — an LLM-as-judge or any scorer you supply |
+
+```python
+import vap
+from vap.evals import eval_run, max_cost, no_errors, output_contains
+
+result = eval_run(run, [max_cost(0.02), no_errors(), output_contains("ticket")])
+assert result.passed, result.summary()
+```
+
+**`run_checks(run_or_graph, specs: list[dict]) -> EvalResult`** — build checks from JSON-friendly
+specs (`{"type": "max_cost", "value": 0.02}`, `{"type": "output_contains", "value": "ticket"}`,
+`{"type": "no_errors"}`, …). Powers `POST /runs/{id}/eval`. Unknown types raise `ValueError`.
+
+---
+
 #### `vap.create_app(store=None)`
 
 Create a new FastAPI application instance.
@@ -762,6 +893,228 @@ Requires: `pip install "vap[crewai]"`
 
 ---
 
+### `VapPydanticAI`
+
+Pydantic AI integration. Import from `vap.integrations.pydantic_ai`.
+
+```python
+from vap.integrations.pydantic_ai import VapPydanticAI
+
+VapPydanticAI(run: RunContext | None = None, *, patch: bool = True)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `run` | `RunContext \| None` | `None` | Optional existing run context (manual mode). When `None`, a new VaP run is created for each `agent.run()` / `run_sync()` call (auto mode). |
+| `patch` | `bool` | `True` | Patch `Agent` immediately. Set `False` to defer to `.patch()`. |
+
+Raises `ImportError` at instantiation time if `pydantic-ai` is not installed.
+
+It wraps `Agent.run` and `Agent.run_sync` (a re-entrancy guard prevents double-counting when `run_sync` delegates to `run`). After each run completes, the graph is reconstructed from `result.all_messages()`.
+
+**Auto mode** — instantiate once; every subsequent agent run becomes its own VaP run:
+
+```python
+import vap
+from vap.integrations.pydantic_ai import VapPydanticAI
+
+vap.configure(db="vap.db")
+VapPydanticAI()                       # patch before any agent.run()
+
+result = agent.run_sync("What's the weather in Paris?")
+```
+
+**Manual mode** — attach to an existing `RunContext` so the agent nests inside a pipeline:
+
+```python
+with vap.trace("Trip planner") as run:
+    VapPydanticAI(run)
+    result = agent.run_sync("Is Lisbon warm?")
+```
+
+**Pydantic AI → VaP node mapping:**
+
+| Source | VaP node kind | Parent |
+|---|---|---|
+| the agent run | `agent` (auto) or `step` (`agent/<name>`, manual) | none / run root |
+| each `ModelResponse` | `llm` (`llm/<model_name>`) | agent node |
+| each tool call (`ToolCallPart` → `ToolReturnPart`) | `tool` | the model request that called it |
+
+**Cost & tokens:** each `ModelResponse` carries `usage` (input/output tokens) and `model_name`; the listener calls `vap.calculate_cost(model_name, …)` per request and aggregates totals onto the agent node. Node timings come from the messages' timestamps.
+
+**`detach()`** restores the original `Agent` methods:
+
+```python
+listener = VapPydanticAI(run)
+agent.run_sync("...")
+listener.detach()
+```
+
+`patch_pydantic_ai(run=None)` is a convenience wrapper equivalent to `VapPydanticAI(run)`.
+
+> **Scope:** the streaming methods (`run_stream` / `run_stream_events`) are not traced yet.
+
+Requires: `pip install "vap[pydantic-ai]"`
+
+---
+
+### `VapLlamaIndex`
+
+LlamaIndex integration. Import from `vap.integrations.llamaindex`. Registers a span handler on
+LlamaIndex's instrumentation dispatcher; every instrumented span becomes a VaP node.
+
+```python
+from vap.integrations.llamaindex import VapLlamaIndex
+
+VapLlamaIndex(run: RunContext | None = None, *, register: bool = True)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `run` | `RunContext \| None` | `None` | Existing run context (manual mode) — all spans attach under it. When `None` (auto mode), each top-level span starts its own VaP run. |
+| `register` | `bool` | `True` | Register on the root dispatcher immediately. Set `False` to defer. |
+
+Raises `ImportError` at instantiation time if `llama-index-core` is not installed.
+
+**Manual mode** — wrap a whole RAG workflow in one run (recommended):
+
+```python
+import vap
+from llama_index.core import VectorStoreIndex
+from vap.integrations.llamaindex import VapLlamaIndex
+
+with vap.trace("RAG query") as run:
+    VapLlamaIndex(run)
+    index = VectorStoreIndex.from_documents(docs)
+    index.as_query_engine().query("…")
+```
+
+**Span → VaP node mapping:**
+
+| LlamaIndex | VaP node kind |
+|---|---|
+| span whose instance class ends with `LLM` (or an LLM method: `chat`/`complete`/`predict`/…) | `llm` |
+| span whose instance class ends with `Retriever`, or a `retrieve` call | `tool` |
+| span whose instance class contains `Embedding` | `tool` |
+| everything else (query engines, synthesizers, splitters, …) | `step` |
+
+The span `id_` (`"<qualname>-<uuid>"`) becomes the node label (`qualname`); `parent_span_id`
+becomes the parent node. Node start/end times are captured live, and a dropped span (an error)
+marks the node `error`.
+
+**`register()` / `detach()`** add and remove the handler from the dispatcher's `span_handlers`.
+
+> **Scope:** v1 captures the span structure and timings; per-call token/cost enrichment (via the
+> event handler) is a planned follow-up.
+
+Requires: `pip install "vap[llamaindex]"`
+
+---
+
+### `VapAutoGen`
+
+AutoGen (AG2) integration. Import from `vap.integrations.autogen`. Wraps `ConversableAgent` so a
+multi-agent conversation becomes a VaP graph.
+
+```python
+from vap.integrations.autogen import VapAutoGen
+
+VapAutoGen(run: RunContext | None = None, *, patch: bool = True)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `run` | `RunContext \| None` | `None` | Existing run context (manual mode) — conversations attach under it. When `None` (auto mode), each `initiate_chat` starts its own VaP run. |
+| `patch` | `bool` | `True` | Patch `ConversableAgent` immediately. |
+
+Raises `ImportError` at instantiation time if `autogen` (ag2) is not installed.
+
+It monkey-patches three `ConversableAgent` methods and keeps a thread-local stack of open nodes so
+nesting (tools under the turn that called them, nested chats) is correct:
+
+| Patched method | VaP node kind | Meaning |
+|---|---|---|
+| `initiate_chat` | `step` `chat/<recipient>` (or `agent` run root in auto mode) | the conversation |
+| `generate_reply` | `step` `agent/<name>` | one agent turn |
+| `execute_function` | `tool` | a tool/function call |
+
+Agent turns are siblings under the chat node; tool calls nest under the turn that made them. Node
+timings are real (captured live). A method that raises marks its node `error`. Patching twice never
+stacks wrappers (the pristine original is recovered), and `detach()` restores the originals.
+
+> **Scope:** targets the classic `autogen.ConversableAgent` API (AG2 / `pyautogen`), not the newer
+> async `autogen-agentchat` (v0.4+) agents.
+
+Requires: `pip install "vap[autogen]"`
+
+---
+
+### OpenTelemetry export
+
+Mirror VaP runs into OpenTelemetry. Import from `vap.integrations.otel`. One **trace per run**; each
+node becomes a span whose parent is the node's parent. Requires `pip install "vap[otel]"`.
+
+#### `enable_otel_export(...)`
+
+```python
+enable_otel_export(
+    *,
+    tracer_provider=None,
+    endpoint: str | None = None,
+    protocol: str = "grpc",          # "grpc" or "http"
+    service_name: str = "vap",
+    insecure: bool = True,
+    store=None,
+) -> OtelExportHandle
+```
+
+Wraps a store's `add_event` so that each run is exported when its `agent_end` event is recorded.
+
+| Parameter | Description |
+|---|---|
+| `tracer_provider` | Use this provider. If `None` and `endpoint` is set, a provider with an OTLP exporter is built; if both are `None`, the **global** `TracerProvider` is used. |
+| `endpoint` | OTLP collector, e.g. `"http://localhost:4317"` (gRPC) or `"http://localhost:4318/v1/traces"` (HTTP). |
+| `protocol` | `"grpc"` (default) or `"http"` — selects the OTLP exporter (imported lazily). |
+| `service_name` | `service.name` resource attribute when a provider is created here. |
+| `insecure` | gRPC insecure channel (default `True`). |
+| `store` | Store to wrap. Defaults to `vap.store.default_store`. |
+
+Returns an `OtelExportHandle` with `.disable()` (restore the original `add_event`) and `.shutdown()`
+(disable + flush the provider). Only runs that complete **after** the call are exported.
+
+```python
+import vap
+from vap.integrations.otel import enable_otel_export
+
+vap.configure(db="vap.db")
+handle = enable_otel_export(endpoint="http://localhost:4317")
+# ... run agents ...
+handle.shutdown()
+```
+
+#### `export_run(graph, *, tracer=None, tracer_provider=None) -> int`
+
+Export a single `RunGraph` on demand; returns the number of spans created (`0` if `graph` is `None`).
+Uses the global `TracerProvider` unless a `tracer` or `tracer_provider` is given.
+
+#### `build_spans(graph, tracer) -> int`
+
+Low-level: emit spans for every node in `graph` using an OpenTelemetry `Tracer`, parent-first with
+explicit start/end times. Returns the span count.
+
+**Span mapping:**
+
+| VaP | OpenTelemetry |
+|---|---|
+| run | one trace |
+| node (`agent`/`step`/`tool`/`llm`) | span (parent = parent node's span) |
+| `started_at` / `ended_at` | span start / end (nanoseconds) |
+| `error` status | span `Status(ERROR)` with the error message |
+| LLM model / tokens / cost | `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd` |
+| kind / status / run id / I-O | `vap.node.kind`, `vap.node.status`, `vap.run_id`, `vap.input`, `vap.output` |
+
+---
+
 ## CLI
 
 ```
@@ -823,10 +1176,139 @@ List all runs, newest first.
     "ended_at": 1716720003.456,
     "node_count": 5,
     "event_count": 10,
-    "total_cost_usd": 0.0075
+    "total_cost_usd": 0.0075,
+    "tags": ["prod"]
   }
 ]
 ```
+
+---
+
+### `GET /search`
+
+Search runs by free-text query and/or filters. Returns the matching `RunSummary` list (same shape as
+`/runs`).
+
+**Query parameters** (all optional; combined with AND):
+
+| Param | Matches |
+|---|---|
+| `q` | case-insensitive substring across the run label and every node's input / output / error |
+| `status` | run status equals this (`success` / `error` / `running` / `pending`) |
+| `kind` | at least one node of this kind (`agent` / `step` / `tool` / `llm`) |
+| `tool` | at least one `tool` node whose label contains this string |
+| `tag` | run is tagged with this exact tag |
+
+```bash
+curl "http://localhost:8001/search?q=paris&status=success"
+curl "http://localhost:8001/search?tool=search_web"
+curl "http://localhost:8001/search?tag=prod"
+```
+
+---
+
+### `GET` / `PUT /runs/{run_id}/tags`
+
+Get or replace a run's tags. `PUT` body is `{"tags": ["prod", "v2-prompt"]}`; tags are normalised
+(trimmed, de-duplicated, empties dropped) and the normalised list is returned. Tags are persisted in
+SQLite when the server runs with `--db`. `404` if the run is unknown.
+
+```bash
+curl -X PUT http://localhost:8001/runs/{id}/tags \
+  -H "Content-Type: application/json" -d '{"tags": ["prod"]}'
+```
+
+---
+
+### `GET /metrics`
+
+Cross-run analytics aggregated over every stored run. Computed by `compute_metrics()` (see the Python API section for the full field reference).
+
+**Response** `200 OK` — `application/json`
+
+```json
+{
+  "run_count": 7,
+  "success_count": 7,
+  "error_count": 0,
+  "running_count": 0,
+  "success_rate": 1.0,
+  "total_cost_usd": 0.04526,
+  "avg_cost_usd": 0.009052,
+  "total_duration_ms": 1113.42,
+  "avg_duration_ms": 159.06,
+  "total_nodes": 37,
+  "total_llm_calls": 5,
+  "total_tokens": { "input": 7900, "output": 2590 },
+  "by_model": [
+    { "model": "claude-3-5-sonnet", "calls": 1, "cost_usd": 0.0231, "input_tokens": 3200, "output_tokens": 900 }
+  ],
+  "by_kind": { "agent": 7, "step": 11, "tool": 14, "llm": 5 },
+  "cost_over_time": [
+    { "date": "2026-06-15", "cost_usd": 0.04526, "run_count": 5 }
+  ]
+}
+```
+
+An empty store returns all-zero counts with `success_rate`, `avg_cost_usd`, and `avg_duration_ms` set to `null`, and empty `by_model` / `cost_over_time` arrays.
+
+---
+
+### `GET /runs/{run_id}/budget`
+
+Check a run against a budget supplied as query parameters. All are optional; omitted limits are not enforced.
+
+**Query parameters:** `max_cost_usd`, `max_duration_ms`, `max_total_tokens`.
+
+**Response** `200 OK` — a `BudgetReport`:
+
+```json
+{
+  "run_id": "a3f9c2e81b47",
+  "status": "exceeded",
+  "cost_usd": 0.05,
+  "duration_ms": 701.2,
+  "total_tokens": 1200,
+  "violations": [
+    { "metric": "cost_usd", "limit": 0.02, "actual": 0.05, "pct_over": 150.0 }
+  ]
+}
+```
+
+**Error** `404 Not Found` — unknown run.
+
+---
+
+### `POST /runs/{run_id}/eval`
+
+Evaluate a run against a list of declarative check specs (see `run_checks`).
+
+**Request body** — a JSON array of check specs:
+
+```json
+[
+  { "type": "max_cost", "value": 0.02 },
+  { "type": "max_latency", "value": 3.0 },
+  { "type": "no_errors" },
+  { "type": "output_contains", "value": "ticket", "node_label": null, "case_sensitive": false }
+]
+```
+
+**Response** `200 OK` — an `EvalResult`:
+
+```json
+{
+  "run_id": "a3f9c2e81b47",
+  "passed": false,
+  "score": 0.75,
+  "checks": [
+    { "name": "max_cost<=$0.02", "passed": true, "score": 1.0, "detail": "cost $0.01 (limit $0.02)" },
+    { "name": "output_contains('ticket')", "passed": false, "score": 0.0, "detail": "'ticket' not found in any node output" }
+  ]
+}
+```
+
+**Errors** `404` (unknown run), `400` (unknown check `type`).
 
 ---
 
@@ -1252,6 +1734,95 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v1.0.0
+
+- **First stable release** — the public API now follows semantic versioning (see [README → Versioning & Stability](../README.md#versioning--stability) for the tracked surface)
+- **UI bundled in the wheel** — `ui/dist` is force-included as `vap/_static`; `create_app` auto-serves it when `--static-dir` is omitted, so `pip install vap && vap serve` shows the full UI with no Node build. CI/release build the UI before packaging and assert it's bundled
+- **Anthropic integration tests** — `tests/test_anthropic_patch.py` (13 tests); **269 passing** total
+- **Docs** — root `CHANGELOG.md`, README stability policy, refreshed hero screenshot
+- Promoted to `Development Status :: 5 - Production/Stable`; no new tracing/integration features beyond 0.15.0
+
+### v0.15.0
+
+- **Trace replay / time-travel (UI)** — a scrubber (`ReplayBar.tsx`) replays a run event-by-event with play/pause and step controls; the graph fills in node by node
+- **`buildGraphAt(events, n)`** (`ui/src/lib/replay.ts`) — a pure client-side reducer that rebuilds `{nodes, edges}` as of event *n*, mirroring the store's event→graph logic; `App` feeds the partial graph to `AgentGraph` during replay
+- **Replay toggle** in the run header; replay state resets when the selected run changes
+- UI-only — no Python API changes; **256 Python tests** still passing
+- **Package version** bumped to `0.15.0`
+
+### v0.14.0
+
+- **Run search** — `vap/search.py` `run_matches(graph, query=, status=, kind=, tool=)`; `GET /search` composes it with tag filtering and returns matching `RunSummary` list
+- **Tags** — persistent per-run tags: `RunStore.get_tags` / `set_tags` (in-memory default; `SqliteStore` persists to a `tags` table), `RunSummary.tags`, and `GET` / `PUT /runs/{id}/tags`
+- **UI** — content search box, clickable tag chips on runs (filter by tag), and an inline tag editor (`TagEditor.tsx`) in the run header
+- **Test suite** — `tests/test_search.py` with 18 tests (predicate, in-memory + SQLite tag persistence, endpoints); **256 passing** total
+- **Package version** bumped to `0.14.0`
+
+### v0.13.0
+
+- **Agent evals & scoring** — `vap/evals.py`: `eval_run(run_or_graph, checks) -> EvalResult` (per-check `passed`/`score`/`detail` + overall `passed`/`score`); built-in `max_cost`, `max_latency`, `max_tokens`, `no_errors`, `output_contains`, plus `custom` and `judge` hooks
+- **Declarative checks** — `run_checks(graph, specs)` builds checks from JSON specs; powers `POST /runs/{id}/eval`
+- **Workflow** — accepts a `RunContext` or `RunGraph`; `assert eval_run(...).passed` for pytest/CI; a throwing check counts as a failure
+- **Exports** — `vap.eval_run`, `vap.run_checks`, `vap.EvalResult`, `vap.Check`, and the check builders; `examples/evals_demo.py`
+- **Test suite** — `tests/test_evals.py` with 20 tests; **238 passing** total
+- **Package version** bumped to `0.13.0`
+
+### v0.12.0
+
+- **Cost & latency budgets** — `vap/budgets.py`: `Budget` (max cost / duration / tokens), `check_budget(graph, budget) -> BudgetReport` with per-metric `violations`
+- **Alerting** — `enable_budget_alerts(budget, on_alert=…)` wraps the store and fires a callback (default: logs a warning) when a completed run exceeds the budget; `BudgetAlertHandle.disable()` restores the store
+- **`GET /runs/{id}/budget`** — check any run against a budget via query params
+- **Exports** — `vap.Budget`, `vap.BudgetReport`, `vap.check_budget`, `vap.enable_budget_alerts`; `examples/budgets_demo.py` (no API key)
+- **Test suite** — `tests/test_budgets.py` with 13 tests; **218 passing** total
+- **Package version** bumped to `0.12.0`
+
+### v0.11.0
+
+- **AutoGen integration** — `vap/integrations/autogen.py`: `VapAutoGen` monkey-patches `ConversableAgent.initiate_chat` / `generate_reply` / `execute_function`, reproducing a multi-agent conversation as a chat root, an agent-turn node per reply, and tool nodes per function call
+- **Correct nesting** — a thread-local node stack parents tool calls under the turn that made them and supports nested chats; agent turns are siblings under the chat; timings are live
+- **Two usage modes** — manual (under a provided run) and auto (each `initiate_chat` = its own run); dropped/raised calls mark nodes `error`; double-patching never stacks wrappers; `detach()` restores originals
+- **`pip install "vap[autogen]"`** — new optional extra (`ag2`, classic `ConversableAgent` API) + `examples/autogen_demo.py` (offline `register_reply` agents, no API key)
+- **Test suite** — `tests/test_autogen.py` with 8 tests; **191 passing** total
+- **Package version** bumped to `0.11.0`
+
+### v0.10.0
+
+- **LlamaIndex integration** — `vap/integrations/llamaindex.py`: `VapLlamaIndex` registers a span handler on LlamaIndex's instrumentation dispatcher and reproduces every span (query engines, retrievers, embeddings, synthesizers, LLM calls) as a VaP node, with `parent_span_id` → node hierarchy and live timings
+- **Kind classification** — retrievers/embeddings → `tool`, LLM spans → `llm`, the rest → `step`; dropped spans mark the node `error`
+- **Two usage modes** — manual (all spans under a provided run) and auto (each top-level span = its own run); `register()` / `detach()` manage the dispatcher hook
+- **`pip install "vap[llamaindex]"`** — new optional extra (`llama-index-core`) + `examples/llamaindex_demo.py` (MockLLM/MockEmbedding, no API key)
+- **Test suite** — `tests/test_llamaindex.py` with 8 tests; **183 passing** total
+- **Package version** bumped to `0.10.0`
+
+### v0.9.0
+
+- **OpenTelemetry export** — `vap/integrations/otel.py`: `enable_otel_export(...)` wraps a store to emit each completed run as an OTLP trace (one trace per run; node hierarchy → span parent/child) via a BatchSpanProcessor; `export_run()` / `build_spans()` for one-shot export
+- **GenAI semantics** — spans carry `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd`, `vap.node.*`, real node start/end times, and ERROR status
+- **Flexible wiring** — bring your own `TracerProvider`, pass an OTLP `endpoint` (gRPC/HTTP), or use the global provider; OTLP exporter imported lazily; `OtelExportHandle.disable()` / `.shutdown()`
+- **`pip install "vap[otel]"`** — new optional extra (`opentelemetry-sdk`, `opentelemetry-exporter-otlp`) + `examples/otel_demo.py` (ConsoleSpanExporter, no network)
+- **Test suite** — `tests/test_otel.py` with 11 tests (in-memory exporter); **175 passing** total
+- **Package version** bumped to `0.9.0`
+
+### v0.8.0
+
+- **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync` and reconstructs the agent, each model request (tokens + cost), and each tool call as nested VaP nodes from `result.all_messages()`; tool nodes are parented under the model request that called them
+- **Two usage modes** — auto mode (new VaP run per `agent.run()`) and manual mode (agent nests inside an existing `RunContext`); `.detach()` restores the original methods
+- **`patch_pydantic_ai(run=None)`** convenience wrapper; re-entrancy guard prevents double-counting when `run_sync` delegates to `run`
+- **`vap/integrations/pydantic_ai.py`** + `examples/pydantic_ai_demo.py` (runs with no API key via `TestModel`)
+- **`pip install "vap[pydantic-ai]"`** — new optional extra (`pydantic-ai-slim>=1.0.0`)
+- **Test suite** — `tests/test_pydantic_ai.py` with 13 tests (manual/auto/async modes, tool parenting, cost wiring, error path, detach, double-patch guard); **164 passing** total
+- **Package version** bumped to `0.8.0` (was stale at `0.6.0`)
+
+### v0.7.0
+
+- **Analytics dashboard** — cross-run overview in the UI: run/success counts, total & average cost, average duration, LLM-call and token totals, a per-model breakdown table, a cost-over-time bar chart, and a nodes-by-kind breakdown. Toggled from the sidebar header; auto-refreshes every 5 s
+- **`GET /metrics`** — aggregates every stored run into one `Metrics` snapshot
+- **`vap.compute_metrics(graphs)`** — pure aggregation function over `RunGraph` snapshots; exported as `vap.compute_metrics` / `vap.Metrics`
+- **`vap/metrics.py`** — `Metrics`, `ModelStat`, `TokenTotals`, `KindCounts`, `DailyCost` pydantic models + `compute_metrics()`
+- **`Dashboard.tsx`** + `view` state in `runStore` (`"runs" | "dashboard"`); selecting a run returns to the graph view
+- **Test suite** — `tests/test_metrics.py` with 14 tests (empty input, status/duration/cost aggregation, model breakdown + label fallback, daily bucketing, and the endpoint); **151 passing** total
+- **Fix: test isolation** — an `autouse` fixture in `tests/conftest.py` resets the `_current_step` ContextVar between tests, so a `RunContext._start()` without a matching `_end()` (as in the CrewAI listener tests) no longer leaks into later test files
 
 ### v0.6.0
 

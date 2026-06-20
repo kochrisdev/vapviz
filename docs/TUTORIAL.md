@@ -20,11 +20,20 @@ the last, so work through them in order. No prior VaP knowledge required.
 11. [Anthropic Auto-Instrumentation](#11-anthropic-auto-instrumentation)
 12. [LangGraph / LangChain Integration](#12-langgraph--langchain-integration)
 13. [CrewAI Integration](#13-crewai-integration)
-14. [Remote Ingest (any language)](#14-remote-ingest-any-language)
-15. [Comparing Runs](#15-comparing-runs)
-16. [Exporting Runs](#16-exporting-runs)
-17. [Persistence with SQLite](#17-persistence-with-sqlite)
-18. [What's Next?](#18-whats-next)
+14. [Pydantic AI Integration](#14-pydantic-ai-integration)
+15. [LlamaIndex Integration](#15-llamaindex-integration)
+16. [AutoGen Integration](#16-autogen-integration)
+17. [Remote Ingest (any language)](#17-remote-ingest-any-language)
+18. [Comparing Runs](#18-comparing-runs)
+19. [Exporting Runs](#19-exporting-runs)
+20. [Persistence with SQLite](#20-persistence-with-sqlite)
+21. [Analytics Dashboard](#21-analytics-dashboard)
+22. [OpenTelemetry Export](#22-opentelemetry-export)
+23. [Cost & Latency Budgets](#23-cost--latency-budgets)
+24. [Agent Evals & Scoring](#24-agent-evals--scoring)
+25. [Search & Tagging](#25-search--tagging)
+26. [Trace Replay](#26-trace-replay)
+27. [What's Next?](#27-whats-next)
 
 ---
 
@@ -70,7 +79,7 @@ cd vap
 # Core package (no LLM integrations)
 pip install -e .
 
-# Or install everything at once (Anthropic, OpenAI, LangChain support)
+# Or install everything at once (all integrations + OpenTelemetry export)
 pip install -e ".[all]"
 ```
 
@@ -702,7 +711,173 @@ and `store_report` all sit side by side as siblings.
 
 ---
 
-## 14. Remote Ingest (any language)
+## 14. Pydantic AI Integration
+
+`VapPydanticAI` traces [Pydantic AI](https://ai.pydantic.dev/) agents. Instantiate it once and
+every `agent.run()` / `run_sync()` is captured — the agent, each model request (with tokens and
+cost), and each tool call (with its arguments and result) — with no changes to your agent code.
+
+```bash
+pip install "vap[pydantic-ai]"
+```
+
+**Auto mode** — one fresh VaP run per `agent.run()`:
+
+```python
+import vap
+from pydantic_ai import Agent
+from vap.integrations.pydantic_ai import VapPydanticAI
+
+vap.configure(db="vap.db")
+
+agent = Agent("openai:gpt-4o-mini", name="weather-agent")
+
+@agent.tool_plain
+def get_weather(city: str) -> str:
+    return f"{city}: 21°C, partly cloudy"
+
+VapPydanticAI()                       # patch once, before any run
+result = agent.run_sync("What's the weather in Paris?")
+```
+
+The graph for that run looks like:
+
+```
+weather-agent                 (agent — the run root)
+├── llm/gpt-4o-mini           (first model request — decides to call the tool)
+│   └── get_weather           (tool — parented under the request that called it)
+└── llm/gpt-4o-mini           (final model response)
+```
+
+**Manual mode** — nest the agent inside a larger pipeline by passing a `RunContext`:
+
+```python
+with vap.trace("Trip planner") as run:
+    with run.step("load_preferences", kind="step") as step:
+        step.set_output({"prefers": "warm cities"})
+
+    listener = VapPydanticAI(run)     # agent runs become children of this run
+    result = agent.run_sync("Is Lisbon warm enough for a beach trip?")
+    listener.detach()                 # optional — restore Agent.run/run_sync
+
+    with run.step("format_itinerary", kind="step") as step:
+        step.set_output({"itinerary": "Day 1: beach, Day 2: old town"})
+```
+
+Each model request becomes an `llm` node with token usage and (for priced models) `cost_usd`;
+the totals are aggregated onto the agent node. Tool calls are matched to their results by
+`tool_call_id` and parented under the model request that issued them.
+
+> **Try it with no API key:** `python examples/pydantic_ai_demo.py` uses Pydantic AI's built-in
+> `TestModel`, so it runs fully offline.
+
+> **Note:** the graph is reconstructed from the run's message history after it completes, so node
+> timings come from the message timestamps. Streaming methods (`run_stream`) aren't traced yet.
+
+---
+
+## 15. LlamaIndex Integration
+
+`VapLlamaIndex` traces [LlamaIndex](https://docs.llamaindex.ai/) by registering a span handler on
+its instrumentation dispatcher. A whole RAG query — query engine, retriever, embeddings, response
+synthesizer, and LLM calls — shows up as a nested VaP graph with real timings, no changes to your
+LlamaIndex code.
+
+```bash
+pip install "vap[llamaindex]"
+```
+
+The recommended pattern is **manual mode**: wrap your indexing/query work in a `vap.trace()` so the
+whole workflow is one run.
+
+```python
+import vap
+from llama_index.core import VectorStoreIndex, Document
+from vap.integrations.llamaindex import VapLlamaIndex
+
+with vap.trace("RAG query") as run:
+    VapLlamaIndex(run)
+    index = VectorStoreIndex.from_documents([Document(text="VaP traces AI agents.")])
+    response = index.as_query_engine().query("What does VaP do?")
+```
+
+The resulting graph reflects LlamaIndex's real call tree, for example:
+
+```
+RAG query                          (the trace's run root)
+└── RetrieverQueryEngine.query     (step)
+    ├── VectorIndexRetriever.retrieve         (tool)
+    │   └── MockEmbedding.get_query_embedding (tool)
+    └── CompactAndRefine.synthesize           (step)
+        └── …                                 (step)
+            └── MockLLM.predict               (llm)
+```
+
+Spans are classified by kind — **retrievers and embeddings** become `tool` nodes, **LLM calls**
+become `llm` nodes, and orchestration (query engines, synthesizers, splitters) stays `step`. Node
+timings are captured live, so durations are real.
+
+Prefer one run per top-level call instead? Use **auto mode** — `VapLlamaIndex()` with no run — and
+each top-level instrumented call (e.g. each `.query(...)`) becomes its own VaP run. Call `.detach()`
+to remove the handler when you're done.
+
+> **Try it with no API key:** `python examples/llamaindex_demo.py` uses LlamaIndex's `MockLLM` and
+> `MockEmbedding`, so it runs fully offline.
+
+---
+
+## 16. AutoGen Integration
+
+`VapAutoGen` traces [AutoGen](https://microsoft.github.io/autogen/) (AG2) multi-agent conversations
+by wrapping `ConversableAgent`. The chat becomes a root, each agent turn becomes a child node, and
+any tool/function call nests under the turn that made it — with real timings and no changes to your
+agent code.
+
+```bash
+pip install "vap[autogen]"
+```
+
+Wrap your conversation in a `vap.trace()` (manual mode):
+
+```python
+import vap
+from autogen import ConversableAgent
+from vap.integrations.autogen import VapAutoGen
+
+assistant = ConversableAgent("assistant", llm_config={"model": "gpt-4o-mini"})
+user = ConversableAgent("user", human_input_mode="NEVER", max_consecutive_auto_reply=2)
+
+with vap.trace("Support chat") as run:
+    VapAutoGen(run)
+    user.initiate_chat(assistant, message="How do I reset my password?")
+```
+
+The resulting graph mirrors the conversation:
+
+```
+Support chat                 (the trace's run root)
+└── chat/assistant           (step — the initiate_chat)
+    ├── agent/assistant       (turn)
+    ├── agent/user            (turn)
+    └── agent/assistant       (turn)
+```
+
+Each `generate_reply` becomes an `agent/<name>` turn node; `execute_function` tool calls appear as
+`tool` nodes nested under the turn that called them. Turns are siblings under the chat in
+conversation order.
+
+Prefer one run per conversation instead? Use **auto mode** — `VapAutoGen()` with no run — and each
+`initiate_chat` becomes its own VaP run. Call `.detach()` to restore the original methods.
+
+> **Try it with no API key:** `python examples/autogen_demo.py` uses offline agents (registered reply
+> functions), so it runs fully offline.
+
+> **Note:** this targets the classic `autogen.ConversableAgent` API (AG2 / `pyautogen`), not the
+> newer async `autogen-agentchat` (v0.4+) agents.
+
+---
+
+## 17. Remote Ingest (any language)
 
 You don't need to import `vap` in the process that runs your agent. Any process — including
 non-Python code — can push events by POSTing JSON to `POST /runs/{run_id}/events`.
@@ -788,7 +963,7 @@ though the agent process has no knowledge of VaP internals.
 
 ---
 
-## 15. Comparing Runs
+## 18. Comparing Runs
 
 Once you have two or more runs you can diff them side by side to understand what changed — useful
 for comparing model variants, prompt changes, or pipeline refactors.
@@ -819,7 +994,7 @@ run in the sidebar normally.
 
 ---
 
-## 16. Exporting Runs
+## 19. Exporting Runs
 
 Every run can be exported in two formats from the **Export ▾** button in the top-right toolbar
 (only visible when a run is selected).
@@ -848,7 +1023,7 @@ screenshot includes the layout exactly as you see it — useful for reports or d
 
 ---
 
-## 17. Persistence with SQLite
+## 20. Persistence with SQLite
 
 By default VaP uses an in-memory store — fast, zero setup, but all runs are lost when the
 process exits. Switch to SQLite with one line:
@@ -892,7 +1067,256 @@ sqlite3 vap.db ".backup vap_backup_$(date +%Y%m%d).db"
 
 ---
 
-## 18. What's Next?
+## 21. Analytics Dashboard
+
+Once you have several runs stored, the **Analytics** dashboard gives you a bird's-eye view across
+all of them — no extra instrumentation required, it reads the same data your traces already
+capture. Click the bar-chart icon in the sidebar header to toggle it (click any run to return to
+the graph view).
+
+It shows:
+
+- **Overview cards** — run count, success rate, total & average cost, average duration, LLM-call
+  count, and total tokens
+- **Cost over time** — total LLM spend bucketed per day
+- **By model** — calls, tokens, and USD cost for each model, sorted by spend
+- **Nodes by kind** — how your runs break down across agent / step / tool / LLM nodes
+
+The dashboard auto-refreshes every few seconds, so it stays current while live runs complete.
+
+**Programmatic access:** the same numbers are available without the UI.
+
+```bash
+curl http://localhost:8001/metrics
+```
+
+```python
+import vap
+from vap.backends.sqlite import SqliteStore
+
+store = SqliteStore("vap.db")
+graphs = [g for g in (store.get_graph(s.run_id) for s in store.list_runs()) if g]
+metrics = vap.compute_metrics(graphs)
+
+print(f"{metrics.run_count} runs · {vap.format_cost(metrics.total_cost_usd)} total")
+for m in metrics.by_model:
+    print(f"  {m.model}: {m.calls} calls, {vap.format_cost(m.cost_usd)}")
+```
+
+See the [`GET /metrics`](DEVELOPER_REFERENCE.md#get-metrics) reference for the full field list.
+
+---
+
+## 22. OpenTelemetry Export
+
+VaP can mirror every run into [OpenTelemetry](https://opentelemetry.io/) — useful when you already
+run Jaeger, Grafana Tempo, or Datadog and want your agent traces alongside the rest of your service
+telemetry. Each run becomes **one OTel trace**; each node (agent / step / tool / LLM) becomes a span
+nested exactly like the VaP graph.
+
+```bash
+pip install "vap[otel]"
+```
+
+Point it at an OTLP collector and every completed run is exported automatically:
+
+```python
+import vap
+from vap.integrations.otel import enable_otel_export
+
+vap.configure(db="vap.db")
+enable_otel_export(endpoint="http://localhost:4317")   # OTLP/gRPC (use protocol="http" for 4318)
+
+with vap.trace("My agent") as run:
+    with run.step("ask", kind="llm") as s:
+        s.set_input({"model": "gpt-4o"})
+        s.set_output({"usage": {"input_tokens": 1200, "output_tokens": 180}, "cost_usd": 0.0048})
+# → exported to OpenTelemetry when the run completes
+```
+
+LLM spans use the OTel **GenAI semantic conventions** (`gen_ai.request.model`,
+`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`), cost rides along as `vap.cost_usd`, and a
+failed node sets the span's status to `ERROR`.
+
+**Already have OpenTelemetry configured?** Call `enable_otel_export()` with no arguments to use your
+existing global `TracerProvider`, or pass your own with `enable_otel_export(tracer_provider=...)`.
+
+**Export on demand** (instead of auto-export) — convert any stored run to spans yourself:
+
+```python
+from vap.integrations.otel import export_run
+export_run(store.get_graph(run_id), tracer_provider=my_provider)
+```
+
+> **Try it with no collector:** `python examples/otel_demo.py` exports a run to the console via
+> OpenTelemetry's `ConsoleSpanExporter`, so you can see the spans without any backend.
+
+This is **export**, not replacement — runs still stream into the VaP UI as usual.
+
+---
+
+## 23. Cost & Latency Budgets
+
+Once you're tracking cost and duration, you can set **budgets** — limits that VaP checks on every
+completed run, alerting you when one is exceeded. This turns passive metrics into active guardrails
+(catch a runaway agent, a prompt that 10×'d your token use, or a slow regression).
+
+Define a `Budget` and enable alerts:
+
+```python
+import vap
+from vap.budgets import Budget, enable_budget_alerts
+
+vap.configure(db="vap.db")
+
+# Any limit left unset is not enforced.
+enable_budget_alerts(Budget(max_cost_usd=0.05, max_duration_ms=5000, max_total_tokens=20_000))
+
+# From here on, any run that finishes over budget logs a warning:
+#   WARNING vap.budgets: VaP budget exceeded for run <id>: cost_usd 0.08 > 0.05 (+60%)
+```
+
+Do something custom on a violation by passing `on_alert` — page someone, post to Slack, raise, etc.:
+
+```python
+def on_over_budget(report):
+    print(f"OVER BUDGET: {report.run_id}")
+    for v in report.violations:
+        print(f"  {v.metric}: {v.actual} > {v.limit}  (+{v.pct_over:.0f}%)")
+
+enable_budget_alerts(Budget(max_cost_usd=0.05), on_alert=on_over_budget)
+```
+
+Check a single run on demand (no alerting), or from any language via the REST API:
+
+```python
+from vap.budgets import Budget, check_budget
+
+report = check_budget(store.get_graph(run_id), Budget(max_cost_usd=0.02, max_duration_ms=3000))
+print(report.status)        # "ok" or "exceeded"
+```
+
+```bash
+curl "http://localhost:8001/runs/{run_id}/budget?max_cost_usd=0.02&max_duration_ms=3000"
+```
+
+> **Try it with no API key:** `python examples/budgets_demo.py` runs one agent within budget and one
+> over it, so you can watch the alert fire.
+
+---
+
+## 24. Agent Evals & Scoring
+
+Budgets catch runs that are *too expensive or slow*. **Evals** go further: they assert a run did the
+*right thing* — turning VaP into a regression-testing tool for your agents. Trace a run, then check it
+against a list of assertions and get a pass/fail with a score.
+
+```python
+import vap
+from vap.evals import eval_run, max_cost, max_latency, no_errors, output_contains
+
+with vap.trace("support agent") as run:
+    answer_support_ticket("How do I reset my password?")    # your agent
+
+result = eval_run(run, [
+    max_cost(0.02),
+    max_latency(3.0),
+    no_errors(),
+    output_contains("reset password"),
+])
+
+print(result.summary())
+assert result.passed          # <- drop this straight into pytest / CI
+```
+
+`result.summary()` prints a per-check report:
+
+```
+PASSED (100%)
+  PASS  max_cost<=$0.02 — cost $0.0013 (limit $0.02)
+  PASS  max_latency<=3.0s — 51 ms (limit 3000 ms)
+  PASS  no_errors — no error nodes
+  PASS  output_contains('reset password') — found in node 'answer'
+```
+
+**Built-in checks:** `max_cost`, `max_latency`, `max_tokens`, `no_errors`, `output_contains`. Each
+check produces a 0–1 score; `result.score` is their mean and `result.passed` is true only if every
+check passed.
+
+**Your own checks** — `custom` for a quick predicate, `judge` for an LLM-as-judge (you supply the
+scoring function, so VaP stays provider-agnostic):
+
+```python
+from vap.evals import custom, judge
+
+eval_run(run, [
+    custom("two_tool_calls", lambda g: sum(n.kind.value == "tool" for n in g.nodes) == 2),
+    judge("helpfulness", my_llm_scorer),   # returns (passed, detail, score)
+])
+```
+
+**Over HTTP / from another language** — declarative check specs via `POST /runs/{id}/eval`:
+
+```bash
+curl -X POST http://localhost:8001/runs/{run_id}/eval \
+  -H "Content-Type: application/json" \
+  -d '[{"type":"max_cost","value":0.02},{"type":"output_contains","value":"reset"}]'
+```
+
+> **Try it with no API key:** `python examples/evals_demo.py` traces a fake support agent and asserts
+> five checks against it — the exact shape you'd use in a test.
+
+---
+
+## 25. Search & Tagging
+
+Once you've accumulated a lot of runs, two features make them navigable: **search** (find runs by
+their contents) and **tags** (organise runs with labels).
+
+**Search** in the sidebar box matches your query against run labels *and* every node's input/output —
+so searching `paris` finds runs whose tools or LLM calls mention Paris, not just runs named "Paris".
+Over the API you can also filter structurally:
+
+```bash
+curl "http://localhost:8001/search?q=paris"                       # content search
+curl "http://localhost:8001/search?tool=search_web&status=error"  # failed runs that used a tool
+curl "http://localhost:8001/search?tag=prod"                      # runs tagged prod
+```
+
+**Tags** are persistent per-run labels. In the UI, select a run and use the **+ tag** editor in the
+header (remove a tag with its **×**); each run shows its tags as chips in the sidebar — click a chip
+to filter the list to that tag. From code or another language:
+
+```bash
+curl -X PUT http://localhost:8001/runs/{run_id}/tags \
+  -H "Content-Type: application/json" -d '{"tags": ["prod", "v2-prompt"]}'
+```
+
+When the server runs with `--db vap.db`, tags persist across restarts.
+
+> **Tip:** tag your baseline runs (e.g. `baseline`) and your experiments (`v2-prompt`), then use the
+> [comparison view](#18-comparing-runs) to diff one against the other.
+
+---
+
+## 26. Trace Replay
+
+A finished graph shows you *what* happened; **replay** shows you the *order* it happened in. Select a
+run and click **Replay** in the run header — a scrubber appears beneath the graph.
+
+- **Play / pause** steps through the run's events on a timer; the graph fills in node by node, exactly
+  as the agent executed.
+- **Step** (‹ ›) moves one event at a time — handy for understanding a specific branch or a retry.
+- **Drag the slider** to jump to any point; the graph shows the run "as of" that event.
+- **×** exits replay and returns to the full graph.
+
+This is especially useful for deep agent runs (a long ReAct loop, a multi-agent conversation, a RAG
+pipeline) where the final graph is dense — replay untangles the sequence. It's entirely client-side
+and reads the events already streamed for the run, so it works on live and historical runs alike.
+
+---
+
+## 27. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -904,6 +1328,12 @@ python examples/simple_demo.py
 python examples/error_handling_demo.py
 python examples/cost_tracking_demo.py
 python examples/remote_ingest_demo.py
+python examples/pydantic_ai_demo.py   # uses TestModel — requires pip install "vap[pydantic-ai]"
+python examples/llamaindex_demo.py    # uses MockLLM — requires pip install "vap[llamaindex]"
+python examples/autogen_demo.py       # offline agents — requires pip install "vap[autogen]"
+python examples/otel_demo.py          # console OTel export — requires pip install "vap[otel]"
+python examples/budgets_demo.py       # cost/latency budget alerting
+python examples/evals_demo.py         # agent evals / assertions
 
 # Requires an API key:
 python examples/openai_demo.py

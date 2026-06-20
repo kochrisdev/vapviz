@@ -18,6 +18,9 @@ ui/node_modules/
 ui/dist/
 ui/.vite/
 
+# Bundled UI copied into the package at build time
+vap/_static/
+
 # Logs
 *.log
 /logs/
@@ -39,10 +42,13 @@ Thumbs.db
 CLAUDE.md
 .claude/settings.local.json
 
-# VaP generated databases (SQLite + WAL sidecars)
+# VaP generated databases (SQLite + WAL sidecars) + server logs
+vap.db
 *.db
 *.db-wal
 *.db-shm
+.vap_server.out
+.vap_server.err
 
 # Scratch / throwaway test & demo scripts (kept out of the repo)
 scratch/

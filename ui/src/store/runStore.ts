@@ -11,12 +11,15 @@ export interface RunState {
   events: VapEvent[];
 }
 
+export type View = "runs" | "dashboard";
+
 interface Store {
   runs: RunSummary[];
   selectedRunId: string | null;
   runStates: Record<string, RunState>;
   selectedNodeId: string | null;
   compareRunId: string | null;
+  view: View;
 
   setRuns: (runs: RunSummary[]) => void;
   selectRun: (runId: string | null) => void;
@@ -24,6 +27,8 @@ interface Store {
   applyEvent: (event: VapEvent) => void;
   setRunGraph: (runId: string, nodes: GraphNode[], edges: GraphEdge[], label: string, status: NodeStatus, started_at: number, ended_at: number | null) => void;
   setCompareRun: (runId: string | null) => void;
+  setView: (view: View) => void;
+  setRunTags: (runId: string, tags: string[]) => void;
 }
 
 const START_TYPES = new Set(["agent_start", "step_start", "tool_call", "llm_call"]);
@@ -35,14 +40,21 @@ export const useRunStore = create<Store>((set) => ({
   runStates: {},
   selectedNodeId: null,
   compareRunId: null,
+  view: "runs",
 
   setRuns: (runs) => set({ runs }),
 
-  selectRun: (runId) => set({ selectedRunId: runId, selectedNodeId: null, compareRunId: null }),
+  // Selecting a run always returns to the run (graph) view
+  selectRun: (runId) => set({ selectedRunId: runId, selectedNodeId: null, compareRunId: null, view: "runs" }),
 
   selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
   setCompareRun: (runId) => set({ compareRunId: runId }),
+
+  setView: (view) => set({ view }),
+
+  setRunTags: (runId, tags) =>
+    set((s) => ({ runs: s.runs.map((r) => (r.run_id === runId ? { ...r, tags } : r)) })),
 
   setRunGraph: (runId, nodes, edges, label, status, started_at, ended_at) =>
     set((s) => ({
@@ -138,6 +150,7 @@ export const useRunStore = create<Store>((set) => ({
                   node_count: nodes.length,
                   event_count: 1,
                   total_cost_usd: costForRun,
+                  tags: [],
                 },
                 ...s.runs,
               ];

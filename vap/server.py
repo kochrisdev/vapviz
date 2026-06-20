@@ -8,8 +8,18 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
+from pydantic import BaseModel
+
+from .budgets import Budget, BudgetReport, check_budget
+from .evals import EvalResult, run_checks
 from .events import RunGraph, RunSummary, VapEvent
+from .metrics import Metrics, compute_metrics
+from .search import run_matches
 from .store import RunStore, default_store
+
+
+class TagUpdate(BaseModel):
+    tags: list[str]
 
 
 def create_app(store: RunStore | None = None, static_dir: str | None = None) -> FastAPI:
@@ -39,6 +49,44 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
     @app.get("/runs", response_model=list[RunSummary])
     async def list_runs():
         return _store.list_runs()
+
+    # ------------------------------------------------------------------
+    # Cross-run analytics
+    # ------------------------------------------------------------------
+
+    @app.get("/metrics", response_model=Metrics)
+    async def metrics():
+        """Aggregate statistics across every stored run."""
+        graphs = [
+            g
+            for g in (_store.get_graph(s.run_id) for s in _store.list_runs())
+            if g is not None
+        ]
+        return compute_metrics(graphs)
+
+    # ------------------------------------------------------------------
+    # Search
+    # ------------------------------------------------------------------
+
+    @app.get("/search", response_model=list[RunSummary])
+    async def search(
+        q: str | None = None,
+        status: str | None = None,
+        kind: str | None = None,
+        tool: str | None = None,
+        tag: str | None = None,
+    ):
+        """Search runs by free-text query and/or filters (status, kind, tool, tag)."""
+        results: list[RunSummary] = []
+        for summary in _store.list_runs():
+            if tag is not None and tag not in summary.tags:
+                continue
+            graph = _store.get_graph(summary.run_id)
+            if graph is None:
+                continue
+            if run_matches(graph, query=q, status=status, kind=kind, tool=tool):
+                results.append(summary)
+        return results
 
     # NOTE: /runs/compare must be registered BEFORE /runs/{run_id} so that
     # FastAPI treats "compare" as a literal path segment, not a run_id.
@@ -70,6 +118,47 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
         if not graph:
             raise HTTPException(status_code=404, detail="Run not found")
         return graph
+
+    @app.get("/runs/{run_id}/budget", response_model=BudgetReport)
+    async def run_budget(
+        run_id: str,
+        max_cost_usd: float | None = None,
+        max_duration_ms: float | None = None,
+        max_total_tokens: int | None = None,
+    ):
+        """Check a run against a budget supplied as query parameters."""
+        graph = _store.get_graph(run_id)
+        if not graph:
+            raise HTTPException(status_code=404, detail="Run not found")
+        budget = Budget(
+            max_cost_usd=max_cost_usd,
+            max_duration_ms=max_duration_ms,
+            max_total_tokens=max_total_tokens,
+        )
+        return check_budget(graph, budget)
+
+    @app.get("/runs/{run_id}/tags", response_model=list[str])
+    async def get_tags(run_id: str):
+        if not _store.get_run(run_id):
+            raise HTTPException(status_code=404, detail="Run not found")
+        return _store.get_tags(run_id)
+
+    @app.put("/runs/{run_id}/tags", response_model=list[str])
+    async def set_tags(run_id: str, body: TagUpdate):
+        if not _store.get_run(run_id):
+            raise HTTPException(status_code=404, detail="Run not found")
+        return _store.set_tags(run_id, body.tags)
+
+    @app.post("/runs/{run_id}/eval", response_model=EvalResult)
+    async def eval_run_endpoint(run_id: str, checks: list[dict]):
+        """Evaluate a run against a list of declarative check specs."""
+        graph = _store.get_graph(run_id)
+        if not graph:
+            raise HTTPException(status_code=404, detail="Run not found")
+        try:
+            return run_checks(graph, checks)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     @app.get("/runs/{run_id}/export")
     async def export_run(run_id: str):
@@ -140,18 +229,28 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
     # Optional: serve the built React UI as static files
     # Must be mounted AFTER all API routes so the catch-all SPA fallback
     # does not shadow /runs/*, /docs, etc.
+    #
+    # Resolution order:
+    #   1. an explicit static_dir argument
+    #   2. the UI bundled into the installed package (vap/_static) — present in
+    #      the published wheel, so `pip install vap && vap serve` just works
     # ------------------------------------------------------------------
 
-    if static_dir is not None:
-        from pathlib import Path
-        from fastapi.staticfiles import StaticFiles
+    from pathlib import Path
+    from fastapi.staticfiles import StaticFiles
 
+    if static_dir is not None:
         dist = Path(static_dir)
         if not dist.is_dir():
             raise RuntimeError(
                 f"static_dir '{static_dir}' does not exist or is not a directory. "
                 "Run 'npm run build' inside the ui/ directory first."
             )
+    else:
+        bundled = Path(__file__).parent / "_static"
+        dist = bundled if (bundled / "index.html").is_file() else None
+
+    if dist is not None:
         # html=True enables SPA fallback: unknown paths → index.html
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="ui")
 

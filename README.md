@@ -1,5 +1,9 @@
 # VaP — Visualization Agentic Process
 
+[![CI](https://github.com/kochrisdev/vap/actions/workflows/ci.yml/badge.svg)](https://github.com/kochrisdev/vap/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A lightweight Python + React framework for **tracing and visualizing AI agent pipelines** in real time.
 
 Instrument your agent with a single context manager. Every step, tool call, and LLM invocation appears instantly as a live interactive graph in the browser — with inputs, outputs, durations, and error states.
@@ -17,6 +21,15 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **OpenAI SDK auto-instrumentation** — `vap.patch_openai(client)` traces every `chat.completions.create` call (sync **and** async)
 - **LangGraph / LangChain integration** — `VapCallbackHandler` captures all chain, tool, and LLM calls from any LangChain-compatible framework
 - **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native event bus to trace Crews, Tasks, Agents, Tools, and LLM calls automatically
+- **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync` to trace each model request (tokens + cost) and tool call as nested nodes
+- **LlamaIndex integration** — `VapLlamaIndex` hooks the instrumentation dispatcher to trace query engines, retrievers, embeddings, and LLM calls
+- **AutoGen integration** — `VapAutoGen` traces multi-agent conversations: the chat, each agent turn, and tool calls (AG2 / `ConversableAgent`)
+- **Analytics dashboard** — cross-run metrics (cost, tokens, success rate, per-model breakdown) at `GET /metrics` and in the UI
+- **OpenTelemetry export** — `enable_otel_export(...)` mirrors every run into OTLP spans for Jaeger / Grafana Tempo / Datadog
+- **Cost & latency budgets** — `enable_budget_alerts(Budget(...))` flags and alerts on runs that exceed cost / duration / token limits
+- **Agent evals & scoring** — `eval_run(run, [checks...])` asserts cost/latency/output/custom/LLM-judge checks — regression testing for agents
+- **Search & tagging** — full-text search across run contents (`GET /search`) plus persistent per-run tags, surfaced in the UI
+- **Trace replay** — scrub a run event-by-event in the UI; the graph fills in node by node as it happened
 - **Persistent storage** — `vap.configure(db="vap.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vap serve --db vap.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -32,8 +45,10 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 ## Tutorial
 
 New to VaP? The **[step-by-step tutorial](docs/TUTORIAL.md)** walks you from installation to a
-fully instrumented agent — covering tracing, async, error handling, cost tracking, OpenAI/Anthropic
-auto-instrumentation, LangGraph, CrewAI, remote ingest, run comparison, and export.
+fully instrumented agent — covering tracing, async, error handling, cost tracking, the OpenAI /
+Anthropic / LangGraph / CrewAI / Pydantic AI / LlamaIndex / AutoGen integrations, remote ingest, run
+comparison, export, the analytics dashboard, OpenTelemetry export, budgets, evals, search & tagging,
+and trace replay.
 
 ---
 
@@ -45,35 +60,33 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for full production deployment 
 
 ## Quick Start
 
-### 1. Python backend
+### Install (published package — UI bundled)
+
+The published wheel ships the built UI, so the server serves it out of the box — no Node needed:
 
 ```bash
-# Clone and install
+pip install vap            # or:  pip install "vap[all]"  for every integration
+vap serve --db vap.db      # UI + API at http://localhost:8001
+```
+
+Open **http://localhost:8001**.
+
+### From source (for development)
+
+```bash
 git clone https://github.com/kochrisdev/vap.git
 cd vap
-pip install -e .                  # core only
-pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI integrations
+pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI, Pydantic AI, LlamaIndex, AutoGen, OTel
+
+# the UI isn't bundled in an editable install — run the dev server:
+cd ui && npm install && npm run dev      # -> http://localhost:5173 (proxies to :8001)
+# in another terminal:
+vap serve --db vap.db                    # API on :8001
 ```
 
-### 2. React UI
-
-```bash
-cd ui
-npm install
-npm run dev        # -> http://localhost:5173
-```
-
-### 3. Start the server
-
-```bash
-# In-memory (resets on restart):
-vap serve
-
-# Persistent SQLite (survives restarts):
-vap serve --db vap.db
-```
-
-Open **http://localhost:5173** to see the live graph UI.
+Open **http://localhost:5173** for the hot-reloading dev UI, or build it once
+(`cd ui && npm run build`) and serve everything from one process with
+`vap serve --db vap.db --static-dir ui/dist`.
 
 ---
 
@@ -307,15 +320,241 @@ CrewAI's native event bus — no `verbose=True` noise, no monkey-patching.
 
 ---
 
+### Pydantic AI
+
+Instantiate `VapPydanticAI` once; every `agent.run()` / `run_sync()` is then traced — the agent,
+each model request (with tokens and cost), and each tool call (with args and result):
+
+```python
+import vap
+from vap.integrations.pydantic_ai import VapPydanticAI
+
+vap.configure(db="vap.db")
+VapPydanticAI()              # auto mode — one new VaP run per agent.run()
+
+result = agent.run_sync("What's the weather in Paris?")
+```
+
+Or attach to an existing run (**manual mode**) to nest the agent inside a larger pipeline:
+
+```python
+with vap.trace("Trip planner") as run:
+    with run.step("load_preferences", kind="step") as step: ...
+
+    VapPydanticAI(run)       # agent runs appear as children of this run
+    agent.run_sync("Is Lisbon warm enough for a beach trip?")
+```
+
+```bash
+pip install "vap[pydantic-ai]"
+```
+
+Tool calls are parented under the model request that invoked them. Call `.detach()` to restore the
+original `Agent` methods.
+
+---
+
+### LlamaIndex
+
+`VapLlamaIndex` registers a span handler on LlamaIndex's instrumentation dispatcher, so a whole RAG
+workflow — query engine, retriever, embeddings, response synthesizer, LLM calls — is reproduced as a
+nested VaP graph with real timings. Wrap your work in a `vap.trace()` (manual mode):
+
+```python
+import vap
+from llama_index.core import VectorStoreIndex
+from vap.integrations.llamaindex import VapLlamaIndex
+
+with vap.trace("RAG query") as run:
+    VapLlamaIndex(run)
+    index = VectorStoreIndex.from_documents(docs)
+    response = index.as_query_engine().query("…")
+```
+
+Or instantiate `VapLlamaIndex()` with no run (auto mode) to make each top-level call its own VaP run.
+
+```bash
+pip install "vap[llamaindex]"
+```
+
+Spans are classified by kind — retrievers and embeddings as `tool`, LLM calls as `llm`, the rest as
+`step` — and nested exactly as LlamaIndex calls them. Call `.detach()` to remove the handler.
+
+---
+
+### AutoGen
+
+`VapAutoGen` traces AutoGen (AG2) multi-agent conversations by wrapping `ConversableAgent`. The chat
+becomes a root, each agent turn (`generate_reply`) a child node, and each tool/function call
+(`execute_function`) nests under the turn that made it — with real timings.
+
+```python
+import vap
+from vap.integrations.autogen import VapAutoGen
+
+with vap.trace("Support chat") as run:
+    VapAutoGen(run)
+    user.initiate_chat(assistant, message="How do I reset my password?")
+```
+
+Or instantiate `VapAutoGen()` with no run (auto mode) to make each `initiate_chat` its own VaP run.
+
+```bash
+pip install "vap[autogen]"
+```
+
+Targets the classic `autogen.ConversableAgent` API (`ag2` / `pyautogen`). Call `.detach()` to restore
+the original methods.
+
+---
+
+## OpenTelemetry Export
+
+VaP can mirror every run into OpenTelemetry — one **trace per run**, with each node (agent / step /
+tool / LLM) becoming a span whose parent is the node's parent. Node timings, token usage, USD cost,
+and error status ride along as span timings, attributes (incl. `gen_ai.*` semantic conventions), and
+status. Point it at any OTLP backend (Jaeger, Grafana Tempo, Datadog, …):
+
+```python
+import vap
+from vap.integrations.otel import enable_otel_export
+
+vap.configure(db="vap.db")
+enable_otel_export(endpoint="http://localhost:4317")    # OTLP/gRPC
+
+with vap.trace("My agent") as run:
+    ...                                                 # exported to OTel on completion
+```
+
+Already have an OpenTelemetry stack configured globally? Call `enable_otel_export()` with no
+arguments to use the existing `TracerProvider`. Or export a single run on demand with
+`export_run(graph, tracer_provider=...)`.
+
+```bash
+pip install "vap[otel]"
+```
+
+This is **export**, not replacement — runs still appear in the VaP UI as usual; OTel just gets a copy.
+
+---
+
+## Cost & Latency Budgets
+
+Define a `Budget` (max cost, duration, and/or tokens) and VaP will check every completed run against
+it — turning the metrics it already captures into **guardrails**:
+
+```python
+import vap
+from vap.budgets import Budget, enable_budget_alerts
+
+vap.configure(db="vap.db")
+enable_budget_alerts(Budget(max_cost_usd=0.05, max_duration_ms=5000))
+# over-budget runs now log a warning when they finish
+```
+
+Pass an `on_alert` callback to do something other than log — page someone, post to Slack, emit an
+OpenTelemetry event, etc.:
+
+```python
+enable_budget_alerts(
+    Budget(max_cost_usd=0.05),
+    on_alert=lambda report: notify(f"{report.run_id} cost ${report.cost_usd}"),
+)
+```
+
+Check a single run on demand, or via the API (`GET /runs/{id}/budget?max_cost_usd=0.02`):
+
+```python
+from vap.budgets import Budget, check_budget
+
+report = check_budget(store.get_graph(run_id), Budget(max_cost_usd=0.02, max_duration_ms=3000))
+for v in report.violations:
+    print(f"{v.metric}: {v.actual} > {v.limit}  (+{v.pct_over:.0f}%)")
+```
+
+Try it with no API key: `python examples/budgets_demo.py`.
+
+---
+
+## Agent Evals & Scoring
+
+Treat a run like a test case: assert it meets cost, latency, and correctness checks. `eval_run`
+returns an `EvalResult` with a per-check breakdown and an overall score — drop it straight into pytest
+or CI to catch agent regressions.
+
+```python
+import vap
+from vap.evals import eval_run, max_cost, max_latency, no_errors, output_contains, judge
+
+with vap.trace("support agent") as run:
+    ...   # run your agent
+
+result = eval_run(run, [
+    max_cost(0.02),
+    max_latency(3.0),
+    no_errors(),
+    output_contains("ticket"),
+    judge("helpful", my_llm_scorer),     # you supply the scoring fn — stays provider-agnostic
+])
+
+assert result.passed, result.summary()
+```
+
+Built-in checks: `max_cost`, `max_latency`, `max_tokens`, `no_errors`, `output_contains`, plus
+`custom(name, fn)` and `judge(name, fn)` for your own predicates / LLM-as-judge. Each check yields a
+0–1 score; `result.score` is their mean.
+
+Run the same checks over HTTP with declarative specs (`POST /runs/{id}/eval`):
+
+```bash
+curl -X POST http://localhost:8001/runs/{run_id}/eval \
+  -H "Content-Type: application/json" \
+  -d '[{"type":"max_cost","value":0.02},{"type":"output_contains","value":"ticket"}]'
+```
+
+Try it with no API key: `python examples/evals_demo.py`.
+
+---
+
+## Search & Tagging
+
+Find runs by content and organise them with tags — handy once a store holds hundreds of runs.
+
+**Search** matches a free-text query across run labels and every node's input/output, with optional
+structural filters (`status`, `kind`, `tool`, `tag`):
+
+```bash
+curl "http://localhost:8001/search?q=paris"             # any run whose contents mention "paris"
+curl "http://localhost:8001/search?tool=search_web&status=error"
+curl "http://localhost:8001/search?tag=prod"
+```
+
+**Tags** are persistent per-run labels (stored in SQLite when you use `--db`):
+
+```bash
+curl -X PUT http://localhost:8001/runs/{id}/tags \
+  -H "Content-Type: application/json" -d '{"tags": ["prod", "v2-prompt"]}'
+```
+
+In the UI, the search box does the content search, each run shows its tags as chips (click one to
+filter), and the run header has an inline tag editor (add with **+ tag**, remove with **×**).
+
+---
+
 ## REST API
 
 The FastAPI server (`http://localhost:8001`) exposes:
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/runs` | List all runs (summary) |
+| `GET` | `/runs` | List all runs (summary, incl. tags) |
+| `GET` | `/search` | Search runs by query / status / kind / tool / tag |
+| `GET` | `/metrics` | Cross-run analytics: cost, tokens, success rate, per-model breakdown |
 | `GET` | `/runs/{id}` | Single run summary |
 | `GET` | `/runs/{id}/graph` | Full graph snapshot (nodes + edges) |
+| `GET` | `/runs/{id}/budget` | Check a run against a budget (`?max_cost_usd=&max_duration_ms=&max_total_tokens=`) |
+| `POST` | `/runs/{id}/eval` | Evaluate a run against declarative check specs → `EvalResult` |
+| `GET` / `PUT` | `/runs/{id}/tags` | Get / replace a run's tags |
 | `GET` | `/runs/{id}/export` | Download run graph as a JSON file attachment |
 | `GET` | `/runs/{id}/events` | **SSE stream** — replays history then pushes live |
 | `GET` | `/runs/compare?a={id}&b={id}` | Return two run graphs for comparison |
@@ -351,6 +590,10 @@ vap/                          Python package
 ├── server.py                 FastAPI app — REST + SSE endpoints
 ├── cli.py                    vap serve command
 ├── cost.py                   Token cost — 20+ model pricing table, calculate_cost()
+├── metrics.py                Cross-run analytics — compute_metrics() aggregation
+├── budgets.py                Cost/latency budgets — check_budget(), enable_budget_alerts()
+├── evals.py                  Agent evals — eval_run(), checks, scoring
+├── search.py                 Run search — run_matches() predicate
 ├── backends/
 │   ├── __init__.py
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
@@ -358,19 +601,28 @@ vap/                          Python package
     ├── anthropic_sdk.py      patch_anthropic() — sync + async client support
     ├── openai_sdk.py         patch_openai() — sync + async client support
     ├── langchain.py          VapCallbackHandler — LangGraph / LangChain integration
-    └── crewai_listener.py    VapCrewAIListener — CrewAI event bus integration
+    ├── crewai_listener.py    VapCrewAIListener — CrewAI event bus integration
+    ├── pydantic_ai.py        VapPydanticAI — Pydantic AI Agent.run wrapper
+    ├── llamaindex.py         VapLlamaIndex — LlamaIndex span handler
+    ├── autogen.py            VapAutoGen — AutoGen ConversableAgent tracer
+    └── otel.py               OpenTelemetry export — runs → OTLP spans
 
 ui/src/                       Vite + React + TypeScript
 ├── App.tsx                   Root layout — sidebar / graph / timeline / detail panel
 ├── components/
 │   ├── AgentGraph.tsx        ReactFlow DAG with dagre auto-layout
+│   ├── Dashboard.tsx         Cross-run analytics view (GET /metrics)
 │   ├── EventTimeline.tsx     Chronological event log
 │   ├── ExportMenu.tsx        Export dropdown (JSON download + PNG capture)
 │   ├── NodeDetail.tsx        Selected-node inspector
 │   ├── RunComparison.tsx     Side-by-side diff of two runs
-│   └── RunList.tsx           Sidebar run list with compare button
+│   ├── RunList.tsx           Sidebar run list with search, tags, compare + dashboard toggle
+│   ├── TagEditor.tsx         Inline per-run tag editor
+│   └── ReplayBar.tsx         Time-travel scrubber (play/step over a run's events)
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
+├── lib/
+│   └── replay.ts             buildGraphAt() — rebuild the graph as of event N
 ├── store/
 │   └── runStore.ts           Zustand store — builds graph state from events
 └── types/
@@ -385,7 +637,13 @@ examples/
 ├── anthropic_demo.py         Real Claude API calls with auto-tracing
 ├── openai_demo.py            OpenAI chat.completions with auto-tracing
 ├── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
-└── crewai_demo.py            CrewAI multi-agent crew with VapCrewAIListener
+├── crewai_demo.py            CrewAI multi-agent crew with VapCrewAIListener
+├── pydantic_ai_demo.py       Pydantic AI agent with VapPydanticAI — no API key needed
+├── llamaindex_demo.py        LlamaIndex RAG query with VapLlamaIndex — no API key needed
+├── autogen_demo.py           AutoGen multi-agent chat with VapAutoGen — no API key needed
+├── otel_demo.py              OpenTelemetry export to the console — no API key needed
+├── budgets_demo.py           Cost/latency budget alerting — no API key needed
+└── evals_demo.py             Agent evals / assertions — no API key needed
 
 docs/
 ├── TUTORIAL.md               Step-by-step learning guide (start here)
@@ -399,9 +657,18 @@ tests/
 ├── test_store.py             MemoryStore, SqliteStore, graph mutation
 ├── test_server.py            REST endpoints
 ├── test_openai_patch.py      OpenAI integration (mock, no API key)
+├── test_anthropic_patch.py   Anthropic integration (mock, no API key)
 ├── test_langchain.py         LangChain handler (skipped if langchain-core absent)
 ├── test_cost.py              Pricing table, calculate_cost(), integration cost output
-└── test_crewai_listener.py   CrewAI listener (skipped if crewai absent)
+├── test_metrics.py           compute_metrics() aggregation + /metrics endpoint
+├── test_crewai_listener.py   CrewAI listener (skipped if crewai absent)
+├── test_pydantic_ai.py       Pydantic AI integration (skipped if pydantic-ai absent)
+├── test_llamaindex.py        LlamaIndex integration (skipped if llama-index-core absent)
+├── test_autogen.py           AutoGen integration (skipped if autogen absent)
+├── test_otel.py              OpenTelemetry export (skipped if opentelemetry-sdk absent)
+├── test_budgets.py           Budget checks, alerting, and the /budget endpoint
+├── test_evals.py             Eval checks, scoring, declarative specs, /eval endpoint
+└── test_search.py            Search predicate, store tags (incl. SQLite), endpoints
 
 run_dev.py                    One-command dev entry point (server + demo agent)
 pyproject.toml                Python package metadata + dependencies
@@ -508,6 +775,42 @@ Runs two traces:
 1. **Auto mode** — a two-agent sequential crew (researcher → writer). `VapCrewAIListener()` is registered once and auto-creates a VaP run per `kickoff()`.
 2. **Manual mode** — the same crew embedded inside a larger `vap.trace()` pipeline with pre/post-processing steps on either side.
 
+### Pydantic AI demo
+
+```bash
+pip install "vap[pydantic-ai]"
+python examples/pydantic_ai_demo.py        # no API key needed — uses TestModel
+```
+
+Runs two traces — a weather agent (auto mode) and a trip planner embedded in a pipeline (manual mode). Each model request and tool call appears as a nested node, with tools parented under the model request that called them.
+
+### LlamaIndex demo
+
+```bash
+pip install "vap[llamaindex]"
+python examples/llamaindex_demo.py        # no API key needed — uses MockLLM + MockEmbedding
+```
+
+Builds a small index and runs a RAG query, traced under one VaP run. The graph shows the full pipeline — query engine → retriever → embeddings → response synthesizer → LLM — with retrievers/embeddings as `tool` nodes and LLM calls as `llm` nodes.
+
+### AutoGen demo
+
+```bash
+pip install "vap[autogen]"
+python examples/autogen_demo.py        # no API key needed — offline ConversableAgents
+```
+
+Runs a scripted two-agent conversation (researcher → writer), traced under one VaP run. The graph shows the chat with each agent turn nested beneath it.
+
+### OpenTelemetry export demo
+
+```bash
+pip install "vap[otel]"
+python examples/otel_demo.py        # no API key, no collector — prints spans to the console
+```
+
+Traces a small agent and exports it to OpenTelemetry via the `ConsoleSpanExporter`, so you can see the run reproduced as a single OTel trace (swap in an OTLP endpoint to send it to Jaeger/Tempo/Datadog).
+
 ---
 
 ## Configuration Reference
@@ -563,6 +866,58 @@ with tracer.trace("isolated run") as run:
 - [x] **LLM cost on CrewAI nodes** — `cost_usd` auto-attached via LiteLLM usage dict; `pip install "vap[crewai]"`
 - [x] **19-test suite** — `tests/test_crewai_listener.py` covers crew lifecycle, task/agent/tool/LLM nodes, cost tracking, and import guard
 
+### v0.7.0 — Phase 6 (complete)
+- [x] **Analytics dashboard** — cross-run overview in the UI: run/success counts, total & average cost, average duration, LLM-call and token totals
+- [x] **Per-model breakdown** — calls, tokens, and USD cost grouped by model, sorted by spend
+- [x] **Cost-over-time chart** + nodes-by-kind breakdown; auto-refreshes every 5s
+- [x] **`GET /metrics`** — `compute_metrics()` aggregates every stored run into one snapshot; 14-test suite in `tests/test_metrics.py`
+
+### v0.8.0 — Phase 7 (complete)
+- [x] **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync`; reconstructs the agent, each model request, and each tool call as nested nodes from the run's message history
+- [x] **Auto + manual mode** — auto mode creates a new VaP run per `agent.run()`; manual mode nests the agent inside an existing `vap.trace()` pipeline
+- [x] **Per-request tokens & cost** — `cost_usd` attached per model request via the pricing table; tools parented under the model request that called them
+- [x] **13-test suite** — `tests/test_pydantic_ai.py` (TestModel/FunctionModel, no API key); `pip install "vap[pydantic-ai]"`
+
+### v0.9.0 — Phase 8 (complete)
+- [x] **OpenTelemetry export** — `enable_otel_export(...)` mirrors each completed run into OTLP spans (one trace per run; node hierarchy → span parent/child) for Jaeger / Grafana Tempo / Datadog
+- [x] **GenAI semantics** — `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd`, and ERROR status carried as span attributes/status with real node timings
+- [x] **Flexible wiring** — bring your own `TracerProvider`, pass an OTLP `endpoint`, or use a globally-configured OpenTelemetry stack; `export_run()` for one-shot export
+- [x] **11-test suite** — `tests/test_otel.py` (in-memory exporter, no network); `pip install "vap[otel]"`
+
+### v0.10.0 — Phase 9 (complete)
+- [x] **LlamaIndex integration** — `VapLlamaIndex` registers a span handler on the instrumentation dispatcher; query engines, retrievers, embeddings, response synthesizers, and LLM calls become nested VaP nodes with real timings
+- [x] **Kind classification** — retrievers/embeddings → `tool`, LLM calls → `llm`, the rest → `step`; span tree maps onto the node hierarchy via `parent_span_id`
+- [x] **Auto + manual mode** — manual nests a whole RAG workflow under one `vap.trace()`; auto makes each top-level call its own run
+- [x] **8-test suite** — `tests/test_llamaindex.py` (MockLLM/MockEmbedding, no API key); `pip install "vap[llamaindex]"`
+
+### v0.11.0 — Phase 10 (complete)
+- [x] **AutoGen integration** — `VapAutoGen` wraps `ConversableAgent` (AG2 / `pyautogen`); a multi-agent conversation becomes the chat root, an agent-turn node per `generate_reply`, and tool nodes per `execute_function`, nested with real timings
+- [x] **Auto + manual mode** — manual nests a conversation under one `vap.trace()`; auto makes each `initiate_chat` its own run; thread-local node stack handles nested chats and tool nesting
+- [x] **8-test suite** — `tests/test_autogen.py` (offline `register_reply` agents, no API key); `pip install "vap[autogen]"`
+
+### v0.12.0 — Phase 11 (complete)
+- [x] **Cost & latency budgets** — `Budget` (max cost / duration / tokens) + `check_budget(graph, budget)` returning per-metric violations
+- [x] **Alerting** — `enable_budget_alerts(budget, on_alert=…)` checks every completed run and fires a callback (default: logs a warning) on violations
+- [x] **`GET /runs/{id}/budget`** — check any run against a budget via query params
+- [x] **13-test suite** — `tests/test_budgets.py`; `vap.Budget` / `vap.check_budget` / `vap.enable_budget_alerts` exported
+
+### v0.13.0 — Phase 12 (complete)
+- [x] **Agent evals & scoring** — `eval_run(run, [checks…])` → `EvalResult` with per-check pass/fail and an overall score; built-in `max_cost` / `max_latency` / `max_tokens` / `no_errors` / `output_contains`, plus `custom` and `judge` (LLM-as-judge) hooks
+- [x] **Declarative checks** — JSON specs via `run_checks()` and `POST /runs/{id}/eval` for cross-language / UI use
+- [x] **Regression-testing workflow** — drop `assert eval_run(...).passed` into pytest/CI
+- [x] **20-test suite** — `tests/test_evals.py`; eval API exported from `vap`
+
+### v0.14.0 — Phase 13 (complete)
+- [x] **Run search** — `GET /search` matches a free-text query across run labels and node inputs/outputs, with `status` / `kind` / `tool` / `tag` filters (`vap/search.py` `run_matches`)
+- [x] **Tags** — persistent per-run tags (`GET`/`PUT /runs/{id}/tags`), stored in SQLite, surfaced in `RunSummary.tags`
+- [x] **UI** — content search box, tag chips on runs (click to filter), and an inline tag editor in the run header
+- [x] **18-test suite** — `tests/test_search.py` (predicate, in-memory + SQLite tag persistence, endpoints)
+
+### v0.15.0 — Phase 14 (complete)
+- [x] **Trace replay / time-travel** — a UI scrubber that replays a run event-by-event; the graph fills in node by node, with play/pause and step controls
+- [x] **`buildGraphAt(events, n)`** — pure client-side reducer that rebuilds the graph as of event *n* (mirrors the store's event→graph logic)
+- [x] **`ReplayBar.tsx`** + a Replay toggle in the run header; resets when the selected run changes
+
 ---
 
 ## Dependencies
@@ -578,6 +933,10 @@ with tracer.trace("isolated run") as run:
 | `openai` *(optional)* | OpenAI SDK integration (`pip install "vap[openai]"`) |
 | `langchain-core` *(optional)* | LangGraph/LangChain integration (`pip install "vap[langchain]"`) |
 | `crewai` *(optional)* | CrewAI integration (`pip install "vap[crewai]"`) |
+| `pydantic-ai-slim` *(optional)* | Pydantic AI integration (`pip install "vap[pydantic-ai]"`) |
+| `llama-index-core` *(optional)* | LlamaIndex integration (`pip install "vap[llamaindex]"`) |
+| `ag2` *(optional)* | AutoGen integration (`pip install "vap[autogen]"`) |
+| `opentelemetry-sdk` + `opentelemetry-exporter-otlp` *(optional)* | OpenTelemetry export (`pip install "vap[otel]"`) |
 
 `sqlite3` is part of the Python standard library — no extra install needed for persistence.
 
@@ -593,6 +952,65 @@ with tracer.trace("isolated run") as run:
 
 ---
 
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide. Quick start:
+
+```bash
+# Install with all integration + dev dependencies
+pip install -e ".[dev]"
+
+# Run the Python test suite (269 tests; integration tests skip if the
+# corresponding framework isn't installed)
+pytest -q
+
+# Build and type-check the React UI
+cd ui && npm ci && npm run build
+
+# Build the distributable package and validate its metadata
+python -m build
+python -m twine check dist/*
+```
+
+**Continuous integration** — [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the test
+suite on Python 3.11 / 3.12 / 3.13, builds and type-checks the UI, and builds + `twine check`s the
+package on every push and pull request to `main`.
+
+**Releasing** — bump `version` in [`pyproject.toml`](pyproject.toml), then push a matching tag:
+
+```bash
+git tag v0.8.0 && git push origin v0.8.0
+```
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds the distribution, verifies
+the tag matches the package version, and publishes to PyPI via
+[Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC — no API token needed; requires
+a one-time PyPI publisher configured for the `release.yml` workflow and the `pypi` environment).
+
+---
+
+## Versioning & Stability
+
+VaP follows [Semantic Versioning](https://semver.org/). Release notes live in
+[CHANGELOG.md](CHANGELOG.md) (and, in detail, the
+[Developer Reference changelog](docs/DEVELOPER_REFERENCE.md#changelog)).
+
+**Public, stability-tracked surface** (changes here follow semver):
+
+- The `vap` package's top-level exports — `trace` / `atrace`, `configure`, `Tracer`, `patch_openai`,
+  `patch_anthropic`, `calculate_cost`, `compute_metrics`, `Budget` / `check_budget` /
+  `enable_budget_alerts`, `eval_run` and the check builders, and the event/graph models.
+- The framework integrations under `vap.integrations.*` — `VapCrewAIListener`, `VapPydanticAI`,
+  `VapLlamaIndex`, `VapAutoGen`, `VapCallbackHandler`, and `enable_otel_export` (imported from their
+  modules, e.g. `from vap.integrations.llamaindex import VapLlamaIndex`).
+- The `vap serve` CLI flags and the documented [REST API](#rest-api) + SSE event schema
+  (`VapEvent.schema_version` tracks the wire format).
+
+**Not covered**: names prefixed with `_`, internal store layout, and the React UI's internal
+component structure.
+
+---
+
 ## License
 
-MIT
+[MIT](LICENSE) © kochrisdev

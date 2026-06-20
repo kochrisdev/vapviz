@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GitCompare, Search, Trash2, X } from "lucide-react";
+import { BarChart3, GitCompare, Search, Tag, Trash2, X } from "lucide-react";
 import type { NodeStatus, RunSummary } from "../types/events";
 import { useRunStore } from "../store/runStore";
 
@@ -36,7 +36,13 @@ export function RunList({ onSelect }: Props) {
   const compareRunId  = useRunStore((s) => s.compareRunId);
   const setRuns       = useRunStore((s) => s.setRuns);
   const setCompareRun = useRunStore((s) => s.setCompareRun);
+  const view          = useRunStore((s) => s.view);
+  const setView       = useRunStore((s) => s.setView);
+
   const [search, setSearch] = useState("");
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  // run_ids matching a content search, or null when no search is active
+  const [matchIds, setMatchIds] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     const load = () =>
@@ -49,6 +55,22 @@ export function RunList({ onSelect }: Props) {
     return () => clearInterval(id);
   }, [setRuns]);
 
+  // Content search — query the backend (searches labels + node inputs/outputs), debounced.
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      setMatchIds(null);
+      return;
+    }
+    const handle = setTimeout(() => {
+      fetch(`/search?q=${encodeURIComponent(q)}`)
+        .then((r) => r.json())
+        .then((data: RunSummary[]) => setMatchIds(new Set(data.map((r) => r.run_id))))
+        .catch(() => setMatchIds(new Set()));
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [search]);
+
   const handleDelete = async (run: RunSummary, e: React.MouseEvent) => {
     e.stopPropagation();
     await fetch(`/runs/${run.run_id}`, { method: "DELETE" }).catch(() => {});
@@ -58,30 +80,45 @@ export function RunList({ onSelect }: Props) {
     if (compareRunId  === run.run_id) setCompareRun(null);
   };
 
-  const filtered = search
-    ? runs.filter((r) => r.label.toLowerCase().includes(search.toLowerCase()))
-    : runs;
+  const filtered = runs.filter((r) => {
+    if (matchIds !== null && !matchIds.has(r.run_id)) return false;
+    if (tagFilter !== null && !r.tags.includes(tagFilter)) return false;
+    return true;
+  });
 
   return (
     <div className="flex flex-col h-full bg-slate-900 border-r border-slate-700">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 shrink-0">
         <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Runs</span>
-        {runs.length > 0 && (
-          <span className="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-            {runs.length}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {runs.length > 0 && (
+            <span className="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+              {runs.length}
+            </span>
+          )}
+          <button
+            onClick={() => setView(view === "dashboard" ? "runs" : "dashboard")}
+            title="Analytics dashboard"
+            className={`p-1 rounded transition-colors ${
+              view === "dashboard"
+                ? "text-indigo-400 bg-indigo-500/10"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <BarChart3 size={14} />
+          </button>
+        </div>
       </div>
 
-      {/* Search — only shown once there are enough runs to need it */}
-      {runs.length > 3 && (
-        <div className="px-3 py-2 border-b border-slate-800 shrink-0">
+      {/* Search — searches run labels and node inputs/outputs */}
+      {runs.length > 0 && (
+        <div className="px-3 py-2 border-b border-slate-800 shrink-0 space-y-2">
           <div className="flex items-center gap-2 bg-slate-800 rounded px-2 py-1.5">
             <Search size={11} className="text-slate-500 shrink-0" />
             <input
               type="text"
-              placeholder="Filter runs…"
+              placeholder="Search runs & contents…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="bg-transparent text-xs text-slate-300 placeholder-slate-600 outline-none w-full"
@@ -92,6 +129,14 @@ export function RunList({ onSelect }: Props) {
               </button>
             )}
           </div>
+          {tagFilter !== null && (
+            <button
+              onClick={() => setTagFilter(null)}
+              className="flex items-center gap-1 text-[10px] bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full hover:bg-indigo-500/25"
+            >
+              <Tag size={9} /> {tagFilter} <X size={9} />
+            </button>
+          )}
         </div>
       )}
 
@@ -130,10 +175,30 @@ export function RunList({ onSelect }: Props) {
                     <span className="text-purple-400 font-medium">{fmtCost(run.total_cost_usd)}</span>
                   )}
                 </div>
+                {run.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {run.tags.map((t) => (
+                      <span
+                        key={t}
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); setTagFilter(t); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setTagFilter(t); } }}
+                        className={`text-[9px] px-1.5 py-0.5 rounded-full border cursor-pointer transition-colors ${
+                          tagFilter === t
+                            ? "bg-indigo-500/25 text-indigo-200 border-indigo-500/40"
+                            : "bg-slate-700/50 text-slate-400 border-slate-600/50 hover:text-indigo-300 hover:border-indigo-500/40"
+                        }`}
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </button>
 
               {/* Action buttons — revealed on hover */}
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+              <div className="absolute right-2 top-3 flex items-center gap-0.5">
                 {canCompare && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setCompareRun(isCompare ? null : run.run_id); }}
@@ -160,9 +225,11 @@ export function RunList({ onSelect }: Props) {
         })}
 
         {filtered.length === 0 && (
-          <div className="px-4 py-8 text-slate-500 text-sm text-center leading-relaxed">
+          <div className="px-4 py-8 text-slate-500 text-sm text-center leading-relaxed whitespace-pre-line">
             {runs.length === 0
               ? "No runs yet.\nStart an agent to see traces here."
+              : tagFilter !== null
+              ? `No runs tagged "${tagFilter}".`
               : `No runs matching "${search}".`}
           </div>
         )}

@@ -8,18 +8,6 @@ from vap.store import MemoryStore
 from vap.tracer import Tracer, _current_step
 
 
-@pytest.fixture(autouse=True)
-def _reset_current_step():
-    """Keep the parent-tracking ContextVar from leaking between tests.
-
-    Tests that drive RunContext/StepContext directly (e.g. the CrewAI
-    listener tests) may leave ``_current_step`` set, which breaks later
-    tests that expect a clean context.
-    """
-    yield
-    _current_step.set(None)
-
-
 @pytest.fixture
 def store() -> MemoryStore:
     """Fresh in-memory store for each test."""
@@ -30,6 +18,18 @@ def store() -> MemoryStore:
 def tracer(store: MemoryStore) -> Tracer:
     """Tracer wired to an isolated store."""
     return Tracer(store=store)
+
+
+@pytest.fixture(autouse=True)
+def _clean_current_step():
+    """Ensure _current_step is None before and after every test.
+
+    Prevents cross-test contamination when a test calls RunContext._start()
+    (which sets _current_step) without a matching _end() call.
+    """
+    yield
+    if _current_step.get() is not None:
+        _current_step.set(None)
 
 
 @pytest.fixture(scope="session")

@@ -35,8 +35,9 @@ This document describes the internal design of the Visualization Agentic Process
 │  • Hold asyncio.Queue per SSE subscriber                            │
 │  • Use loop.call_soon_threadsafe() for thread→asyncio hand-off      │
 │                                                                     │
-│  vap/cost.py   — pricing table, calculate_cost(), format_cost()     │
+│  vap/cost.py    — pricing table, calculate_cost(), format_cost()    │
 │  (used by integrations to attach cost_usd to llm_response events)  │
+│  vap/metrics.py — compute_metrics(): cross-run aggregation          │
 └──────────────────────────┬───────────────────────────────────────────┘
                            │  asyncio.Queue (per subscriber)
                            ▼
@@ -44,6 +45,7 @@ This document describes the internal design of the Visualization Agentic Process
 │  FastAPI Server  (vap/server.py)                                    │
 │                                                                     │
 │  GET    /runs                  → list[RunSummary]                   │
+│  GET    /metrics               → Metrics (cross-run analytics)      │
 │  GET    /runs/compare?a=&b=    → {a: RunGraph, b: RunGraph}         │
 │  GET    /runs/{id}             → RunSummary                         │
 │  GET    /runs/{id}/graph       → RunGraph snapshot                  │
@@ -63,6 +65,7 @@ This document describes the internal design of the Visualization Agentic Process
 │  AgentGraph.tsx                ReactFlow DAG with dagre layout       │
 │  EventTimeline.tsx             Chronological event log               │
 │  NodeDetail.tsx                Selected-node inspector               │
+│  Dashboard.tsx                 Cross-run analytics (GET /metrics)    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -352,6 +355,96 @@ Display helper used by both the Python server (not currently exposed) and the Re
 
 ---
 
+### Metrics Module (`vap/metrics.py`)
+
+Like `cost.py`, this is a pure, dependency-free aggregation layer — no I/O, no store coupling. `compute_metrics(graphs: list[RunGraph]) -> Metrics` is a single pass over the supplied graphs:
+
+```
+for each RunGraph:
+    tally status (success / error / running)
+    add (ended_at − started_at) to the duration total
+    bucket the run's day for cost_over_time
+    for each node:
+        increment by_kind[node.kind]
+        if node.kind == llm:
+            model  = node.data["input"]["model"]  (fallback: strip "llm/" label prefix)
+            usage  = node.data["output"]["usage"]    -> token totals + per-model tally
+            cost   = node.data["output"]["cost_usd"] -> cost totals + per-model tally + daily bucket
+derive: success_rate, avg_cost_usd, avg_duration_ms
+sort by_model by (cost, calls) desc; emit cost_over_time chronologically
+```
+
+**Key design points:**
+
+- **Reads the shared node-data shape, not events.** Every integration (`patch_*`, `VapCallbackHandler`, `VapCrewAIListener`) and the raw tracer write `input.model`, `output.usage`, and `output.cost_usd` the same way, so metrics need no integration-specific code.
+- **Averages are denominator-aware.** `avg_cost_usd` divides by the number of runs that actually contributed cost (not `run_count`), and `avg_duration_ms` divides by completed runs with a measurable duration — both are `None` rather than `0` when the denominator is empty, so the UI can render "—".
+- **`success_rate` excludes running runs** — it is `success / (success + error)`, so an in-flight run never drags the rate down.
+- **Response models** (`Metrics`, `ModelStat`, `TokenTotals`, `KindCounts`, `DailyCost`) are pydantic, so FastAPI validates and serialises them directly and the TypeScript interfaces mirror them 1:1.
+
+The `GET /metrics` route fetches `store.get_graph()` for every `store.list_runs()` entry and passes the list straight to `compute_metrics()` — the route holds no logic of its own.
+
+---
+
+### Budgets Module (`vap/budgets.py`)
+
+Another pure layer over the graph, turning metrics into guardrails. `check_budget(graph, budget)`
+measures a single run's cost, duration, and token totals (the same way `metrics.py` does) and emits a
+`Violation` for every limit the run exceeds, returning a `BudgetReport` (`status`, the measured
+values, and the `violations` list).
+
+`enable_budget_alerts(budget, on_alert=…)` uses the **same store-wrapping pattern as the OTel
+exporter**: it overrides `add_event` on the instance so that when an `agent_end` event lands, the run
+is fetched and checked; on a violation it calls `on_alert(report)` (default: a `vap.budgets` logger
+warning). The check runs on the agent's thread but is cheap (a single graph pass) and best-effort —
+any failure is swallowed so alerting can't break the run. `BudgetAlertHandle.disable()` deletes the
+instance override, reverting to the class method.
+
+This keeps budgets composable: the same `add_event` override pattern powers OTel export and budget
+alerts independently, and `GET /runs/{id}/budget` exposes a stateless, query-param-driven check for
+the UI or ad-hoc use.
+
+---
+
+### Evals Module (`vap/evals.py`)
+
+Where budgets are *passive guardrails*, evals are *active assertions* — VaP as a regression-testing
+tool for agents. A `Check` is just a named function `RunGraph -> (passed, detail[, score])`, wrapped
+so a throwing check is recorded as a failure rather than crashing the run. `eval_run` applies a list
+of checks and aggregates: `passed` is the AND of all checks, `score` is the mean of their 0–1 scores.
+
+Built-in checks reuse the same per-run measures as budgets (`_run_cost`, `_run_duration_ms`,
+`_run_tokens`), so "cost ≤ $0.02" means the same thing in a budget alert and an eval. `output_contains`
+scans node outputs (optionally a named node). `custom` and `judge` accept user predicates — VaP never
+calls an LLM itself for judging, keeping evals provider-agnostic and unit-testable offline.
+
+Two surfaces wrap the same core: the Python `eval_run(run, [...])` (drop into pytest/CI, accepts a
+`RunContext` or `RunGraph`) and a declarative `run_checks(graph, specs)` that builds checks from JSON
+specs — the latter backs `POST /runs/{id}/eval` so any language or the UI can score a run.
+
+---
+
+### Search & Tags (`vap/search.py` + store)
+
+**Search** is a pure predicate, `run_matches(graph, query=, status=, kind=, tool=)`: it builds a text
+"haystack" per node (label + JSON-stringified input/output/error) and AND-combines the supplied
+filters. `GET /search` walks `list_runs()`, applies `tag` filtering at the summary level (tags aren't
+in the graph), fetches each graph, and keeps the matches. It's linear over stored runs — fine for the
+single-node scale VaP targets; a larger deployment would push this into the store/DB.
+
+**Tags** are the first piece of *mutable* per-run state in a system that's otherwise append-only
+events. They live beside the event log rather than in it: the `RunStore` ABC provides concrete
+`get_tags`/`set_tags` over a `self._tags` dict (so `MemoryStore` gets them for free), and `SqliteStore`
+overrides `set_tags` to persist to a `tags(run_id, tag)` table and loads them on startup. `RunSummary`
+gained a `tags` field, populated by reading `self._tags` **directly inside the already-held lock** —
+calling `get_tags()` there would re-enter the non-reentrant `Lock` and deadlock. `delete_run`/`clear`
+drop tags alongside events.
+
+On the client, `RunList` runs the content search against `/search` (debounced) and renders tag chips
+(click to filter); `TagEditor` in the run header does optimistic `PUT /runs/{id}/tags` writes that the
+3-second run poll reconciles.
+
+---
+
 ### Configuration (`vap/__init__.py`)
 
 `vap.configure(db=...)` is the public API for switching the module-level store:
@@ -397,6 +490,8 @@ Zustand subscribers re-render
   └── RunList (run summary; total_cost_usd shown in purple when non-null)
 ```
 
+The store also holds a `view: "runs" | "dashboard"` flag (with `setView`). `App.tsx` renders the `Dashboard` component when `view === "dashboard"`; `selectRun` always resets `view` to `"runs"` so picking a run from the dashboard returns to the graph.
+
 **Cost aggregation in `runStore.ts`:**
 
 After every `applyEvent` call, `total_cost_usd` is recomputed by summing `node.data.output.cost_usd` across all nodes in the run. The result is stored in `RunSummary.total_cost_usd` — `null` if no LLM node has a cost entry (e.g. the model is unknown), otherwise the running sum as a `number`. This is a pure client-side recalculation with no extra network round-trip.
@@ -436,6 +531,20 @@ The `ExportMenu` dropdown lives in the run header and offers two actions:
 
 ---
 
+### Analytics dashboard (`Dashboard.tsx`)
+
+`Dashboard` is rendered instead of the graph/comparison views whenever `view === "dashboard"` in the Zustand store (toggled by the `BarChart3` button in the `RunList` header).
+
+**Data flow:**
+1. On mount it `fetch`es `/metrics` and re-polls every 5 s (mirroring `RunList`'s run polling), holding the result in local component state — it does not touch the run-event store.
+2. The `Metrics` payload drives four blocks: a row of stat cards (runs, success rate, total/avg cost, avg duration, LLM calls, tokens), a cost-over-time bar chart, a by-model table, and a nodes-by-kind breakdown.
+
+**Rendering notes:**
+- Charts are dependency-free — CSS flex bars, not a charting library — to keep the bundle lean. Bars use `height: %` of an `h-full` flex column; the column **must** carry `h-full` because the row uses `items-end`, which otherwise collapses children to content height.
+- All formatting (cost tiers, `k`/`M` token abbreviation, `ms`/`s`/`m` durations, percentage) lives in local helpers, matching the colour conventions used elsewhere (purple for cost, kind colours for the breakdown bars).
+
+---
+
 ### Graph rendering (`AgentGraph.tsx`)
 
 ReactFlow renders the DAG. Layout is computed by **dagre** on every re-render (via `useMemo`):
@@ -461,6 +570,17 @@ ReactFlow Node[] with { position: { x, y } }
 - Animates a pulsing dot when `status === "running"`
 - Shows duration in ms when both `started_at` and `ended_at` are present
 - Shows a purple cost label below the duration for `llm` nodes when `data.output.cost_usd` is present
+
+### Trace replay (`ReplayBar.tsx` + `lib/replay.ts`)
+
+Replay reuses the fact that a run *is* its event log. `buildGraphAt(events, n)` is a pure reducer that
+replays the first `n` events into `{nodes, edges}` using the same START/END/ERROR rules as the store
+and `runStore`. When replay is active, `App` computes this partial graph (memoised on `n`) and hands
+it to `AgentGraph` instead of the live `state.nodes/edges` — so the existing graph component renders
+the run "as of" any point with no changes of its own. `ReplayBar` owns the scrubber: a range input
+bound to `n`, play/pause (a timer that advances `n`), and step buttons. Replay state lives in `App`
+(`replayIndex: number | null`, `null` = live) and resets when the selected run changes. dagre re-lays
+out as nodes appear, so the graph visibly fills in as you scrub or play.
 
 ### SSE hook (`useRunStream.ts`)
 
@@ -667,6 +787,206 @@ RunStore.add_event(VapEvent)
        ▼
 FastAPI SSE → React UI
 ```
+
+---
+
+## Pydantic AI Integration (`integrations/pydantic_ai.py`)
+
+Pydantic AI has no global event bus, so `VapPydanticAI` takes a different tack from the
+other integrations: it **monkey-patches `Agent.run` / `Agent.run_sync`** and reconstructs
+the graph from the run's message history *after* the call returns. This trades live
+streaming for a complete, accurate snapshot (per-request usage and cost, tool args and
+results) with no dependency on Pydantic AI's streaming internals.
+
+### Wrapping and the re-entrancy guard
+
+Both `run` (async) and `run_sync` (sync) are wrapped so either entry point is traced.
+Because `run_sync` delegates to `run` internally, naively wrapping both would record the
+same run twice. A `ContextVar` (`_recording`) guards against this: the outer wrapper sets
+it, and any nested wrapped call sees it set and passes straight through to the original.
+The ContextVar (rather than a plain flag) keeps the guard correct across the asyncio task
+that `run_sync` spawns.
+
+`_wrap()` always recovers the pristine original (stashed on the wrapper as
+`_vap_pydantic_ai_original`) before re-wrapping, so patching twice never stacks wrappers,
+and `detach()` restores the saved originals.
+
+### Graph reconstruction from `result.all_messages()`
+
+After the wrapped call returns, `_record()` walks the message history once:
+
+```
+agent node (kind=agent in auto mode / step "agent/<name>" in manual mode)
+  for each ModelResponse:
+      llm node "llm/<model_name>"
+        usage  → input/output tokens          (RequestUsage on the response)
+        cost   → calculate_cost(model_name)    (aggregated onto the agent node)
+        record each ToolCallPart by tool_call_id → (tool_name, args, this llm node)
+  for each ModelRequest with a ToolReturnPart:
+      tool node, parent = the llm node that issued the matching tool_call_id
+        input  = the call's args, output = the return content
+```
+
+Events are emitted with **explicit timestamps** taken from the message objects
+(`ModelResponse.timestamp`, `ToolReturnPart.timestamp`) rather than `time.time()`, so the
+graph reflects real wall-clock ordering. A small `_emit()` helper constructs `VapEvent`s
+directly (the public `StepContext._emit` always stamps "now", which would collapse a
+post-hoc reconstruction to a single instant). Tracing is best-effort: `_record` is wrapped
+so a failure never breaks the user's agent run.
+
+### Auto vs manual mode
+
+| | Manual mode (`VapPydanticAI(run)`) | Auto mode (`VapPydanticAI()`) |
+|---|---|---|
+| Store / run id | the provided run's | `default_store`, fresh id per call |
+| Agent node | `step` `agent/<name>` under the run root | `agent` node *is* the run root |
+| Lifecycle | nests inside an existing `vap.trace()` | one VaP run per `agent.run()` |
+
+---
+
+## LlamaIndex Integration (`integrations/llamaindex.py`)
+
+LlamaIndex ships its own instrumentation system — a dispatcher with **span handlers** (function
+enter/exit/error) and **event handlers** (granular typed events). `VapLlamaIndex` is a span
+handler, because LlamaIndex's span tree is already shaped exactly like a VaP graph: every
+instrumented method call is a span with an `id_` and a `parent_span_id`.
+
+### Span handler, not monkey-patching
+
+`VapLlamaIndex` subclasses `BaseSpanHandler` and registers on the **root** dispatcher
+(`get_dispatcher().add_span_handler(self)`), so it sees spans from every sub-dispatcher.
+The base class is a pydantic model; private state (`_provided_run`, `_spans`, `_lock`) is set
+explicitly in `__init__` rather than via `PrivateAttr` factories, which aren't reliably applied
+when the base's `__init__` is overridden.
+
+Three callbacks drive everything:
+
+```
+new_span(id_, bound_args, instance, parent_span_id)   → open a node
+prepare_to_exit_span(id_, ..., result)                → close it (success)
+prepare_to_drop_span(id_, ..., err)                   → close it (error)
+```
+
+Each is wrapped so a tracing failure can never break the traced call. `_spans` maps a
+LlamaIndex `id_` to the VaP `(store, run_id, node_id, parent_id, kind)` it created, so a child
+span resolves its parent by looking up `parent_span_id`. Timings come from `time.time()` at open
+and close — these are **live, real durations** (unlike the post-hoc Pydantic AI reconstruction).
+
+### Parent resolution and the two modes
+
+For each span, the parent is resolved in order:
+
+1. `parent_span_id` is a span we've already seen → same run, parent = that node.
+2. No tracked parent, **manual mode** (a run was provided) → parent = the run's root node.
+3. No tracked parent, **auto mode** → this span *becomes* a new run's `agent` root.
+
+Manual mode is the recommended pattern: one `vap.trace()` block captures an entire RAG workflow
+as a single run. Auto mode makes each top-level instrumented call its own run (LlamaIndex emits
+several root spans — indexing, then querying — so a workflow yields several runs).
+
+### Kind classification and labels
+
+The span `id_` is `"<qualname>-<uuid>"`; stripping the trailing UUID (a fixed 5 hyphen-groups)
+yields the node label, e.g. `RetrieverQueryEngine.query`. Kind is inferred from the bound
+`instance`'s class plus the method name: classes ending in `LLM` (or LLM methods like
+`chat`/`complete`/`predict`) → `llm`; classes ending in `Retriever` or a `retrieve` call, and
+classes containing `Embedding` → `tool`; everything else → `step`. Using `endswith` rather than a
+substring keeps the orchestrators honest — `RetrieverQueryEngine` is a `step`, while
+`VectorIndexRetriever` is a `tool`.
+
+---
+
+## AutoGen Integration (`integrations/autogen.py`)
+
+AutoGen's classic API (`ConversableAgent`, shipped today as `ag2` / `pyautogen`) has no event bus or
+instrumentation dispatcher, so `VapAutoGen` monkey-patches three methods on `ConversableAgent` and
+reconstructs the conversation from the call flow:
+
+```
+initiate_chat   → the chat (step "chat/<recipient>", or the run's agent root in auto mode)
+generate_reply  → one agent turn (step "agent/<name>")
+execute_function→ a tool/function call (tool)
+```
+
+### A thread-local node stack
+
+The defining problem is *nesting*: tool calls happen inside an agent's `generate_reply`, and chats
+can nest (a tool may start another `initiate_chat`). AutoGen runs a conversation synchronously, so a
+**thread-local stack** of open node frames captures the structure exactly:
+
+- `_begin(kind, label)` resolves the parent as the current stack top → else the provided run's root
+  (manual) → else a fresh run root (auto), emits the start event, and pushes a frame.
+- `_end(...)` pops the frame and emits the end (or `error`) event.
+
+Each wrapper is `try/finally` around the original call, so frames are always popped — even when a
+reply raises. Because turns push and pop around the whole `generate_reply`, sequential turns end up
+as **siblings under the chat**, while a tool's `execute_function` (running inside a turn) finds that
+turn on top of the stack and nests beneath it. Timings come from `time.time()` at begin/end, so
+they're real. Tracing is best-effort: a failure in `_begin`/`_end` is swallowed so it can't break the
+conversation.
+
+### Modes and patch safety
+
+Manual mode nests the whole conversation under one `vap.trace()`; auto mode turns each top-level
+`initiate_chat` into its own run (its chat node becomes the run's `agent` root). `_wrap` always
+recovers the pristine original (stashed on the wrapper) before re-wrapping, so patching twice never
+stacks wrappers or double-counts, and `detach()` restores the originals.
+
+---
+
+## OpenTelemetry Export (`integrations/otel.py`)
+
+This is an **export sink**, not a framework integration: it reads completed VaP runs and
+reproduces them as OpenTelemetry traces, so VaP can feed an existing observability stack
+(Jaeger, Grafana Tempo, Datadog) in parallel with its own UI.
+
+### Reconstruction, not interception
+
+Rather than emit spans live as events arrive, `enable_otel_export()` wraps the store's
+`add_event` and waits for a run's `agent_end` event, then converts the whole `RunGraph` to
+spans in one pass (`build_spans`). This mirrors the Pydantic AI integration's "reconstruct
+from the finished structure" approach and keeps the mapping trivial: the graph is already
+complete, so parent/child links, timings, and aggregates are all known.
+
+```
+store.add_event(event)
+       │  (original call runs first — UI/SSE unaffected)
+       ▼
+event.type == AGENT_END ?
+       │ yes
+       ▼
+build_spans(store.get_graph(run_id), tracer)
+   roots = nodes with no parent (or parent absent from graph)
+   for each node, depth-first:
+       span = tracer.start_span(label, context=parent_ctx, start_time=ns(started_at))
+       set gen_ai.* / vap.* attributes; set OK/ERROR status
+       recurse into children with set_span_in_context(span)
+       span.end(end_time=ns(ended_at))
+```
+
+Each run becomes its own trace because every root span is started with no parent context.
+Timestamps are converted from epoch-seconds floats to integer nanoseconds.
+
+### Wiring and threading
+
+`enable_otel_export` resolves a `TracerProvider` three ways: an explicit `tracer_provider`,
+a new provider built around an OTLP exporter when an `endpoint` is given (the exporter is
+imported lazily so the gRPC/HTTP deps are only needed when actually used), or the global
+provider when both are omitted (so VaP slots into an already-configured OpenTelemetry stack).
+
+Auto-export runs inside `add_event`, i.e. on the agent's own thread. Using a
+`BatchSpanProcessor` keeps that non-blocking — `start_span`/`end` just enqueue; a background
+thread does the network export. Export is best-effort: any failure in `build_spans` is
+swallowed so it can never break the traced agent. `OtelExportHandle.disable()` removes the
+instance-level `add_event` override (reverting to the class method); `.shutdown()` also
+flushes the provider.
+
+### Attribute mapping
+
+Spans follow OpenTelemetry's GenAI semantic conventions where they apply
+(`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`) and use a
+`vap.*` namespace for the rest (`vap.node.kind`, `vap.node.status`, `vap.run_id`,
+`vap.cost_usd`, and bounded `vap.input` / `vap.output` snapshots).
 
 ---
 

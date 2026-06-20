@@ -31,6 +31,12 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_run_id        ON events (run_id);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp     ON events (timestamp);
+CREATE TABLE IF NOT EXISTS tags (
+    run_id TEXT NOT NULL,
+    tag    TEXT NOT NULL,
+    PRIMARY KEY (run_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_tags_run_id          ON tags (run_id);
 """
 
 
@@ -64,12 +70,14 @@ class SqliteStore(RunStore):
         # In-memory caches (rebuilt from DB on init)
         self._events: dict[str, list[VapEvent]] = {}
         self._graphs: dict[str, RunGraph] = {}
+        self._tags: dict[str, list[str]] = {}
         self._event_ids: dict[str, set[str]] = {}   # run_id -> set of event IDs for dedup
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
         self._lock = Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
         self._load_from_db()
+        self._load_tags()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -110,6 +118,11 @@ class SqliteStore(RunStore):
             self._event_ids[event.run_id].add(event.id)
             self._events[event.run_id].append(event)
             _apply_event_to_graph(self._graphs[event.run_id], event)
+
+    def _load_tags(self) -> None:
+        cur = self._conn.execute("SELECT run_id, tag FROM tags ORDER BY rowid ASC")
+        for run_id, tag in cur.fetchall():
+            self._tags.setdefault(run_id, []).append(tag)
 
     def _write_event(self, event: VapEvent) -> None:
         self._conn.execute(
@@ -166,6 +179,22 @@ class SqliteStore(RunStore):
             for q in self._subscribers.get(event.run_id, []):
                 self._loop.call_soon_threadsafe(q.put_nowait, event)
 
+    def set_tags(self, run_id: str, tags: list[str]) -> list[str]:
+        norm = self._norm_tags(tags)
+        with self._lock:
+            if norm:
+                self._tags[run_id] = norm
+            else:
+                self._tags.pop(run_id, None)
+            self._conn.execute("DELETE FROM tags WHERE run_id = ?", (run_id,))
+            if norm:
+                self._conn.executemany(
+                    "INSERT OR IGNORE INTO tags (run_id, tag) VALUES (?, ?)",
+                    [(run_id, t) for t in norm],
+                )
+            self._conn.commit()
+        return norm
+
     def get_events(self, run_id: str) -> list[VapEvent]:
         with self._lock:
             return list(self._events.get(run_id, []))
@@ -189,6 +218,7 @@ class SqliteStore(RunStore):
                 node_count=len(g.nodes),
                 event_count=len(self._events.get(run_id, [])),
                 total_cost_usd=_total_cost(g),
+                tags=list(self._tags.get(run_id, [])),
             )
 
     def list_runs(self) -> list[RunSummary]:
@@ -204,6 +234,7 @@ class SqliteStore(RunStore):
                         node_count=len(g.nodes),
                         event_count=len(self._events.get(run_id, [])),
                         total_cost_usd=_total_cost(g),
+                        tags=list(self._tags.get(run_id, [])),
                     )
                     for run_id, g in self._graphs.items()
                 ],
@@ -216,7 +247,9 @@ class SqliteStore(RunStore):
             self._events.pop(run_id, None)
             self._graphs.pop(run_id, None)
             self._event_ids.pop(run_id, None)
+            self._tags.pop(run_id, None)
             self._conn.execute("DELETE FROM events WHERE run_id = ?", (run_id,))
+            self._conn.execute("DELETE FROM tags WHERE run_id = ?", (run_id,))
             self._conn.commit()
 
     def clear(self) -> None:
@@ -224,7 +257,9 @@ class SqliteStore(RunStore):
             self._events.clear()
             self._graphs.clear()
             self._event_ids.clear()
+            self._tags.clear()
             self._conn.execute("DELETE FROM events")
+            self._conn.execute("DELETE FROM tags")
             self._conn.commit()
 
     def subscribe(self, run_id: str) -> asyncio.Queue:
