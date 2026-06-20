@@ -460,7 +460,7 @@ import openai
 
 vap.configure(db="vap.db")
 
-# Requires: pip install "vap[openai]"  and  export OPENAI_API_KEY=sk-...
+# Requires: pip install "vapviz[openai]"  and  export OPENAI_API_KEY=sk-...
 client = openai.OpenAI()
 vap.patch_openai(client)    # one line — that's all the instrumentation needed
 
@@ -523,7 +523,7 @@ import anthropic
 
 vap.configure(db="vap.db")
 
-# Requires: pip install "vap[anthropic]"  and  export ANTHROPIC_API_KEY=sk-ant-...
+# Requires: pip install "vapviz[anthropic]"  and  export ANTHROPIC_API_KEY=sk-ant-...
 client = anthropic.Anthropic()
 vap.patch_anthropic(client)
 
@@ -564,7 +564,7 @@ import os
 import vap
 from vap.integrations.langchain import VapCallbackHandler
 
-# Requires: pip install "vap[langchain]" langgraph langchain-openai
+# Requires: pip install "vapviz[langchain]" langgraph langchain-openai
 # and: export OPENAI_API_KEY=sk-...
 
 from langchain_openai import ChatOpenAI
@@ -612,7 +612,7 @@ arriving at its final answer.
 `VapCrewAIListener` hooks into CrewAI's native event bus. Instantiate it once before calling
 `crew.kickoff()` — no other changes to your crew code are needed.
 
-**Requires:** `pip install "vap[crewai]"` and an LLM API key.
+**Requires:** `pip install "vapviz[crewai]"` and an LLM API key.
 
 ### Auto mode — one trace per kickoff
 
@@ -718,7 +718,7 @@ every `agent.run()` / `run_sync()` is captured — the agent, each model request
 cost), and each tool call (with its arguments and result) — with no changes to your agent code.
 
 ```bash
-pip install "vap[pydantic-ai]"
+pip install "vapviz[pydantic-ai]"
 ```
 
 **Auto mode** — one fresh VaP run per `agent.run()`:
@@ -784,7 +784,7 @@ synthesizer, and LLM calls — shows up as a nested VaP graph with real timings,
 LlamaIndex code.
 
 ```bash
-pip install "vap[llamaindex]"
+pip install "vapviz[llamaindex]"
 ```
 
 The recommended pattern is **manual mode**: wrap your indexing/query work in a `vap.trace()` so the
@@ -834,7 +834,7 @@ any tool/function call nests under the turn that made it — with real timings a
 agent code.
 
 ```bash
-pip install "vap[autogen]"
+pip install "vapviz[autogen]"
 ```
 
 Wrap your conversation in a `vap.trace()` (manual mode):
@@ -1115,7 +1115,7 @@ telemetry. Each run becomes **one OTel trace**; each node (agent / step / tool /
 nested exactly like the VaP graph.
 
 ```bash
-pip install "vap[otel]"
+pip install "vapviz[otel]"
 ```
 
 Point it at an OTLP collector and every completed run is exported automatically:
@@ -1328,10 +1328,10 @@ python examples/simple_demo.py
 python examples/error_handling_demo.py
 python examples/cost_tracking_demo.py
 python examples/remote_ingest_demo.py
-python examples/pydantic_ai_demo.py   # uses TestModel — requires pip install "vap[pydantic-ai]"
-python examples/llamaindex_demo.py    # uses MockLLM — requires pip install "vap[llamaindex]"
-python examples/autogen_demo.py       # offline agents — requires pip install "vap[autogen]"
-python examples/otel_demo.py          # console OTel export — requires pip install "vap[otel]"
+python examples/pydantic_ai_demo.py   # uses TestModel — requires pip install "vapviz[pydantic-ai]"
+python examples/llamaindex_demo.py    # uses MockLLM — requires pip install "vapviz[llamaindex]"
+python examples/autogen_demo.py       # offline agents — requires pip install "vapviz[autogen]"
+python examples/otel_demo.py          # console OTel export — requires pip install "vapviz[otel]"
 python examples/budgets_demo.py       # cost/latency budget alerting
 python examples/evals_demo.py         # agent evals / assertions
 
@@ -1339,7 +1339,7 @@ python examples/evals_demo.py         # agent evals / assertions
 python examples/openai_demo.py
 python examples/anthropic_demo.py
 python examples/langgraph_demo.py
-python examples/crewai_demo.py      # requires pip install "vap[crewai]"
+python examples/crewai_demo.py      # requires pip install "vapviz[crewai]"
 ```
 
 ### Read the reference docs

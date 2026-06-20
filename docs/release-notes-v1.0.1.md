@@ -1,4 +1,4 @@
-# VaP 1.0.0 🎉
+# VaP 1.0.1 🎉
 
 **Visualization Agentic Process** — trace and visualize AI agent pipelines in real time.
 
@@ -6,8 +6,10 @@ This is the **first stable release**. Instrument your agent with a single contex
 every step, tool call, and LLM invocation appear instantly as a live, interactive graph in the
 browser — with inputs, outputs, durations, token usage, cost, and errors.
 
+> Installed as **`vapviz`** on PyPI (the name `vap` was taken) — the import and CLI stay `vap`.
+
 ```bash
-pip install vap
+pip install vapviz
 vap serve --db vap.db        # UI + API at http://localhost:8001  (UI is bundled — no Node build)
 ```
 
@@ -48,9 +50,9 @@ section of the README.
 ## Install options
 
 ```bash
-pip install vap                 # core + bundled UI
-pip install "vap[all]"          # + all integrations and OpenTelemetry export
-pip install "vap[crewai]"       # or pick one: anthropic / openai / langchain / crewai /
+pip install vapviz                 # core + bundled UI
+pip install "vapviz[all]"          # + all integrations and OpenTelemetry export
+pip install "vapviz[crewai]"       # or pick one: anthropic / openai / langchain / crewai /
                                 #              pydantic-ai / llamaindex / autogen / otel
 ```
 

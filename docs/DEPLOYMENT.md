@@ -432,7 +432,7 @@ vap.configure(db="vap.db")
 enable_otel_export(endpoint="http://otel-collector:4317")   # OTLP/gRPC
 ```
 
-Install the extra: `pip install "vap[otel]"`. Call `enable_otel_export()` with no arguments to use an
+Install the extra: `pip install "vapviz[otel]"`. Call `enable_otel_export()` with no arguments to use an
 OpenTelemetry SDK you've already configured globally. See the
 [Developer Reference](DEVELOPER_REFERENCE.md#opentelemetry-export) for protocols and options.
 

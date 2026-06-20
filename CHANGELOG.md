@@ -11,13 +11,20 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 _Nothing yet._
 
+## [1.0.1]
+
+### Changed
+- Renamed the **PyPI distribution** to `vapviz` (the name `vap` was already taken on PyPI by an
+  unrelated project). The import package (`import vap`) and the `vap` CLI command are unchanged —
+  only the install name differs: `pip install vapviz`.
+
 ## [1.0.0]
 
 First stable release. The public API now follows [Semantic Versioning](https://semver.org/) — see
 the [Versioning & Stability](README.md#versioning--stability) section for the tracked surface.
 
 ### Added
-- The published wheel bundles the built React UI, so `pip install vap && vap serve` serves the full UI with no Node build (`vap serve` auto-detects the bundled UI; `--static-dir` still overrides).
+- The published wheel bundles the built React UI, so `pip install vapviz && vap serve` serves the full UI with no Node build (`vap serve` auto-detects the bundled UI; `--static-dir` still overrides).
 - Root `CHANGELOG.md` and a documented public-API stability policy.
 - Anthropic integration tests (`tests/test_anthropic_patch.py`), closing the last integration coverage gap (269 tests).
 
@@ -88,6 +95,7 @@ This release adds no new tracing/integration features beyond 0.15.0 — it marks
 ### Added
 - Initial release: sync tracer, in-memory store, FastAPI + SSE server, ReactFlow UI, Anthropic SDK integration.
 
-[Unreleased]: https://github.com/kochrisdev/vap/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/kochrisdev/vap/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/kochrisdev/vap/releases/tag/v1.0.1
 [1.0.0]: https://github.com/kochrisdev/vap/releases/tag/v1.0.0
 [0.15.0]: https://github.com/kochrisdev/vap/releases/tag/v0.15.0

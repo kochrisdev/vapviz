@@ -174,7 +174,7 @@ Output (`data` on the `llm_response` event):
 - `usage` — `{"input_tokens": int, "output_tokens": int}`
 - `cost_usd` — estimated USD cost (omitted for unknown models)
 
-Requires: `pip install "vap[openai]"`
+Requires: `pip install "vapviz[openai]"`
 
 ---
 
@@ -824,7 +824,7 @@ LangChain passes `run_id` (UUID) and `parent_run_id` (UUID) into each callback. 
 
 `on_tool_start` receives `input_str` as a string. The handler attempts to parse it as JSON; if that fails it stores `{"input": input_str}`.
 
-Requires: `pip install "vap[langchain]"`
+Requires: `pip install "vapviz[langchain]"`
 
 ---
 
@@ -889,7 +889,7 @@ crew.kickoff(inputs={...})
 listener.detach()   # flush any orphaned open nodes (rarely needed)
 ```
 
-Requires: `pip install "vap[crewai]"`
+Requires: `pip install "vapviz[crewai]"`
 
 ---
 
@@ -954,7 +954,7 @@ listener.detach()
 
 > **Scope:** the streaming methods (`run_stream` / `run_stream_events`) are not traced yet.
 
-Requires: `pip install "vap[pydantic-ai]"`
+Requires: `pip install "vapviz[pydantic-ai]"`
 
 ---
 
@@ -1007,7 +1007,7 @@ marks the node `error`.
 > **Scope:** v1 captures the span structure and timings; per-call token/cost enrichment (via the
 > event handler) is a planned follow-up.
 
-Requires: `pip install "vap[llamaindex]"`
+Requires: `pip install "vapviz[llamaindex]"`
 
 ---
 
@@ -1045,14 +1045,14 @@ stacks wrappers (the pristine original is recovered), and `detach()` restores th
 > **Scope:** targets the classic `autogen.ConversableAgent` API (AG2 / `pyautogen`), not the newer
 > async `autogen-agentchat` (v0.4+) agents.
 
-Requires: `pip install "vap[autogen]"`
+Requires: `pip install "vapviz[autogen]"`
 
 ---
 
 ### OpenTelemetry export
 
 Mirror VaP runs into OpenTelemetry. Import from `vap.integrations.otel`. One **trace per run**; each
-node becomes a span whose parent is the node's parent. Requires `pip install "vap[otel]"`.
+node becomes a span whose parent is the node's parent. Requires `pip install "vapviz[otel]"`.
 
 #### `enable_otel_export(...)`
 
@@ -1735,10 +1735,14 @@ interface RunGraph {
 
 ## Changelog
 
+### v1.0.1
+
+- **Renamed the PyPI distribution to `vapviz`** — the name `vap` was already taken on PyPI by an unrelated project. Install with `pip install vapviz`; the import package (`import vap`) and the `vap` CLI command are unchanged.
+
 ### v1.0.0
 
 - **First stable release** — the public API now follows semantic versioning (see [README → Versioning & Stability](../README.md#versioning--stability) for the tracked surface)
-- **UI bundled in the wheel** — `ui/dist` is force-included as `vap/_static`; `create_app` auto-serves it when `--static-dir` is omitted, so `pip install vap && vap serve` shows the full UI with no Node build. CI/release build the UI before packaging and assert it's bundled
+- **UI bundled in the wheel** — `ui/dist` is force-included as `vap/_static`; `create_app` auto-serves it when `--static-dir` is omitted, so `pip install vapviz && vap serve` shows the full UI with no Node build. CI/release build the UI before packaging and assert it's bundled
 - **Anthropic integration tests** — `tests/test_anthropic_patch.py` (13 tests); **269 passing** total
 - **Docs** — root `CHANGELOG.md`, README stability policy, refreshed hero screenshot
 - Promoted to `Development Status :: 5 - Production/Stable`; no new tracing/integration features beyond 0.15.0
@@ -1782,7 +1786,7 @@ interface RunGraph {
 - **AutoGen integration** — `vap/integrations/autogen.py`: `VapAutoGen` monkey-patches `ConversableAgent.initiate_chat` / `generate_reply` / `execute_function`, reproducing a multi-agent conversation as a chat root, an agent-turn node per reply, and tool nodes per function call
 - **Correct nesting** — a thread-local node stack parents tool calls under the turn that made them and supports nested chats; agent turns are siblings under the chat; timings are live
 - **Two usage modes** — manual (under a provided run) and auto (each `initiate_chat` = its own run); dropped/raised calls mark nodes `error`; double-patching never stacks wrappers; `detach()` restores originals
-- **`pip install "vap[autogen]"`** — new optional extra (`ag2`, classic `ConversableAgent` API) + `examples/autogen_demo.py` (offline `register_reply` agents, no API key)
+- **`pip install "vapviz[autogen]"`** — new optional extra (`ag2`, classic `ConversableAgent` API) + `examples/autogen_demo.py` (offline `register_reply` agents, no API key)
 - **Test suite** — `tests/test_autogen.py` with 8 tests; **191 passing** total
 - **Package version** bumped to `0.11.0`
 
@@ -1791,7 +1795,7 @@ interface RunGraph {
 - **LlamaIndex integration** — `vap/integrations/llamaindex.py`: `VapLlamaIndex` registers a span handler on LlamaIndex's instrumentation dispatcher and reproduces every span (query engines, retrievers, embeddings, synthesizers, LLM calls) as a VaP node, with `parent_span_id` → node hierarchy and live timings
 - **Kind classification** — retrievers/embeddings → `tool`, LLM spans → `llm`, the rest → `step`; dropped spans mark the node `error`
 - **Two usage modes** — manual (all spans under a provided run) and auto (each top-level span = its own run); `register()` / `detach()` manage the dispatcher hook
-- **`pip install "vap[llamaindex]"`** — new optional extra (`llama-index-core`) + `examples/llamaindex_demo.py` (MockLLM/MockEmbedding, no API key)
+- **`pip install "vapviz[llamaindex]"`** — new optional extra (`llama-index-core`) + `examples/llamaindex_demo.py` (MockLLM/MockEmbedding, no API key)
 - **Test suite** — `tests/test_llamaindex.py` with 8 tests; **183 passing** total
 - **Package version** bumped to `0.10.0`
 
@@ -1800,7 +1804,7 @@ interface RunGraph {
 - **OpenTelemetry export** — `vap/integrations/otel.py`: `enable_otel_export(...)` wraps a store to emit each completed run as an OTLP trace (one trace per run; node hierarchy → span parent/child) via a BatchSpanProcessor; `export_run()` / `build_spans()` for one-shot export
 - **GenAI semantics** — spans carry `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd`, `vap.node.*`, real node start/end times, and ERROR status
 - **Flexible wiring** — bring your own `TracerProvider`, pass an OTLP `endpoint` (gRPC/HTTP), or use the global provider; OTLP exporter imported lazily; `OtelExportHandle.disable()` / `.shutdown()`
-- **`pip install "vap[otel]"`** — new optional extra (`opentelemetry-sdk`, `opentelemetry-exporter-otlp`) + `examples/otel_demo.py` (ConsoleSpanExporter, no network)
+- **`pip install "vapviz[otel]"`** — new optional extra (`opentelemetry-sdk`, `opentelemetry-exporter-otlp`) + `examples/otel_demo.py` (ConsoleSpanExporter, no network)
 - **Test suite** — `tests/test_otel.py` with 11 tests (in-memory exporter); **175 passing** total
 - **Package version** bumped to `0.9.0`
 
@@ -1810,7 +1814,7 @@ interface RunGraph {
 - **Two usage modes** — auto mode (new VaP run per `agent.run()`) and manual mode (agent nests inside an existing `RunContext`); `.detach()` restores the original methods
 - **`patch_pydantic_ai(run=None)`** convenience wrapper; re-entrancy guard prevents double-counting when `run_sync` delegates to `run`
 - **`vap/integrations/pydantic_ai.py`** + `examples/pydantic_ai_demo.py` (runs with no API key via `TestModel`)
-- **`pip install "vap[pydantic-ai]"`** — new optional extra (`pydantic-ai-slim>=1.0.0`)
+- **`pip install "vapviz[pydantic-ai]"`** — new optional extra (`pydantic-ai-slim>=1.0.0`)
 - **Test suite** — `tests/test_pydantic_ai.py` with 13 tests (manual/auto/async modes, tool parenting, cost wiring, error path, detach, double-patch guard); **164 passing** total
 - **Package version** bumped to `0.8.0` (was stale at `0.6.0`)
 
@@ -1829,7 +1833,7 @@ interface RunGraph {
 - **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native `BaseEventListener` event bus; traces Crew runs, Tasks, Agent executions, Tool calls, and LLM round-trips automatically
 - **Two usage modes** — auto mode (new VaP run per `kickoff()`) and manual mode (tasks as children of an existing `RunContext`)
 - **LLM cost on CrewAI nodes** — `cost_usd` automatically attached to every `llm/` node when the model is in the pricing table (LiteLLM usage dict parsed transparently)
-- **`pip install "vap[crewai]"`** — new optional extra; `crewai>=1.0.0` dependency
+- **`pip install "vapviz[crewai]"`** — new optional extra; `crewai>=1.0.0` dependency
 - **`vap/integrations/crewai_listener.py`** — `VapCrewAIListener`, `detach()` helper for manual cleanup
 - **`examples/crewai_demo.py`** — two-demo example (sequential crew + pipeline embedding); no custom tools required
 - **Test suite** — `tests/test_crewai_listener.py` with 19 tests across 7 classes; skipped when `crewai` is not installed
@@ -1872,7 +1876,7 @@ interface RunGraph {
 - **New REST endpoints** — `GET /runs/{id}`, `DELETE /runs/{id}`
 - **`schema_version`** field on `VapEvent` (default `1`)
 - **`RunStore` refactored to ABC** — `_apply_event_to_graph` extracted as shared pure function
-- `anthropic` moved to optional dependency (`pip install "vap[anthropic]"`)
+- `anthropic` moved to optional dependency (`pip install "vapviz[anthropic]"`)
 
 ### v0.1.0
 

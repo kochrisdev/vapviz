@@ -65,11 +65,14 @@ See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for full production deployment 
 The published wheel ships the built UI, so the server serves it out of the box — no Node needed:
 
 ```bash
-pip install vap            # or:  pip install "vap[all]"  for every integration
+pip install vapviz            # or:  pip install "vapviz[all]"  for every integration
 vap serve --db vap.db      # UI + API at http://localhost:8001
 ```
 
 Open **http://localhost:8001**.
+
+> The PyPI distribution is **`vapviz`** (the name `vap` was already taken). The import package and
+> the CLI command stay **`vap`** — i.e. `import vap` and `vap serve`.
 
 ### From source (for development)
 
@@ -243,7 +246,7 @@ vap.patch_anthropic(async_client)               # async — same call
 ```
 
 ```bash
-pip install "vap[anthropic]"
+pip install "vapviz[anthropic]"
 ```
 
 ### OpenAI
@@ -259,7 +262,7 @@ vap.patch_openai(async_client)                  # async — same call
 ```
 
 ```bash
-pip install "vap[openai]"
+pip install "vapviz[openai]"
 ```
 
 Each `chat.completions.create` call becomes a purple **llm** node showing model name, messages, token usage (`input_tokens`, `output_tokens`), response text, and estimated USD cost for known models.
@@ -280,7 +283,7 @@ with vap.trace("LangGraph Agent") as run:
 ```
 
 ```bash
-pip install "vap[langchain]" langgraph langchain-openai
+pip install "vapviz[langchain]" langgraph langchain-openai
 ```
 
 Every chain invocation, tool call, and LLM call appears as a correctly nested node in the graph — no manual instrumentation needed.
@@ -312,7 +315,7 @@ with vap.trace("Full Pipeline") as run:
 ```
 
 ```bash
-pip install "vap[crewai]"
+pip install "vapviz[crewai]"
 ```
 
 Every Task, Agent execution, Tool call, and LLM round-trip is captured automatically via
@@ -346,7 +349,7 @@ with vap.trace("Trip planner") as run:
 ```
 
 ```bash
-pip install "vap[pydantic-ai]"
+pip install "vapviz[pydantic-ai]"
 ```
 
 Tool calls are parented under the model request that invoked them. Call `.detach()` to restore the
@@ -374,7 +377,7 @@ with vap.trace("RAG query") as run:
 Or instantiate `VapLlamaIndex()` with no run (auto mode) to make each top-level call its own VaP run.
 
 ```bash
-pip install "vap[llamaindex]"
+pip install "vapviz[llamaindex]"
 ```
 
 Spans are classified by kind — retrievers and embeddings as `tool`, LLM calls as `llm`, the rest as
@@ -400,7 +403,7 @@ with vap.trace("Support chat") as run:
 Or instantiate `VapAutoGen()` with no run (auto mode) to make each `initiate_chat` its own VaP run.
 
 ```bash
-pip install "vap[autogen]"
+pip install "vapviz[autogen]"
 ```
 
 Targets the classic `autogen.ConversableAgent` API (`ag2` / `pyautogen`). Call `.detach()` to restore
@@ -431,7 +434,7 @@ arguments to use the existing `TracerProvider`. Or export a single run on demand
 `export_run(graph, tracer_provider=...)`.
 
 ```bash
-pip install "vap[otel]"
+pip install "vapviz[otel]"
 ```
 
 This is **export**, not replacement — runs still appear in the VaP UI as usual; OTel just gets a copy.
@@ -738,7 +741,7 @@ architectures where the agent runs in a different language or on a separate mach
 ### Anthropic demo
 
 ```bash
-pip install "vap[anthropic]"
+pip install "vapviz[anthropic]"
 export ANTHROPIC_API_KEY=sk-ant-...
 python examples/anthropic_demo.py
 ```
@@ -746,7 +749,7 @@ python examples/anthropic_demo.py
 ### OpenAI demo
 
 ```bash
-pip install "vap[openai]"
+pip install "vapviz[openai]"
 export OPENAI_API_KEY=sk-...
 python examples/openai_demo.py
 ```
@@ -756,7 +759,7 @@ Runs three `gpt-4o-mini` calls and traces each as a nested `llm` node.
 ### LangGraph demo
 
 ```bash
-pip install "vap[langchain]" langgraph langchain-openai
+pip install "vapviz[langchain]" langgraph langchain-openai
 export OPENAI_API_KEY=sk-...
 python examples/langgraph_demo.py
 ```
@@ -766,7 +769,7 @@ Runs a ReAct agent with three tools (`search_web`, `calculate`, `summarize_findi
 ### CrewAI demo
 
 ```bash
-pip install "vap[crewai]"
+pip install "vapviz[crewai]"
 export OPENAI_API_KEY=sk-...
 python examples/crewai_demo.py
 ```
@@ -778,7 +781,7 @@ Runs two traces:
 ### Pydantic AI demo
 
 ```bash
-pip install "vap[pydantic-ai]"
+pip install "vapviz[pydantic-ai]"
 python examples/pydantic_ai_demo.py        # no API key needed — uses TestModel
 ```
 
@@ -787,7 +790,7 @@ Runs two traces — a weather agent (auto mode) and a trip planner embedded in a
 ### LlamaIndex demo
 
 ```bash
-pip install "vap[llamaindex]"
+pip install "vapviz[llamaindex]"
 python examples/llamaindex_demo.py        # no API key needed — uses MockLLM + MockEmbedding
 ```
 
@@ -796,7 +799,7 @@ Builds a small index and runs a RAG query, traced under one VaP run. The graph s
 ### AutoGen demo
 
 ```bash
-pip install "vap[autogen]"
+pip install "vapviz[autogen]"
 python examples/autogen_demo.py        # no API key needed — offline ConversableAgents
 ```
 
@@ -805,7 +808,7 @@ Runs a scripted two-agent conversation (researcher → writer), traced under one
 ### OpenTelemetry export demo
 
 ```bash
-pip install "vap[otel]"
+pip install "vapviz[otel]"
 python examples/otel_demo.py        # no API key, no collector — prints spans to the console
 ```
 
@@ -863,7 +866,7 @@ with tracer.trace("isolated run") as run:
 ### v0.6.0 — Phase 5 (complete)
 - [x] **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native `BaseEventListener` event bus; traces Crews, Tasks, Agent executions, Tool calls, and LLM round-trips automatically
 - [x] **Auto + manual mode** — auto mode creates a new VaP run per `kickoff()`; manual mode attaches the crew as a sub-section of an existing `vap.trace()` pipeline
-- [x] **LLM cost on CrewAI nodes** — `cost_usd` auto-attached via LiteLLM usage dict; `pip install "vap[crewai]"`
+- [x] **LLM cost on CrewAI nodes** — `cost_usd` auto-attached via LiteLLM usage dict; `pip install "vapviz[crewai]"`
 - [x] **19-test suite** — `tests/test_crewai_listener.py` covers crew lifecycle, task/agent/tool/LLM nodes, cost tracking, and import guard
 
 ### v0.7.0 — Phase 6 (complete)
@@ -876,24 +879,24 @@ with tracer.trace("isolated run") as run:
 - [x] **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync`; reconstructs the agent, each model request, and each tool call as nested nodes from the run's message history
 - [x] **Auto + manual mode** — auto mode creates a new VaP run per `agent.run()`; manual mode nests the agent inside an existing `vap.trace()` pipeline
 - [x] **Per-request tokens & cost** — `cost_usd` attached per model request via the pricing table; tools parented under the model request that called them
-- [x] **13-test suite** — `tests/test_pydantic_ai.py` (TestModel/FunctionModel, no API key); `pip install "vap[pydantic-ai]"`
+- [x] **13-test suite** — `tests/test_pydantic_ai.py` (TestModel/FunctionModel, no API key); `pip install "vapviz[pydantic-ai]"`
 
 ### v0.9.0 — Phase 8 (complete)
 - [x] **OpenTelemetry export** — `enable_otel_export(...)` mirrors each completed run into OTLP spans (one trace per run; node hierarchy → span parent/child) for Jaeger / Grafana Tempo / Datadog
 - [x] **GenAI semantics** — `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd`, and ERROR status carried as span attributes/status with real node timings
 - [x] **Flexible wiring** — bring your own `TracerProvider`, pass an OTLP `endpoint`, or use a globally-configured OpenTelemetry stack; `export_run()` for one-shot export
-- [x] **11-test suite** — `tests/test_otel.py` (in-memory exporter, no network); `pip install "vap[otel]"`
+- [x] **11-test suite** — `tests/test_otel.py` (in-memory exporter, no network); `pip install "vapviz[otel]"`
 
 ### v0.10.0 — Phase 9 (complete)
 - [x] **LlamaIndex integration** — `VapLlamaIndex` registers a span handler on the instrumentation dispatcher; query engines, retrievers, embeddings, response synthesizers, and LLM calls become nested VaP nodes with real timings
 - [x] **Kind classification** — retrievers/embeddings → `tool`, LLM calls → `llm`, the rest → `step`; span tree maps onto the node hierarchy via `parent_span_id`
 - [x] **Auto + manual mode** — manual nests a whole RAG workflow under one `vap.trace()`; auto makes each top-level call its own run
-- [x] **8-test suite** — `tests/test_llamaindex.py` (MockLLM/MockEmbedding, no API key); `pip install "vap[llamaindex]"`
+- [x] **8-test suite** — `tests/test_llamaindex.py` (MockLLM/MockEmbedding, no API key); `pip install "vapviz[llamaindex]"`
 
 ### v0.11.0 — Phase 10 (complete)
 - [x] **AutoGen integration** — `VapAutoGen` wraps `ConversableAgent` (AG2 / `pyautogen`); a multi-agent conversation becomes the chat root, an agent-turn node per `generate_reply`, and tool nodes per `execute_function`, nested with real timings
 - [x] **Auto + manual mode** — manual nests a conversation under one `vap.trace()`; auto makes each `initiate_chat` its own run; thread-local node stack handles nested chats and tool nesting
-- [x] **8-test suite** — `tests/test_autogen.py` (offline `register_reply` agents, no API key); `pip install "vap[autogen]"`
+- [x] **8-test suite** — `tests/test_autogen.py` (offline `register_reply` agents, no API key); `pip install "vapviz[autogen]"`
 
 ### v0.12.0 — Phase 11 (complete)
 - [x] **Cost & latency budgets** — `Budget` (max cost / duration / tokens) + `check_budget(graph, budget)` returning per-metric violations
@@ -929,14 +932,14 @@ with tracer.trace("isolated run") as run:
 | `uvicorn` | ASGI server |
 | `pydantic` | Event schema validation |
 | `sse-starlette` | Server-Sent Events support |
-| `anthropic` *(optional)* | Anthropic SDK integration (`pip install "vap[anthropic]"`) |
-| `openai` *(optional)* | OpenAI SDK integration (`pip install "vap[openai]"`) |
-| `langchain-core` *(optional)* | LangGraph/LangChain integration (`pip install "vap[langchain]"`) |
-| `crewai` *(optional)* | CrewAI integration (`pip install "vap[crewai]"`) |
-| `pydantic-ai-slim` *(optional)* | Pydantic AI integration (`pip install "vap[pydantic-ai]"`) |
-| `llama-index-core` *(optional)* | LlamaIndex integration (`pip install "vap[llamaindex]"`) |
-| `ag2` *(optional)* | AutoGen integration (`pip install "vap[autogen]"`) |
-| `opentelemetry-sdk` + `opentelemetry-exporter-otlp` *(optional)* | OpenTelemetry export (`pip install "vap[otel]"`) |
+| `anthropic` *(optional)* | Anthropic SDK integration (`pip install "vapviz[anthropic]"`) |
+| `openai` *(optional)* | OpenAI SDK integration (`pip install "vapviz[openai]"`) |
+| `langchain-core` *(optional)* | LangGraph/LangChain integration (`pip install "vapviz[langchain]"`) |
+| `crewai` *(optional)* | CrewAI integration (`pip install "vapviz[crewai]"`) |
+| `pydantic-ai-slim` *(optional)* | Pydantic AI integration (`pip install "vapviz[pydantic-ai]"`) |
+| `llama-index-core` *(optional)* | LlamaIndex integration (`pip install "vapviz[llamaindex]"`) |
+| `ag2` *(optional)* | AutoGen integration (`pip install "vapviz[autogen]"`) |
+| `opentelemetry-sdk` + `opentelemetry-exporter-otlp` *(optional)* | OpenTelemetry export (`pip install "vapviz[otel]"`) |
 
 `sqlite3` is part of the Python standard library — no extra install needed for persistence.
 
