@@ -1,6 +1,6 @@
-# Contributing to VaP
+# Contributing to vapviz
 
-Thanks for your interest in improving VaP! This guide covers how to set up a
+Thanks for your interest in improving vapviz! This guide covers how to set up a
 development environment, the checks your change needs to pass, and how to get a
 pull request merged.
 
@@ -12,7 +12,7 @@ project's [MIT License](LICENSE).
 ## Ways to contribute
 
 - **Report a bug** or **request a feature** — open an
-  [issue](https://github.com/kochrisdev/vap/issues). For bugs, include the VaP
+  [issue](https://github.com/kochrisdev/vap/issues). For bugs, include the vapviz
   version, Python version, a minimal repro, and the expected vs. actual behaviour.
 - **Improve the docs** — fixes to `README.md` or anything under `docs/` are very
   welcome and make great first contributions.
@@ -23,12 +23,12 @@ project's [MIT License](LICENSE).
 
 ## Development setup
 
-VaP is a Python package (`vap/`) plus a Vite + React UI (`ui/`). You need
+vapviz is a Python package (`vapviz/`) plus a Vite + React UI (`ui/`). You need
 **Python 3.11+** and **Node 20+**.
 
 ```bash
 git clone https://github.com/kochrisdev/vap.git
-cd vap
+cd vapviz
 
 # Python — editable install with all integrations + test/dev tooling
 pip install -e ".[dev]"
@@ -92,11 +92,11 @@ Get oriented with the
 
 ### Adding a new framework integration
 
-Integrations live in `vap/integrations/` and follow one of two patterns
+Integrations live in `vapviz/integrations/` and follow one of two patterns
 (SDK monkey-patch, or event-bus/listener) described in the
 [Extension Guide](docs/ARCHITECTURE.md#extension-guide). When you add one:
 
-1. Implement it in `vap/integrations/<name>.py`, reusing `vap.calculate_cost`
+1. Implement it in `vapviz/integrations/<name>.py`, reusing `vapviz.calculate_cost`
    for LLM cost and emitting standard `VapEvent`s so it works with the existing
    store, server, and UI unchanged.
 2. Add an optional extra in `pyproject.toml` (and to the `all` / `dev` groups).

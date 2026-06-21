@@ -1,4 +1,4 @@
-# VaP Architecture
+# vapviz Architecture
 
 This document describes the internal design of the Visualization Agentic Process framework — how events flow from user code through the Python tracer to the FastAPI server and ultimately to the React graph.
 
@@ -10,13 +10,13 @@ This document describes the internal design of the Visualization Agentic Process
 ┌─────────────────────────────────────────────────────────────────────┐
 │  User / Agent Code                                                  │
 │                                                                     │
-│   with vap.trace("My Agent") as run:           (sync)               │
+│   with vapviz.trace("My Agent") as run:           (sync)               │
 │       with run.step("fetch", kind="tool") as step:                  │
 │           step.set_input({...})                                     │
 │           result = do_work()                                        │
 │           step.set_output({...})                                    │
 │                                                                     │
-│   async with vap.atrace("Async Agent") as run: (async)              │
+│   async with vapviz.atrace("Async Agent") as run: (async)              │
 │       async with run.astep("fetch", kind="tool") as step:           │
 │           step.set_input({...})                                     │
 │           result = await do_work_async()                            │
@@ -25,7 +25,7 @@ This document describes the internal design of the Visualization Agentic Process
                            │  VapEvent objects (in-process)
                            ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  RunStore ABC  (vap/store.py)                                        │
+│  RunStore ABC  (vapviz/store.py)                                        │
 │                                                                     │
 │  MemoryStore   — thread-safe in-memory dict (default)               │
 │  SqliteStore   — WAL-mode SQLite, survives restarts                  │
@@ -35,14 +35,14 @@ This document describes the internal design of the Visualization Agentic Process
 │  • Hold asyncio.Queue per SSE subscriber                            │
 │  • Use loop.call_soon_threadsafe() for thread→asyncio hand-off      │
 │                                                                     │
-│  vap/cost.py    — pricing table, calculate_cost(), format_cost()    │
+│  vapviz/cost.py    — pricing table, calculate_cost(), format_cost()    │
 │  (used by integrations to attach cost_usd to llm_response events)  │
-│  vap/metrics.py — compute_metrics(): cross-run aggregation          │
+│  vapviz/metrics.py — compute_metrics(): cross-run aggregation          │
 └──────────────────────────┬───────────────────────────────────────────┘
                            │  asyncio.Queue (per subscriber)
                            ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  FastAPI Server  (vap/server.py)                                    │
+│  FastAPI Server  (vapviz/server.py)                                    │
 │                                                                     │
 │  GET    /runs                  → list[RunSummary]                   │
 │  GET    /metrics               → Metrics (cross-run analytics)      │
@@ -119,7 +119,7 @@ This logic is extracted into a standalone pure function so both `MemoryStore` an
 
 ## Python Package Internals
 
-### Tracer (`vap/tracer.py`)
+### Tracer (`vapviz/tracer.py`)
 
 The tracer uses Python's `contextvars.ContextVar` to track the currently active `StepContext` without requiring users to pass context objects manually.
 
@@ -175,7 +175,7 @@ Because `ContextVar` already propagates correctly through asyncio tasks (each `a
 
 **Dynamic store lookup:**
 
-`Tracer._store` is a `@property` that reads `vap.store.default_store` at call time rather than capturing it at construction time. This means `vap.configure(db=...)` takes effect for all subsequent traces on the default tracer without requiring any re-import.
+`Tracer._store` is a `@property` that reads `vapviz.store.default_store` at call time rather than capturing it at construction time. This means `vapviz.configure(db=...)` takes effect for all subsequent traces on the default tracer without requiring any re-import.
 
 **Exception handling:**
 
@@ -189,7 +189,7 @@ This ensures the graph always reaches a terminal state even when agents fail mid
 
 ---
 
-### Store (`vap/store.py`)
+### Store (`vapviz/store.py`)
 
 `RunStore` is an abstract base class. All store operations are defined as abstract methods:
 
@@ -245,7 +245,7 @@ The loop reference is injected at server startup via `store.set_loop(asyncio.get
 
 ---
 
-### SQLite Backend (`vap/backends/sqlite.py`)
+### SQLite Backend (`vapviz/backends/sqlite.py`)
 
 `SqliteStore` persists events to a SQLite database file and replays them into an in-memory graph cache on startup.
 
@@ -272,7 +272,7 @@ CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp);
 
 ---
 
-### Server (`vap/server.py`)
+### Server (`vapviz/server.py`)
 
 The FastAPI app is a thin façade over the store. The lifespan handler wires up the asyncio loop and cleans up on shutdown:
 
@@ -312,9 +312,9 @@ The two-phase design means:
 
 ---
 
-### Cost Module (`vap/cost.py`)
+### Cost Module (`vapviz/cost.py`)
 
-`vap/cost.py` is a self-contained pricing utility — no external dependencies, no I/O.
+`vapviz/cost.py` is a self-contained pricing utility — no external dependencies, no I/O.
 
 **Pricing table:**
 
@@ -355,7 +355,7 @@ Display helper used by both the Python server (not currently exposed) and the Re
 
 ---
 
-### Metrics Module (`vap/metrics.py`)
+### Metrics Module (`vapviz/metrics.py`)
 
 Like `cost.py`, this is a pure, dependency-free aggregation layer — no I/O, no store coupling. `compute_metrics(graphs: list[RunGraph]) -> Metrics` is a single pass over the supplied graphs:
 
@@ -385,7 +385,7 @@ The `GET /metrics` route fetches `store.get_graph()` for every `store.list_runs(
 
 ---
 
-### Budgets Module (`vap/budgets.py`)
+### Budgets Module (`vapviz/budgets.py`)
 
 Another pure layer over the graph, turning metrics into guardrails. `check_budget(graph, budget)`
 measures a single run's cost, duration, and token totals (the same way `metrics.py` does) and emits a
@@ -394,7 +394,7 @@ values, and the `violations` list).
 
 `enable_budget_alerts(budget, on_alert=…)` uses the **same store-wrapping pattern as the OTel
 exporter**: it overrides `add_event` on the instance so that when an `agent_end` event lands, the run
-is fetched and checked; on a violation it calls `on_alert(report)` (default: a `vap.budgets` logger
+is fetched and checked; on a violation it calls `on_alert(report)` (default: a `vapviz.budgets` logger
 warning). The check runs on the agent's thread but is cheap (a single graph pass) and best-effort —
 any failure is swallowed so alerting can't break the run. `BudgetAlertHandle.disable()` deletes the
 instance override, reverting to the class method.
@@ -405,16 +405,16 @@ the UI or ad-hoc use.
 
 ---
 
-### Evals Module (`vap/evals.py`)
+### Evals Module (`vapviz/evals.py`)
 
-Where budgets are *passive guardrails*, evals are *active assertions* — VaP as a regression-testing
+Where budgets are *passive guardrails*, evals are *active assertions* — vapviz as a regression-testing
 tool for agents. A `Check` is just a named function `RunGraph -> (passed, detail[, score])`, wrapped
 so a throwing check is recorded as a failure rather than crashing the run. `eval_run` applies a list
 of checks and aggregates: `passed` is the AND of all checks, `score` is the mean of their 0–1 scores.
 
 Built-in checks reuse the same per-run measures as budgets (`_run_cost`, `_run_duration_ms`,
 `_run_tokens`), so "cost ≤ $0.02" means the same thing in a budget alert and an eval. `output_contains`
-scans node outputs (optionally a named node). `custom` and `judge` accept user predicates — VaP never
+scans node outputs (optionally a named node). `custom` and `judge` accept user predicates — vapviz never
 calls an LLM itself for judging, keeping evals provider-agnostic and unit-testable offline.
 
 Two surfaces wrap the same core: the Python `eval_run(run, [...])` (drop into pytest/CI, accepts a
@@ -423,13 +423,13 @@ specs — the latter backs `POST /runs/{id}/eval` so any language or the UI can 
 
 ---
 
-### Search & Tags (`vap/search.py` + store)
+### Search & Tags (`vapviz/search.py` + store)
 
 **Search** is a pure predicate, `run_matches(graph, query=, status=, kind=, tool=)`: it builds a text
 "haystack" per node (label + JSON-stringified input/output/error) and AND-combines the supplied
 filters. `GET /search` walks `list_runs()`, applies `tag` filtering at the summary level (tags aren't
 in the graph), fetches each graph, and keeps the matches. It's linear over stored runs — fine for the
-single-node scale VaP targets; a larger deployment would push this into the store/DB.
+single-node scale vapviz targets; a larger deployment would push this into the store/DB.
 
 **Tags** are the first piece of *mutable* per-run state in a system that's otherwise append-only
 events. They live beside the event log rather than in it: the `RunStore` ABC provides concrete
@@ -445,22 +445,22 @@ On the client, `RunList` runs the content search against `/search` (debounced) a
 
 ---
 
-### Configuration (`vap/__init__.py`)
+### Configuration (`vapviz/__init__.py`)
 
-`vap.configure(db=...)` is the public API for switching the module-level store:
+`vapviz.configure(db=...)` is the public API for switching the module-level store:
 
 ```python
 def configure(db: str | None = None) -> None:
     import sys
-    import vap.store as _sm
+    import vapviz.store as _sm
 
     new_store = SqliteStore(db) if db is not None else MemoryStore()
     _sm.default_store = new_store
-    # Also update the binding on this module so vap.default_store stays current
+    # Also update the binding on this module so vapviz.default_store stays current
     sys.modules[__name__].default_store = new_store
 ```
 
-The `sys.modules[__name__]` trick is needed because Python's import machinery creates a binding in `vap.__init__` at import time (`from .store import default_store`). Simply reassigning `_sm.default_store` would leave the `vap.default_store` name pointing at the old object. Writing through `sys.modules` updates both bindings atomically from the caller's perspective.
+The `sys.modules[__name__]` trick is needed because Python's import machinery creates a binding in `vapviz.__init__` at import time (`from .store import default_store`). Simply reassigning `_sm.default_store` would leave the `vapviz.default_store` name pointing at the old object. Writing through `sys.modules` updates both bindings atomically from the caller's perspective.
 
 ---
 
@@ -522,7 +522,7 @@ The `ExportMenu` dropdown lives in the run header and offers two actions:
 
 **JSON download:**
 - Calls `GET /runs/{id}/export` which returns the `RunGraph` as `application/json` with `Content-Disposition: attachment`.
-- The browser triggers an automatic file download (`vap-{run_id}.json`).
+- The browser triggers an automatic file download (`vapviz-{run_id}.json`).
 
 **PNG download:**
 - Dynamically imports `html2canvas` (loaded only on demand to avoid bundle bloat).
@@ -561,7 +561,7 @@ dagre.graphlib.Graph
 ReactFlow Node[] with { position: { x, y } }
        │
        ▼
-<ReactFlow nodes={...} edges={...} nodeTypes={{ vap: VapNode }} />
+<ReactFlow nodes={...} edges={...} nodeTypes={{ vapviz: VapNode }} />
 ```
 
 `VapNode` is a custom node component that:
@@ -610,7 +610,7 @@ Named SSE events (`event: tool_call\ndata: {...}`) are used instead of the defau
 **Async path:** replaces `client.messages.create` with an `async def` that `await`s the original coroutine.
 
 Both paths:
-1. Check `_current_step` — if no active VaP trace context, call the original immediately (zero overhead outside a trace)
+1. Check `_current_step` — if no active vapviz trace context, call the original immediately (zero overhead outside a trace)
 2. Create a `StepContext` with `kind=llm`, parented to the current step
 3. Emit `llm_call` with model name, message count, and tool names
 4. Call the original `messages.create`
@@ -629,7 +629,7 @@ Because Python module imports are cached, the `ContextVar` imported inside the w
 Auto-detection uses `isinstance(client, openai.AsyncOpenAI)` to choose the async wrapper; falls back to the sync wrapper otherwise.
 
 Both paths:
-1. Check `_current_step` — no-op if outside a VaP trace
+1. Check `_current_step` — no-op if outside a vapviz trace
 2. Create a `StepContext` with `kind=llm`
 3. Emit `llm_call` with model, messages, and tool names
 4. Call the original `chat.completions.create`
@@ -641,15 +641,15 @@ Both paths:
 
 ## LangGraph / LangChain Integration (`integrations/langchain.py`)
 
-`VapCallbackHandler` implements LangChain's `BaseCallbackHandler` interface. It translates LangChain's UUID-based run tracking into VaP's `StepContext` tree.
+`VapCallbackHandler` implements LangChain's `BaseCallbackHandler` interface. It translates LangChain's UUID-based run tracking into vapviz's `StepContext` tree.
 
-**UUID → VaP mapping:**
+**UUID → vapviz mapping:**
 
 LangChain passes a UUID `run_id` and an optional `parent_run_id` into every callback. `VapCallbackHandler` maintains an internal `_contexts: dict[UUID, StepContext]` map and looks up the parent context in that map. If `parent_run_id` is absent (top-level chain), it falls back to the `RunContext`'s root `StepContext`.
 
-**Callback → VaP node mapping:**
+**Callback → vapviz node mapping:**
 
-| LangChain callback | VaP `kind` | Events emitted |
+| LangChain callback | vapviz `kind` | Events emitted |
 |---|---|---|
 | `on_chain_start` / `on_chain_end` | `step` | `step_start` / `step_end` |
 | `on_tool_start` / `on_tool_end` | `tool` | `tool_call` / `tool_result` |
@@ -702,7 +702,7 @@ def __init__(self, run=None):
 
 The SDK integrations (OpenAI, Anthropic, LangChain) rely on the `_current_step` `ContextVar` for automatic parent tracking because they run on the same thread or asyncio task as the user code.
 
-CrewAI's `ThreadPoolExecutor` threads have no VaP `ContextVar` context — they are bare OS threads with no connection to the tracer's context chain. The listener therefore maintains **explicit parent-tracking dictionaries** guarded by a single `threading.Lock`:
+CrewAI's `ThreadPoolExecutor` threads have no vapviz `ContextVar` context — they are bare OS threads with no connection to the tracer's context chain. The listener therefore maintains **explicit parent-tracking dictionaries** guarded by a single `threading.Lock`:
 
 | Dict | Key | Value | Purpose |
 |---|---|---|---|
@@ -753,9 +753,9 @@ Using identical derivation logic guarantees the key stored in `_task_nodes` by `
 |---|---|---|
 | Constructor | `VapCrewAIListener()` | `VapCrewAIListener(run=run)` |
 | Run creation | New `RunContext` per `kickoff()` | Provided `RunContext` is used |
-| Store | `vap.store.default_store` | `run._store` |
+| Store | `vapviz.store.default_store` | `run._store` |
 | Crew node kind | `agent` (becomes the run root) | `step` (child of run root) |
-| Run lifecycle | Listener opens and closes the run | Caller's `with vap.trace(...)` controls it |
+| Run lifecycle | Listener opens and closes the run | Caller's `with vapviz.trace(...)` controls it |
 
 Manual mode also provides **test isolation**: each test creates its own `MemoryStore` + `RunContext` + `VapCrewAIListener(run=run)`. Because `_get_store()` returns `run._store`, all events from that listener write only to that store — other accumulated listener instances write to their own stores and never contaminate the assertions.
 
@@ -840,7 +840,7 @@ so a failure never breaks the user's agent run.
 |---|---|---|
 | Store / run id | the provided run's | `default_store`, fresh id per call |
 | Agent node | `step` `agent/<name>` under the run root | `agent` node *is* the run root |
-| Lifecycle | nests inside an existing `vap.trace()` | one VaP run per `agent.run()` |
+| Lifecycle | nests inside an existing `vapviz.trace()` | one vapviz run per `agent.run()` |
 
 ---
 
@@ -848,7 +848,7 @@ so a failure never breaks the user's agent run.
 
 LlamaIndex ships its own instrumentation system — a dispatcher with **span handlers** (function
 enter/exit/error) and **event handlers** (granular typed events). `VapLlamaIndex` is a span
-handler, because LlamaIndex's span tree is already shaped exactly like a VaP graph: every
+handler, because LlamaIndex's span tree is already shaped exactly like a vapviz graph: every
 instrumented method call is a span with an `id_` and a `parent_span_id`.
 
 ### Span handler, not monkey-patching
@@ -868,7 +868,7 @@ prepare_to_drop_span(id_, ..., err)                   → close it (error)
 ```
 
 Each is wrapped so a tracing failure can never break the traced call. `_spans` maps a
-LlamaIndex `id_` to the VaP `(store, run_id, node_id, parent_id, kind)` it created, so a child
+LlamaIndex `id_` to the vapviz `(store, run_id, node_id, parent_id, kind)` it created, so a child
 span resolves its parent by looking up `parent_span_id`. Timings come from `time.time()` at open
 and close — these are **live, real durations** (unlike the post-hoc Pydantic AI reconstruction).
 
@@ -880,7 +880,7 @@ For each span, the parent is resolved in order:
 2. No tracked parent, **manual mode** (a run was provided) → parent = the run's root node.
 3. No tracked parent, **auto mode** → this span *becomes* a new run's `agent` root.
 
-Manual mode is the recommended pattern: one `vap.trace()` block captures an entire RAG workflow
+Manual mode is the recommended pattern: one `vapviz.trace()` block captures an entire RAG workflow
 as a single run. Auto mode makes each top-level instrumented call its own run (LlamaIndex emits
 several root spans — indexing, then querying — so a workflow yields several runs).
 
@@ -927,7 +927,7 @@ conversation.
 
 ### Modes and patch safety
 
-Manual mode nests the whole conversation under one `vap.trace()`; auto mode turns each top-level
+Manual mode nests the whole conversation under one `vapviz.trace()`; auto mode turns each top-level
 `initiate_chat` into its own run (its chat node becomes the run's `agent` root). `_wrap` always
 recovers the pristine original (stashed on the wrapper) before re-wrapping, so patching twice never
 stacks wrappers or double-counts, and `detach()` restores the originals.
@@ -936,8 +936,8 @@ stacks wrappers or double-counts, and `detach()` restores the originals.
 
 ## OpenTelemetry Export (`integrations/otel.py`)
 
-This is an **export sink**, not a framework integration: it reads completed VaP runs and
-reproduces them as OpenTelemetry traces, so VaP can feed an existing observability stack
+This is an **export sink**, not a framework integration: it reads completed vapviz runs and
+reproduces them as OpenTelemetry traces, so vapviz can feed an existing observability stack
 (Jaeger, Grafana Tempo, Datadog) in parallel with its own UI.
 
 ### Reconstruction, not interception
@@ -959,7 +959,7 @@ build_spans(store.get_graph(run_id), tracer)
    roots = nodes with no parent (or parent absent from graph)
    for each node, depth-first:
        span = tracer.start_span(label, context=parent_ctx, start_time=ns(started_at))
-       set gen_ai.* / vap.* attributes; set OK/ERROR status
+       set gen_ai.* / vapviz.* attributes; set OK/ERROR status
        recurse into children with set_span_in_context(span)
        span.end(end_time=ns(ended_at))
 ```
@@ -972,7 +972,7 @@ Timestamps are converted from epoch-seconds floats to integer nanoseconds.
 `enable_otel_export` resolves a `TracerProvider` three ways: an explicit `tracer_provider`,
 a new provider built around an OTLP exporter when an `endpoint` is given (the exporter is
 imported lazily so the gRPC/HTTP deps are only needed when actually used), or the global
-provider when both are omitted (so VaP slots into an already-configured OpenTelemetry stack).
+provider when both are omitted (so vapviz slots into an already-configured OpenTelemetry stack).
 
 Auto-export runs inside `add_event`, i.e. on the agent's own thread. Using a
 `BatchSpanProcessor` keeps that non-blocking — `start_span`/`end` just enqueue; a background
@@ -985,8 +985,8 @@ flushes the provider.
 
 Spans follow OpenTelemetry's GenAI semantic conventions where they apply
 (`gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`) and use a
-`vap.*` namespace for the rest (`vap.node.kind`, `vap.node.status`, `vap.run_id`,
-`vap.cost_usd`, and bounded `vap.input` / `vap.output` snapshots).
+`vapviz.*` namespace for the rest (`vapviz.node.kind`, `vapviz.node.status`, `vapviz.run_id`,
+`vapviz.cost_usd`, and bounded `vapviz.input` / `vapviz.output` snapshots).
 
 ---
 
@@ -994,8 +994,8 @@ Spans follow OpenTelemetry's GenAI semantic conventions where they apply
 
 ### Adding a new node kind
 
-1. **`vap/events.py`** — add a value to `NodeKind`
-2. **`vap/tracer.py`** — add the start/end `EventType` mappings in the `_start_event` / `_end_event` helpers
+1. **`vapviz/events.py`** — add a value to `NodeKind`
+2. **`vapviz/tracer.py`** — add the start/end `EventType` mappings in the `_start_event` / `_end_event` helpers
 3. **`ui/src/components/AgentGraph.tsx`** — add a colour entry to `KIND_BG`
 4. **`ui/src/types/events.ts`** — add the string literal to the `NodeKind` union
 
@@ -1003,9 +1003,9 @@ Spans follow OpenTelemetry's GenAI semantic conventions where they apply
 
 Two patterns are available depending on how the target framework exposes its hooks.
 
-**Pattern A — monkey-patch** (OpenAI, Anthropic style): intercept a specific method on a client object. Best when the framework provides a single callable to wrap and the call is made on the same thread as the VaP trace context.
+**Pattern A — monkey-patch** (OpenAI, Anthropic style): intercept a specific method on a client object. Best when the framework provides a single callable to wrap and the call is made on the same thread as the vapviz trace context.
 
-**Pattern B — event-bus listener** (CrewAI style): subclass the framework's listener base class and register handlers. Best when the framework has its own internal event system and dispatches callbacks from background threads that have no VaP `ContextVar` context. Use explicit parent-tracking dicts instead of relying on `ContextVar`.
+**Pattern B — event-bus listener** (CrewAI style): subclass the framework's listener base class and register handlers. Best when the framework has its own internal event system and dispatches callbacks from background threads that have no vapviz `ContextVar` context. Use explicit parent-tracking dicts instead of relying on `ContextVar`.
 
 **Pattern A example** — follows `anthropic_sdk.py`:
 
@@ -1064,7 +1064,7 @@ class VapMyFrameworkListener(MyFrameworkBaseListener):
     def _get_store(self):
         if self._provided_run is not None:
             return self._provided_run._store
-        import vap.store as _sm
+        import vapviz.store as _sm
         return _sm.default_store
 
     def setup_listeners(self, bus):
@@ -1098,15 +1098,15 @@ class VapMyFrameworkListener(MyFrameworkBaseListener):
 Key rules for Pattern B:
 - Initialise all state before `super().__init__()`
 - Never call a method that acquires `self._lock` while already inside `with self._lock:`
-- Do not rely on `_current_step` `ContextVar` — the bus handler runs on a background thread with no VaP context chain
+- Do not rely on `_current_step` `ContextVar` — the bus handler runs on a background thread with no vapviz context chain
 
 ### Implementing a custom store backend
 
 Subclass `RunStore` and implement all abstract methods. The minimum required surface:
 
 ```python
-from vap.store import RunStore, _apply_event_to_graph
-from vap.events import VapEvent, RunGraph, RunSummary
+from vapviz.store import RunStore, _apply_event_to_graph
+from vapviz.events import VapEvent, RunGraph, RunSummary
 import asyncio, threading
 
 class MyStore(RunStore):
@@ -1137,8 +1137,8 @@ Pass your store to `create_app()` and `Tracer()`:
 
 ```python
 store = MyStore()
-app   = vap.create_app(store=store)
-tracer = vap.Tracer(store=store)
+app   = vapviz.create_app(store=store)
+tracer = vapviz.Tracer(store=store)
 ```
 
 ---
@@ -1159,17 +1159,17 @@ Running the tracer and server in the same process via `default_store` eliminates
 
 ### Why SQLite with WAL mode?
 
-SQLite's Write-Ahead Logging mode allows concurrent readers and a single writer without blocking each other. This is ideal for VaP's access pattern: the tracer writes one event at a time (often from a non-asyncio thread), while FastAPI serves multiple concurrent SSE readers. WAL mode with `synchronous=NORMAL` gives a good safety/throughput balance — events are not lost on an OS crash, and throughput is limited by fsync-per-checkpoint rather than fsync-per-write.
+SQLite's Write-Ahead Logging mode allows concurrent readers and a single writer without blocking each other. This is ideal for vapviz's access pattern: the tracer writes one event at a time (often from a non-asyncio thread), while FastAPI serves multiple concurrent SSE readers. WAL mode with `synchronous=NORMAL` gives a good safety/throughput balance — events are not lost on an OS crash, and throughput is limited by fsync-per-checkpoint rather than fsync-per-write.
 
 ### Why `sys.modules[__name__]` in `configure()`?
 
-Python's import system creates a binding in `vap.__init__` at import time:
+Python's import system creates a binding in `vapviz.__init__` at import time:
 
 ```python
-from .store import default_store  # creates vap.default_store = <MemoryStore>
+from .store import default_store  # creates vapviz.default_store = <MemoryStore>
 ```
 
-Later, `vap.store.default_store = new_store` updates the variable in the `store` module but leaves the `vap.default_store` name (created by the `from ... import` statement) still pointing at the old object. Writing through `sys.modules[__name__].default_store = new_store` updates the attribute on the `vap` module object directly, keeping both names in sync.
+Later, `vapviz.store.default_store = new_store` updates the variable in the `store` module but leaves the `vapviz.default_store` name (created by the `from ... import` statement) still pointing at the old object. Writing through `sys.modules[__name__].default_store = new_store` updates the attribute on the `vapviz` module object directly, keeping both names in sync.
 
 ### Why dagre for layout?
 

@@ -231,10 +231,10 @@ class RunContext:
 
 
 class Tracer:
-    """Entry point for the VaP tracing API.
+    """Entry point for the vapviz tracing API.
 
-    Uses ``vap.store.default_store`` at call time if no explicit store is passed,
-    so ``vap.configure(db=...)`` takes effect even after import.
+    Uses ``vapviz.store.default_store`` at call time if no explicit store is passed,
+    so ``vapviz.configure(db=...)`` takes effect even after import.
     """
 
     def __init__(self, store: "RunStore | None" = None) -> None:
@@ -244,7 +244,7 @@ class Tracer:
     def _store(self) -> "RunStore":
         if self._store_explicit is not None:
             return self._store_explicit
-        import vap.store as _sm
+        import vapviz.store as _sm
         return _sm.default_store
 
     # ------------------------------------------------------------------
@@ -275,7 +275,7 @@ class Tracer:
 
         Example::
 
-            async with vap.atrace("My async agent") as run:
+            async with vapviz.atrace("My async agent") as run:
                 async with run.astep("fetch", kind="tool") as step:
                     step.set_input({"url": "..."})
                     data = await fetch(url)

@@ -1,6 +1,6 @@
-# VaP Deployment Guide
+# vapviz Deployment Guide
 
-This document covers everything needed to run VaP in a production or shared environment — from a single container on a laptop to a cloud-hosted service.
+This document covers everything needed to run vapviz in a production or shared environment — from a single container on a laptop to a cloud-hosted service.
 
 ---
 
@@ -54,7 +54,7 @@ npm run build     # output → ui/dist/
 
 ## Single-Process Deployment
 
-The simplest production setup: a single `vap serve` process serves both the REST API and the React UI.
+The simplest production setup: a single `vapviz serve` process serves both the REST API and the React UI.
 
 ```bash
 # 1. Install the package
@@ -64,10 +64,10 @@ pip install -e ".[all]"
 cd ui && npm run build && cd ..
 
 # 3. Start the server
-vap serve \
+vapviz serve \
   --host 0.0.0.0 \
   --port 8001 \
-  --db /var/data/vap.db \
+  --db /var/data/vapviz.db \
   --static-dir ui/dist \
   --log-level info
 ```
@@ -81,20 +81,20 @@ When `--static-dir` is passed, the built React files are mounted at `/` after al
 ### Running as a systemd service
 
 ```ini
-# /etc/systemd/system/vap.service
+# /etc/systemd/system/vapviz.service
 [Unit]
-Description=VaP Visualization Agentic Process
+Description=vapviz Visualization Agentic Process
 After=network.target
 
 [Service]
 Type=simple
-User=vap
-WorkingDirectory=/opt/vap
-ExecStart=/opt/vap/.venv/bin/vap serve \
+User=vapviz
+WorkingDirectory=/opt/vapviz
+ExecStart=/opt/vapviz/.venv/bin/vapviz serve \
   --host 0.0.0.0 \
   --port 8001 \
-  --db /var/data/vap.db \
-  --static-dir /opt/vap/ui/dist \
+  --db /var/data/vapviz.db \
+  --static-dir /opt/vapviz/ui/dist \
   --log-level info
 Restart=on-failure
 RestartSec=5s
@@ -105,8 +105,8 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable vap
-sudo systemctl start vap
+sudo systemctl enable vapviz
+sudo systemctl start vapviz
 ```
 
 ---
@@ -118,28 +118,28 @@ A multi-stage `Dockerfile` is included in the repository root. It builds the Rea
 ### Build
 
 ```bash
-docker build -t vap:latest .
+docker build -t vapviz:latest .
 ```
 
 ### Run
 
 ```bash
 # In-memory store (data lost on restart)
-docker run -p 8001:8001 vap:latest
+docker run -p 8001:8001 vapviz:latest
 
 # Persistent SQLite on a host volume
 docker run -p 8001:8001 \
   -v $(pwd)/data:/data \
-  vap:latest
+  vapviz:latest
 ```
 
-The container exposes port `8001`. By default it persists runs to `/data/vap.db` and serves the built UI.
+The container exposes port `8001`. By default it persists runs to `/data/vapviz.db` and serves the built UI.
 
 ### Customise the command
 
 ```bash
-docker run -p 9000:9000 vap:latest \
-  vap serve --host 0.0.0.0 --port 9000 --db /data/vap.db --static-dir ui/dist
+docker run -p 9000:9000 vapviz:latest \
+  vapviz serve --host 0.0.0.0 --port 9000 --db /data/vapviz.db --static-dir ui/dist
 ```
 
 ---
@@ -165,12 +165,12 @@ To customise the port or DB path, edit `docker-compose.yml` or override with env
 
 ```yaml
 services:
-  vap:
+  vapviz:
     build: .
     ports:
       - "8001:8001"
     volumes:
-      - vap-data:/data
+      - vapviz-data:/data
     restart: unless-stopped
 ```
 
@@ -178,26 +178,26 @@ services:
 
 ## Nginx Reverse Proxy
 
-Use Nginx when you need TLS termination, a custom domain, or to host VaP alongside other services.
+Use Nginx when you need TLS termination, a custom domain, or to host vapviz alongside other services.
 
 ### Configuration
 
 ```nginx
-# /etc/nginx/sites-available/vap
+# /etc/nginx/sites-available/vapviz
 server {
     listen 80;
-    server_name vap.example.com;
+    server_name vapviz.example.com;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name vap.example.com;
+    server_name vapviz.example.com;
 
-    ssl_certificate     /etc/letsencrypt/live/vap.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/vap.example.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/vapviz.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/vapviz.example.com/privkey.pem;
 
-    # Proxy all requests to the vap container / process
+    # Proxy all requests to the vapviz container / process
     location / {
         proxy_pass         http://127.0.0.1:8001;
         proxy_http_version 1.1;
@@ -221,14 +221,14 @@ server {
 Enable and reload:
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/vap /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/vapviz /etc/nginx/sites-enabled/
 sudo nginx -t && sudo nginx -s reload
 ```
 
 ### Obtain a TLS certificate with Let's Encrypt
 
 ```bash
-sudo certbot --nginx -d vap.example.com
+sudo certbot --nginx -d vapviz.example.com
 ```
 
 ---
@@ -243,10 +243,10 @@ sudo certbot --nginx -d vap.example.com
 4. Add a **Volume** mounted at `/data` for SQLite persistence.
 5. Set the **Start command** (or rely on the Dockerfile `CMD`):
    ```
-   vap serve --host 0.0.0.0 --port $PORT --db /data/vap.db --static-dir ui/dist --log-level info
+   vapviz serve --host 0.0.0.0 --port $PORT --db /data/vapviz.db --static-dir ui/dist --log-level info
    ```
 6. Set the `PORT` environment variable in Railway's settings panel (Railway injects this automatically).
-7. Open the generated Railway URL — VaP is live.
+7. Open the generated Railway URL — vapviz is live.
 
 ### Render
 
@@ -256,7 +256,7 @@ sudo certbot --nginx -d vap.example.com
 4. Add a **Persistent Disk** mounted at `/data`.
 5. Override the start command if needed:
    ```
-   vap serve --host 0.0.0.0 --port 10000 --db /data/vap.db --static-dir ui/dist
+   vapviz serve --host 0.0.0.0 --port 10000 --db /data/vapviz.db --static-dir ui/dist
    ```
    (Render's default port is `10000`; set it to match your `PORT` env var.)
 6. Deploy — Render builds the Dockerfile and starts the service.
@@ -269,7 +269,7 @@ curl -L https://fly.io/install.sh | sh
 fly auth login
 
 # Launch from the repo root (detects Dockerfile automatically)
-fly launch --name my-vap --region lax --no-deploy
+fly launch --name my-vapviz --region lax --no-deploy
 
 # Add a persistent volume for SQLite
 fly volumes create vap_data --size 1  # GB
@@ -301,23 +301,23 @@ fly volumes create vap_data --size 1  # GB
 fly deploy
 ```
 
-Open `https://my-vap.fly.dev` to access the UI.
+Open `https://my-vapviz.fly.dev` to access the UI.
 
 ---
 
 ## Environment Variables & Configuration
 
-VaP itself does not read environment variables directly — all configuration is passed via CLI arguments or the Python `vap.configure()` API. However, you can wire environment variables into the start command:
+vapviz itself does not read environment variables directly — all configuration is passed via CLI arguments or the Python `vapviz.configure()` API. However, you can wire environment variables into the start command:
 
 ```bash
 # Shell / systemd / Docker ENV
-export VAP_DB_PATH=/var/data/vap.db
+export VAP_DB_PATH=/var/data/vapviz.db
 export VAP_PORT=8001
 
-vap serve --host 0.0.0.0 --port "$VAP_PORT" --db "$VAP_DB_PATH" --static-dir ui/dist
+vapviz serve --host 0.0.0.0 --port "$VAP_PORT" --db "$VAP_DB_PATH" --static-dir ui/dist
 ```
 
-### All `vap serve` options
+### All `vapviz serve` options
 
 | Option | Default | Description |
 |---|---|---|
@@ -332,20 +332,20 @@ vap serve --host 0.0.0.0 --port "$VAP_PORT" --db "$VAP_DB_PATH" --static-dir ui/
 
 ## SQLite in Production
 
-VaP's SQLite backend is suitable for single-server production deployments with moderate write rates (hundreds of agent runs per hour).
+vapviz's SQLite backend is suitable for single-server production deployments with moderate write rates (hundreds of agent runs per hour).
 
 ### File location
 
 Store the database file on a persistent disk, not in the container's ephemeral filesystem:
 
 ```
-/var/data/vap.db         # Linux VM
-/data/vap.db             # Docker volume mount
+/var/data/vapviz.db         # Linux VM
+/data/vapviz.db             # Docker volume mount
 ```
 
 ### WAL mode
 
-VaP enables `PRAGMA journal_mode=WAL` automatically. WAL allows concurrent reads and a single writer without blocking, which is ideal for VaP's access pattern (tracer writes one event at a time while FastAPI serves multiple SSE readers).
+vapviz enables `PRAGMA journal_mode=WAL` automatically. WAL allows concurrent reads and a single writer without blocking, which is ideal for vapviz's access pattern (tracer writes one event at a time while FastAPI serves multiple SSE readers).
 
 ### Backups
 
@@ -353,13 +353,13 @@ SQLite's WAL mode can be backed up safely with a standard file copy if done duri
 
 ```bash
 # Safe hot backup (no downtime)
-sqlite3 vap.db ".backup /backup/vap-$(date +%Y%m%d).db"
+sqlite3 vapviz.db ".backup /backup/vapviz-$(date +%Y%m%d).db"
 ```
 
 Or as a cron job:
 
 ```bash
-0 2 * * * sqlite3 /data/vap.db ".backup /backup/vap-$(date +\%Y\%m\%d).db"
+0 2 * * * sqlite3 /data/vapviz.db ".backup /backup/vapviz-$(date +\%Y\%m\%d).db"
 ```
 
 ### Storage estimates
@@ -374,7 +374,7 @@ SQLite handles tens of millions of rows without issue; disk space is the only pr
 ### Scaling limits
 
 SQLite is a single-file database with serialised writes. For deployments with **many concurrent agent runs writing simultaneously from multiple processes**, consider:
-- Using the remote ingest API (`POST /runs/{id}/events`) with a single VaP server as the event hub
+- Using the remote ingest API (`POST /runs/{id}/events`) with a single vapviz server as the event hub
 - Or switching to a PostgreSQL-backed store (not yet built-in; see [Adding a custom store](ARCHITECTURE.md#implementing-a-custom-store-backend))
 
 ---
@@ -420,15 +420,15 @@ readinessProbe:
 
 ## Observability (OpenTelemetry)
 
-In production you'll often already run an observability stack. VaP can mirror every completed run into
+In production you'll often already run an observability stack. vapviz can mirror every completed run into
 OpenTelemetry — one OTLP trace per run — so your agent traces land in Jaeger, Grafana Tempo, or
-Datadog alongside the rest of your service telemetry, while still appearing in the VaP UI.
+Datadog alongside the rest of your service telemetry, while still appearing in the vapviz UI.
 
 ```python
-import vap
-from vap.integrations.otel import enable_otel_export
+import vapviz
+from vapviz.integrations.otel import enable_otel_export
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 enable_otel_export(endpoint="http://otel-collector:4317")   # OTLP/gRPC
 ```
 
@@ -436,14 +436,14 @@ Install the extra: `pip install "vapviz[otel]"`. Call `enable_otel_export()` wit
 OpenTelemetry SDK you've already configured globally. See the
 [Developer Reference](DEVELOPER_REFERENCE.md#opentelemetry-export) for protocols and options.
 
-For cost/latency guardrails, `vap.enable_budget_alerts(...)` can fire a callback (page, Slack, log)
+For cost/latency guardrails, `vapviz.enable_budget_alerts(...)` can fire a callback (page, Slack, log)
 whenever a run exceeds a budget — see the [budgets guide](../README.md#cost--latency-budgets).
 
 ---
 
 ## Multi-Process & Remote Ingest
 
-VaP supports tracing agents that run in separate processes or on separate machines via the HTTP ingest endpoint.
+vapviz supports tracing agents that run in separate processes or on separate machines via the HTTP ingest endpoint.
 
 ### Architecture
 
@@ -453,7 +453,7 @@ VaP supports tracing agents that run in separate processes or on separate machin
 │  (Python, any language)  │                               │
 └──────────────────────────┘                               ▼
                                               ┌────────────────────┐
-┌──────────────────────────┐                  │  VaP Server        │
+┌──────────────────────────┐                  │  vapviz Server        │
 │  Agent Process B         │ ────────────────►│  (single process)  │
 └──────────────────────────┘                  │  SQLite or memory  │
                                               └────────────────────┘
@@ -469,7 +469,7 @@ VaP supports tracing agents that run in separate processes or on separate machin
 ```python
 import httpx, time, uuid
 
-SERVER = "http://vap.example.com:8001"
+SERVER = "http://vapviz.example.com:8001"
 run_id = uuid.uuid4().hex[:12]
 root_id = uuid.uuid4().hex[:12]
 
@@ -497,19 +497,19 @@ post({
 })
 ```
 
-The VaP server is language-agnostic — any HTTP client can push events (Node.js, Go, Java, curl, etc.).
+The vapviz server is language-agnostic — any HTTP client can push events (Node.js, Go, Java, curl, etc.).
 
 ---
 
 ## Security Considerations
 
-VaP ships with **no authentication** — it is designed for internal developer tooling, not public-facing services. Before exposing VaP to the internet:
+vapviz ships with **no authentication** — it is designed for internal developer tooling, not public-facing services. Before exposing vapviz to the internet:
 
 ### Network isolation (recommended)
 
 - Bind to `127.0.0.1` (localhost only) and access via SSH tunnel or VPN:
   ```bash
-  vap serve --host 127.0.0.1 --port 8001 --db vap.db --static-dir ui/dist
+  vapviz serve --host 127.0.0.1 --port 8001 --db vapviz.db --static-dir ui/dist
   ```
 - In Docker Compose, avoid publishing the port to `0.0.0.0` unless behind Nginx with auth.
 
@@ -517,7 +517,7 @@ VaP ships with **no authentication** — it is designed for internal developer t
 
 ```nginx
 location / {
-    auth_basic           "VaP";
+    auth_basic           "vapviz";
     auth_basic_user_file /etc/nginx/.htpasswd;
     proxy_pass           http://127.0.0.1:8001;
     # ... SSE headers (see above)
@@ -535,11 +535,11 @@ Always use HTTPS in production. The [Nginx section](#nginx-reverse-proxy) above 
 
 ### CORS
 
-VaP's FastAPI app allows all origins by default (`allow_origins=["*"]`). If you serve the UI and API from the same origin (recommended via `--static-dir`), this is not a concern. If they are on different origins, restrict the `allow_origins` list by passing a custom `CORSMiddleware` configuration or creating the app with a patched server module.
+vapviz's FastAPI app allows all origins by default (`allow_origins=["*"]`). If you serve the UI and API from the same origin (recommended via `--static-dir`), this is not a concern. If they are on different origins, restrict the `allow_origins` list by passing a custom `CORSMiddleware` configuration or creating the app with a patched server module.
 
 ### Sensitive data in traces
 
-VaP stores everything passed to `step.set_input()` / `step.set_output()`. Avoid tracing PII or secrets. Use summary values instead of raw payloads when tracing production agents:
+vapviz stores everything passed to `step.set_input()` / `step.set_output()`. Avoid tracing PII or secrets. Use summary values instead of raw payloads when tracing production agents:
 
 ```python
 # ✗ Don't trace raw API responses containing PII

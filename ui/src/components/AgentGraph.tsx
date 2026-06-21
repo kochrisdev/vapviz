@@ -124,7 +124,7 @@ function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
 
 // ── main component ─────────────────────────────────────────────────────────────
 
-const nodeTypes = { vap: VapNode };
+const nodeTypes = { vapviz: VapNode };
 
 interface Props {
   graphNodes: GraphNode[];
@@ -140,7 +140,7 @@ export function AgentGraph({ graphNodes, graphEdges }: Props) {
 
     const rawNodes: Node[] = graphNodes.map((n) => ({
       id:       n.id,
-      type:     "vap",
+      type:     "vapviz",
       position: { x: 0, y: 0 },
       data:     { node: n },
       selected: n.id === selectedNodeId,

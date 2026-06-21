@@ -1,18 +1,18 @@
 """
-Anthropic SDK demo — traces real Claude API calls through VaP.
+Anthropic SDK demo — traces real Claude API calls through vapviz.
 
 Every client.messages.create() call is automatically captured as a purple
 LLM node showing model name, token usage, cost, and response text.
 
 Requirements:
-    pip install "vap[anthropic]"
+    pip install "vapviz[anthropic]"
     export ANTHROPIC_API_KEY=sk-ant-...
 
 Run (server + agent in one process):
     python examples/anthropic_demo.py
 
 Or start the server first:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/anthropic_demo.py --agent-only
 
 Open http://localhost:8001 (or http://localhost:5173 for Vite dev server).
@@ -22,7 +22,7 @@ import sys
 import time
 import threading
 
-import vap
+import vapviz
 
 
 # ── Agent logic ────────────────────────────────────────────────────────────────
@@ -38,14 +38,14 @@ def run_agent() -> None:
     try:
         import anthropic
     except ImportError:
-        raise SystemExit('Anthropic SDK not installed. Run: pip install "vap[anthropic]"')
+        raise SystemExit('Anthropic SDK not installed. Run: pip install "vapviz[anthropic]"')
 
     client = anthropic.Anthropic(api_key=api_key)
-    vap.patch_anthropic(client)   # auto-traces every client.messages.create call
+    vapviz.patch_anthropic(client)   # auto-traces every client.messages.create call
 
     model = "claude-3-5-haiku-20241022"   # fast, cheap, great for demos
 
-    with vap.trace("Claude Research Agent") as run:
+    with vapviz.trace("Claude Research Agent") as run:
 
         # Step 1: use Claude to generate a research plan
         with run.step("plan", kind="step") as step:
@@ -98,8 +98,8 @@ def run_agent() -> None:
             summary = response.content[0].text
             step.set_output({"summary": summary})
 
-    print(f"\n[vap] Run complete  run_id={run.run_id}")
-    print(f"[vap] View at http://localhost:8001")
+    print(f"\n[vapviz] Run complete  run_id={run.run_id}")
+    print(f"[vapviz] View at http://localhost:8001")
     print(f"\n── Summary ─────────────────────────────")
     print(summary)
 
@@ -109,8 +109,8 @@ def run_agent() -> None:
 def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -124,7 +124,7 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

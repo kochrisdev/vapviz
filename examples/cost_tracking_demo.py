@@ -2,11 +2,11 @@
 Cost tracking demo — demonstrates the token cost overlay without an API key.
 
 Simulates several LLM calls with realistic token counts, manually attaching
-cost_usd to each node's output using vap.calculate_cost(). Shows:
+cost_usd to each node's output using vapviz.calculate_cost(). Shows:
   - Per-node cost on LLM nodes in the graph (purple label)
   - Per-run total cost in the sidebar
   - Cost comparison between models using the run comparison feature
-  - vap.calculate_cost() and vap.format_cost() utilities directly
+  - vapviz.calculate_cost() and vapviz.format_cost() utilities directly
 
 No API key needed — all LLM responses are simulated.
 
@@ -14,7 +14,7 @@ Run (server + agent in one process):
     python examples/cost_tracking_demo.py
 
 Or start the server first:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/cost_tracking_demo.py --agent-only
 
 Open http://localhost:8001 to see cost labels on every LLM node.
@@ -24,13 +24,13 @@ import sys
 import time
 import threading
 
-import vap
+import vapviz
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def simulate_llm(
-    run: vap.RunContext,
+    run: vapviz.RunContext,
     label: str,
     model: str,
     input_tokens: int,
@@ -45,7 +45,7 @@ def simulate_llm(
         })
         time.sleep(0.05)   # simulate API latency
 
-        cost = vap.calculate_cost(model, input_tokens, output_tokens)
+        cost = vapviz.calculate_cost(model, input_tokens, output_tokens)
         output: dict = {
             "text": response_text,
             "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
@@ -61,7 +61,7 @@ def simulate_llm(
 
 def run_gpt4o_mini_agent() -> None:
     """Simulated pipeline using gpt-4o-mini (cheap, fast)."""
-    with vap.trace("Pipeline — gpt-4o-mini") as run:
+    with vapviz.trace("Pipeline — gpt-4o-mini") as run:
 
         with run.step("plan", kind="step") as step:
             step.set_input({"goal": "Analyse customer reviews"})
@@ -85,12 +85,12 @@ def run_gpt4o_mini_agent() -> None:
             time.sleep(0.02)
             step.set_output({"written": True})
 
-    print(f"[vap] gpt-4o-mini run  run_id={run.run_id}")
+    print(f"[vapviz] gpt-4o-mini run  run_id={run.run_id}")
 
 
 def run_gpt4o_agent() -> None:
     """Same pipeline with gpt-4o — more capable but ~17× more expensive."""
-    with vap.trace("Pipeline — gpt-4o") as run:
+    with vapviz.trace("Pipeline — gpt-4o") as run:
 
         with run.step("plan", kind="step") as step:
             step.set_input({"goal": "Analyse customer reviews"})
@@ -114,12 +114,12 @@ def run_gpt4o_agent() -> None:
             time.sleep(0.02)
             step.set_output({"written": True})
 
-    print(f"[vap] gpt-4o run       run_id={run.run_id}")
+    print(f"[vapviz] gpt-4o run       run_id={run.run_id}")
 
 
 def run_mixed_model_agent() -> None:
     """Use a cheap model for routing and an expensive model only when needed."""
-    with vap.trace("Pipeline — Mixed Models") as run:
+    with vapviz.trace("Pipeline — Mixed Models") as run:
 
         with run.step("ingest", kind="step") as step:
             step.set_input({"reviews": 1000})
@@ -142,12 +142,12 @@ def run_mixed_model_agent() -> None:
             time.sleep(0.03)
             step.set_output({"status": "done"})
 
-    print(f"[vap] mixed-model run  run_id={run.run_id}")
+    print(f"[vapviz] mixed-model run  run_id={run.run_id}")
 
 
 def show_cost_utilities() -> None:
     """Print the cost utility functions directly for reference."""
-    print("\n── vap.calculate_cost() examples ──────────────────────────────")
+    print("\n── vapviz.calculate_cost() examples ──────────────────────────────")
     examples = [
         ("gpt-4o-mini",             1_000, 500),
         ("gpt-4o",                  1_000, 500),
@@ -157,8 +157,8 @@ def show_cost_utilities() -> None:
         ("my-private-model",        1_000, 500),
     ]
     for model, inp, out in examples:
-        cost = vap.calculate_cost(model, inp, out)
-        label = vap.format_cost(cost) if cost is not None else "unknown model"
+        cost = vapviz.calculate_cost(model, inp, out)
+        label = vapviz.format_cost(cost) if cost is not None else "unknown model"
         print(f"  {model:<38} {inp:>6} in / {out:>4} out  →  {label}")
 
 
@@ -170,8 +170,8 @@ def run_agent() -> None:
     run_gpt4o_agent()
     run_mixed_model_agent()
 
-    print("\n[vap] All runs complete. View at http://localhost:8001")
-    print("[vap] Tip: select two runs and click ⊕ to compare costs side by side.")
+    print("\n[vapviz] All runs complete. View at http://localhost:8001")
+    print("[vapviz] Tip: select two runs and click ⊕ to compare costs side by side.")
 
 
 # ── Entry points ───────────────────────────────────────────────────────────────
@@ -179,8 +179,8 @@ def run_agent() -> None:
 def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -194,7 +194,7 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

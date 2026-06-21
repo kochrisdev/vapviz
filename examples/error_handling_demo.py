@@ -15,7 +15,7 @@ Run (server + agent in one process):
     python examples/error_handling_demo.py
 
 Or start the server first:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/error_handling_demo.py --agent-only
 
 Open http://localhost:8001 to see the graph with error states highlighted.
@@ -24,12 +24,12 @@ import sys
 import time
 import threading
 
-import vap
+import vapviz
 
 
 # ── Agent logic ────────────────────────────────────────────────────────────────
 
-def run_scenario_1_leaf_error(run: vap.RunContext) -> None:
+def run_scenario_1_leaf_error(run: vapviz.RunContext) -> None:
     """A single tool call that raises. The node turns red; caller catches."""
     with run.step("fetch_data", kind="tool") as step:
         step.set_input({"url": "https://api.example.com/data"})
@@ -39,7 +39,7 @@ def run_scenario_1_leaf_error(run: vap.RunContext) -> None:
         # the node as status=error, then re-raises it.
 
 
-def run_scenario_2_nested_error(run: vap.RunContext) -> None:
+def run_scenario_2_nested_error(run: vapviz.RunContext) -> None:
     """A parent step whose child fails — both turn red."""
     with run.step("process_pipeline", kind="step") as parent:
         parent.set_input({"items": 5})
@@ -55,7 +55,7 @@ def run_scenario_2_nested_error(run: vap.RunContext) -> None:
             raise ValueError("Unsupported schema version: 1 (expected 2)")
 
 
-def run_scenario_3_partial_failure(run: vap.RunContext) -> None:
+def run_scenario_3_partial_failure(run: vapviz.RunContext) -> None:
     """Three parallel tasks; one fails while the others succeed."""
     sources = ["database", "cache", "api"]
 
@@ -83,7 +83,7 @@ def run_scenario_3_partial_failure(run: vap.RunContext) -> None:
 
 def run_agent() -> None:
     # ── Scenario 1: leaf error ────────────────────────────────────────────
-    with vap.trace("Error Demo — Leaf Failure") as run:
+    with vapviz.trace("Error Demo — Leaf Failure") as run:
         with run.step("setup", kind="step") as step:
             step.set_input({"config": "prod"})
             time.sleep(0.05)
@@ -100,10 +100,10 @@ def run_agent() -> None:
             time.sleep(0.06)
             step.set_output({"data": "cached_result", "fresh": False})
 
-    print(f"[vap] Scenario 1 complete  run_id={run.run_id}")
+    print(f"[vapviz] Scenario 1 complete  run_id={run.run_id}")
 
     # ── Scenario 2: nested error ──────────────────────────────────────────
-    with vap.trace("Error Demo — Nested Failure") as run:
+    with vapviz.trace("Error Demo — Nested Failure") as run:
         with run.step("ingest", kind="step") as step:
             step.set_input({"files": 3})
             time.sleep(0.04)
@@ -120,10 +120,10 @@ def run_agent() -> None:
             time.sleep(0.05)
             step.set_output({"status": "recovered"})
 
-    print(f"[vap] Scenario 2 complete  run_id={run.run_id}")
+    print(f"[vapviz] Scenario 2 complete  run_id={run.run_id}")
 
     # ── Scenario 3: partial failure ───────────────────────────────────────
-    with vap.trace("Error Demo — Partial Failure") as run:
+    with vapviz.trace("Error Demo — Partial Failure") as run:
         with run.step("init", kind="step") as step:
             step.set_input({"sources": 3})
             time.sleep(0.03)
@@ -136,8 +136,8 @@ def run_agent() -> None:
             time.sleep(0.04)
             step.set_output({"status": "partial_success", "rows": 84})
 
-    print(f"[vap] Scenario 3 complete  run_id={run.run_id}")
-    print("\n[vap] View at http://localhost:8001 — look for red nodes in each run!")
+    print(f"[vapviz] Scenario 3 complete  run_id={run.run_id}")
+    print("\n[vapviz] View at http://localhost:8001 — look for red nodes in each run!")
 
 
 # ── Entry points ───────────────────────────────────────────────────────────────
@@ -145,8 +145,8 @@ def run_agent() -> None:
 def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -160,7 +160,7 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

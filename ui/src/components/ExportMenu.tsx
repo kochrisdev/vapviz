@@ -19,7 +19,7 @@ export function ExportMenu({ runId, label, graphContainerRef }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `vap-${runId}.json`;
+    a.download = `vapviz-${runId}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -44,7 +44,7 @@ export function ExportMenu({ runId, label, graphContainerRef }: Props) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `vap-${label}-${runId}.png`;
+        a.download = `vapviz-${label}-${runId}.png`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

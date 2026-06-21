@@ -1,7 +1,7 @@
 """
-OpenTelemetry export for VaP.
+OpenTelemetry export for vapviz.
 
-Turns each completed VaP run into an OpenTelemetry trace — one trace per run,
+Turns each completed vapviz run into an OpenTelemetry trace — one trace per run,
 with every node (agent / step / tool / LLM) becoming a span whose parent is the
 node's parent. Node start/end times, token usage, USD cost, and error status are
 carried as span timings, attributes, and status. The spans flow through whatever
@@ -9,13 +9,13 @@ OTLP backend you configure (Jaeger, Grafana Tempo, Datadog, …).
 
 Quick start — auto-export every run to an OTLP collector::
 
-    import vap
-    from vap.integrations.otel import enable_otel_export
+    import vapviz
+    from vapviz.integrations.otel import enable_otel_export
 
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     enable_otel_export(endpoint="http://localhost:4317")   # OTLP/gRPC
 
-    with vap.trace("My agent") as run:
+    with vapviz.trace("My agent") as run:
         ...                                                # exported on completion
 
 Send into an OpenTelemetry stack you've already configured globally::
@@ -24,12 +24,12 @@ Send into an OpenTelemetry stack you've already configured globally::
 
 Or export a single run on demand::
 
-    from vap.integrations.otel import export_run
+    from vapviz.integrations.otel import export_run
     export_run(store.get_graph(run_id), tracer_provider=my_provider)
 
 Requirements
 ------------
-    pip install "vap[otel]"
+    pip install "vapviz[otel]"
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ except ImportError:  # pragma: no cover - exercised only without the dep
     _OTEL_AVAILABLE = False
 
 
-_INSTRUMENTATION_NAME = "vap"
+_INSTRUMENTATION_NAME = "vapviz"
 _MAX_ATTR_LEN = 1000
 
 
@@ -66,10 +66,10 @@ def _ns(ts: Optional[float], fallback: Optional[float] = None) -> Optional[int]:
 
 def _node_attributes(node, run_id: str) -> dict[str, Any]:
     attrs: dict[str, Any] = {
-        "vap.run_id": run_id,
-        "vap.node.kind": node.kind.value,
-        "vap.node.status": node.status.value,
-        "vap.node.label": node.label,
+        "vapviz.run_id": run_id,
+        "vapviz.node.kind": node.kind.value,
+        "vapviz.node.status": node.status.value,
+        "vapviz.node.label": node.label,
     }
 
     data = node.data if isinstance(node.data, dict) else {}
@@ -95,13 +95,13 @@ def _node_attributes(node, run_id: str) -> dict[str, Any]:
 
     cost = output.get("cost_usd") if isinstance(output, dict) else None
     if isinstance(cost, (int, float)):
-        attrs["vap.cost_usd"] = float(cost)
+        attrs["vapviz.cost_usd"] = float(cost)
 
     # Compact, bounded input/output snapshots for debugging
     if data.get("input") is not None:
-        attrs["vap.input"] = _stringify(data.get("input"))
+        attrs["vapviz.input"] = _stringify(data.get("input"))
     if data.get("output") is not None:
-        attrs["vap.output"] = _stringify(data.get("output"))
+        attrs["vapviz.output"] = _stringify(data.get("output"))
 
     return attrs
 
@@ -110,7 +110,7 @@ def build_spans(graph: RunGraph, tracer) -> int:
     """Emit OpenTelemetry spans for every node in *graph*.
 
     Returns the number of spans created. Spans are created parent-first with
-    explicit start/end times, so the resulting trace mirrors the VaP graph
+    explicit start/end times, so the resulting trace mirrors the vapviz graph
     exactly (one trace per run).
     """
     children: dict[Optional[str], list] = {}
@@ -172,7 +172,7 @@ def export_run(
     if not _OTEL_AVAILABLE:
         raise ImportError(
             "opentelemetry-sdk is required for OTel export. "
-            'Install it with: pip install "vap[otel]"'
+            'Install it with: pip install "vapviz[otel]"'
         )
     if graph is None:
         return 0
@@ -220,11 +220,11 @@ def enable_otel_export(
     tracer_provider=None,
     endpoint: Optional[str] = None,
     protocol: str = "grpc",
-    service_name: str = "vap",
+    service_name: str = "vapviz",
     insecure: bool = True,
     store=None,
 ) -> OtelExportHandle:
-    """Export every completed VaP run as an OpenTelemetry trace.
+    """Export every completed vapviz run as an OpenTelemetry trace.
 
     Wraps the store's ``add_event`` so that when a run's ``agent_end`` event is
     recorded, the full run graph is emitted as spans.
@@ -234,7 +234,7 @@ def enable_otel_export(
     tracer_provider:
         Use this provider. If ``None`` and *endpoint* is given, a provider with
         an OTLP exporter is created; if both are ``None``, the global provider
-        is used (wire VaP into an OpenTelemetry stack you've already set up).
+        is used (wire vapviz into an OpenTelemetry stack you've already set up).
     endpoint:
         OTLP collector endpoint, e.g. ``"http://localhost:4317"`` (gRPC) or
         ``"http://localhost:4318/v1/traces"`` (HTTP).
@@ -245,12 +245,12 @@ def enable_otel_export(
     insecure:
         For gRPC, whether to use an insecure channel (default ``True``).
     store:
-        Store to wrap. Defaults to ``vap.store.default_store``.
+        Store to wrap. Defaults to ``vapviz.store.default_store``.
     """
     if not _OTEL_AVAILABLE:
         raise ImportError(
             "opentelemetry-sdk is required for OTel export. "
-            'Install it with: pip install "vap[otel]"'
+            'Install it with: pip install "vapviz[otel]"'
         )
 
     if tracer_provider is not None:
@@ -262,7 +262,7 @@ def enable_otel_export(
 
     tracer = provider.get_tracer(_INSTRUMENTATION_NAME)
 
-    import vap.store as _sm
+    import vapviz.store as _sm
 
     target = store if store is not None else _sm.default_store
     original = target.add_event
@@ -302,7 +302,7 @@ def _make_otlp_exporter(endpoint: str, protocol: str, insecure: bool):
         except ImportError as exc:  # pragma: no cover
             raise ImportError(
                 "The OTLP HTTP exporter is required. Install it with: "
-                'pip install "vap[otel]"'
+                'pip install "vapviz[otel]"'
             ) from exc
         return OTLPSpanExporter(endpoint=endpoint)
 
@@ -311,7 +311,7 @@ def _make_otlp_exporter(endpoint: str, protocol: str, insecure: bool):
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
             "The OTLP gRPC exporter is required. Install it with: "
-            'pip install "vap[otel]"'
+            'pip install "vapviz[otel]"'
         ) from exc
     return OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
 

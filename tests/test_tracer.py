@@ -1,12 +1,12 @@
-"""Tests for vap/tracer.py — sync/async tracing, nesting, ContextVar, errors."""
+"""Tests for vapviz/tracer.py — sync/async tracing, nesting, ContextVar, errors."""
 from __future__ import annotations
 
 import asyncio
 import pytest
 
-from vap.events import EventType, NodeKind, NodeStatus
-from vap.store import MemoryStore
-from vap.tracer import Tracer, _current_step
+from vapviz.events import EventType, NodeKind, NodeStatus
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer, _current_step
 
 
 # ---------------------------------------------------------------------------

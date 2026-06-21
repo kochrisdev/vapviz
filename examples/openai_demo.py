@@ -5,14 +5,14 @@ Every client.chat.completions.create() call becomes a purple LLM node
 showing model name, token usage, USD cost, and response text.
 
 Requirements:
-    pip install "vap[openai]"
+    pip install "vapviz[openai]"
     export OPENAI_API_KEY=sk-...
 
 Run (server + agent in one process):
     python examples/openai_demo.py
 
 Or start the server first:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/openai_demo.py --agent-only
 
 Open http://localhost:8001 (or http://localhost:5173 for Vite dev server).
@@ -22,7 +22,7 @@ import sys
 import time
 import threading
 
-import vap
+import vapviz
 
 
 # ── Agent logic ────────────────────────────────────────────────────────────────
@@ -37,14 +37,14 @@ def run_agent() -> None:
     try:
         import openai
     except ImportError:
-        raise SystemExit('OpenAI SDK not installed. Run: pip install "vap[openai]"')
+        raise SystemExit('OpenAI SDK not installed. Run: pip install "vapviz[openai]"')
 
     client = openai.OpenAI()
-    vap.patch_openai(client)   # auto-traces every chat.completions.create call
+    vapviz.patch_openai(client)   # auto-traces every chat.completions.create call
 
     model = "gpt-4o-mini"     # fast, cheap, great for demos
 
-    with vap.trace("OpenAI Research Agent") as run:
+    with vapviz.trace("OpenAI Research Agent") as run:
 
         # Step 1: planning (no LLM — just bookkeeping)
         with run.step("plan", kind="step") as step:
@@ -85,8 +85,8 @@ def run_agent() -> None:
             conclusion = response.choices[0].message.content or ""
             step.set_output({"conclusion": conclusion})
 
-    print(f"\n[vap] Run complete  run_id={run.run_id}")
-    print("[vap] View at http://localhost:8001")
+    print(f"\n[vapviz] Run complete  run_id={run.run_id}")
+    print("[vapviz] View at http://localhost:8001")
     print(f"\n── Conclusion ──────────────────────────")
     print(conclusion)
 
@@ -96,8 +96,8 @@ def run_agent() -> None:
 def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -111,7 +111,7 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

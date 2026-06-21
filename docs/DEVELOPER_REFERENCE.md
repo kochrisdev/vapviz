@@ -1,4 +1,4 @@
-# VaP Developer Reference
+# vapviz Developer Reference
 
 Complete API reference for the Visualization Agentic Process framework — Python package, CLI, REST API, SSE protocol, and TypeScript types.
 
@@ -41,42 +41,42 @@ pip install -e ".[dev]"             # + pytest, httpx, pytest-asyncio, all integ
 
 ### Module-level functions
 
-These are the primary entry points exported from the `vap` package.
+These are the primary entry points exported from the `vapviz` package.
 
 ---
 
-#### `vap.configure(db=None)`
+#### `vapviz.configure(db=None)`
 
 Configure the module-level store backend. Call once at startup before any `trace()` / `atrace()` calls.
 
 ```python
-vap.configure(db: str | None = None) -> None
+vapviz.configure(db: str | None = None) -> None
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `db` | `str \| None` | `None` | Path to a SQLite file. Pass `None` to use the in-memory store. |
 
-**Effect:** replaces both `vap.store.default_store` and `vap.default_store` with the new store instance. Any `Tracer` created without an explicit `store=` argument will pick up the new store dynamically.
+**Effect:** replaces both `vapviz.store.default_store` and `vapviz.default_store` with the new store instance. Any `Tracer` created without an explicit `store=` argument will pick up the new store dynamically.
 
 ```python
-import vap
+import vapviz
 
 # Persist runs to SQLite
-vap.configure(db="runs.db")
+vapviz.configure(db="runs.db")
 
 # Reset to in-memory (e.g. in tests)
-vap.configure()
+vapviz.configure()
 ```
 
 ---
 
-#### `vap.trace(label, run_id=None)`
+#### `vapviz.trace(label, run_id=None)`
 
 Synchronous context manager. Starts an agent run trace, yields a `RunContext`, and closes the run on exit.
 
 ```python
-vap.trace(label: str, run_id: str | None = None) -> ContextManager[RunContext]
+vapviz.trace(label: str, run_id: str | None = None) -> ContextManager[RunContext]
 ```
 
 | Parameter | Type | Default | Description |
@@ -85,7 +85,7 @@ vap.trace(label: str, run_id: str | None = None) -> ContextManager[RunContext]
 | `run_id` | `str \| None` | `None` | Custom run ID (12-char hex). Auto-generated if omitted. |
 
 ```python
-with vap.trace("My Agent") as run:
+with vapviz.trace("My Agent") as run:
     print(run.run_id)  # e.g. "a3f9c2e81b47"
     with run.step("fetch", kind="tool") as step:
         ...
@@ -95,18 +95,18 @@ Exceptions raised inside the block are recorded as an error on the root agent no
 
 ---
 
-#### `vap.atrace(label, run_id=None)`
+#### `vapviz.atrace(label, run_id=None)`
 
 Async version of `trace`. Use inside `async def` functions with `async with`.
 
 ```python
-vap.atrace(label: str, run_id: str | None = None) -> AsyncContextManager[RunContext]
+vapviz.atrace(label: str, run_id: str | None = None) -> AsyncContextManager[RunContext]
 ```
 
 Parameters are identical to `trace`.
 
 ```python
-async with vap.atrace("Async Agent") as run:
+async with vapviz.atrace("Async Agent") as run:
     async with run.astep("plan", kind="step") as step:
         step.set_input({"goal": "research"})
         await asyncio.sleep(0.1)
@@ -115,31 +115,31 @@ async with vap.atrace("Async Agent") as run:
 
 ---
 
-#### `vap.get_current_step()`
+#### `vapviz.get_current_step()`
 
 Returns the `StepContext` that is currently active in this thread / async task, or `None` if no trace is running.
 
 ```python
-vap.get_current_step() -> StepContext | None
+vapviz.get_current_step() -> StepContext | None
 ```
 
 Useful for integrations that need to attach to the current trace context from a place where `run` is not in scope.
 
 ```python
 def my_library_call():
-    step = vap.get_current_step()
+    step = vapviz.get_current_step()
     if step:
         step.set_meta(library_version="1.2.3")
 ```
 
 ---
 
-#### `vap.patch_openai(client)`
+#### `vapviz.patch_openai(client)`
 
-Instrument an OpenAI client so every `chat.completions.create` call is automatically traced as an `llm` node under the currently active VaP step.
+Instrument an OpenAI client so every `chat.completions.create` call is automatically traced as an `llm` node under the currently active vapviz step.
 
 ```python
-vap.patch_openai(client: Any) -> None
+vapviz.patch_openai(client: Any) -> None
 ```
 
 | Parameter | Type | Description |
@@ -149,15 +149,15 @@ vap.patch_openai(client: Any) -> None
 Auto-detects sync vs. async clients and applies the correct wrapper.
 
 ```python
-import openai, vap
+import openai, vapviz
 
 # Sync
 client = openai.OpenAI()
-vap.patch_openai(client)
+vapviz.patch_openai(client)
 
 # Async
 async_client = openai.AsyncOpenAI()
-vap.patch_openai(async_client)
+vapviz.patch_openai(async_client)
 ```
 
 **What gets traced per `chat.completions.create` call:**
@@ -178,12 +178,12 @@ Requires: `pip install "vapviz[openai]"`
 
 ---
 
-#### `vap.patch_anthropic(client)`
+#### `vapviz.patch_anthropic(client)`
 
-Instrument an Anthropic client so every `messages.create` call is automatically traced as an `llm` node under the currently active VaP step.
+Instrument an Anthropic client so every `messages.create` call is automatically traced as an `llm` node under the currently active vapviz step.
 
 ```python
-vap.patch_anthropic(client: Any) -> None
+vapviz.patch_anthropic(client: Any) -> None
 ```
 
 | Parameter | Type | Description |
@@ -193,15 +193,15 @@ vap.patch_anthropic(client: Any) -> None
 Auto-detects sync vs. async clients and applies the correct wrapper.
 
 ```python
-import anthropic, vap
+import anthropic, vapviz
 
 # Sync
 client = anthropic.Anthropic()
-vap.patch_anthropic(client)
+vapviz.patch_anthropic(client)
 
 # Async
 async_client = anthropic.AsyncAnthropic()
-vap.patch_anthropic(async_client)
+vapviz.patch_anthropic(async_client)
 ```
 
 **What gets traced per `messages.create` call:**
@@ -219,16 +219,16 @@ Output (`data` on the `llm_response` event):
 - `usage` — `{"input_tokens": int, "output_tokens": int}`
 - `cost_usd` — estimated USD cost (omitted for unknown models)
 
-If called outside an active VaP trace context, the original `messages.create` is invoked directly with no overhead.
+If called outside an active vapviz trace context, the original `messages.create` is invoked directly with no overhead.
 
 ---
 
-#### `vap.calculate_cost(model, input_tokens, output_tokens)`
+#### `vapviz.calculate_cost(model, input_tokens, output_tokens)`
 
 Estimate the USD cost for a single LLM API call.
 
 ```python
-vap.calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float | None
+vapviz.calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float | None
 ```
 
 | Parameter | Type | Description |
@@ -242,25 +242,25 @@ vap.calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float |
 Matching is attempted in order: exact name → pricing-table key is a prefix of `model` → `model` is a prefix of a pricing-table key. This makes versioned variants (e.g. `"gpt-4o-2025-03-15"`) resolve to the base model automatically.
 
 ```python
-import vap
+import vapviz
 
-cost = vap.calculate_cost("gpt-4o", input_tokens=1000, output_tokens=500)
+cost = vapviz.calculate_cost("gpt-4o", input_tokens=1000, output_tokens=500)
 # -> 0.0075
 
-cost = vap.calculate_cost("some-private-model", 100, 50)
+cost = vapviz.calculate_cost("some-private-model", 100, 50)
 # -> None
 ```
 
-Available via `from vap.cost import calculate_cost` or directly as `vap.calculate_cost`.
+Available via `from vapviz.cost import calculate_cost` or directly as `vapviz.calculate_cost`.
 
 ---
 
-#### `vap.format_cost(cost_usd)`
+#### `vapviz.format_cost(cost_usd)`
 
 Format a USD cost value for human display.
 
 ```python
-vap.format_cost(cost_usd: float) -> str
+vapviz.format_cost(cost_usd: float) -> str
 ```
 
 | Cost range | Output format | Example |
@@ -270,19 +270,19 @@ vap.format_cost(cost_usd: float) -> str
 | `≥ $0.01` | `"$0.0123"` | 4 decimal places |
 
 ```python
-vap.format_cost(0.0075)    # -> "$0.007500"
-vap.format_cost(0.000001)  # -> "<$0.0001"
-vap.format_cost(0.05)      # -> "$0.0500"
+vapviz.format_cost(0.0075)    # -> "$0.007500"
+vapviz.format_cost(0.000001)  # -> "<$0.0001"
+vapviz.format_cost(0.05)      # -> "$0.0500"
 ```
 
 ---
 
-#### `vap.compute_metrics(graphs)`
+#### `vapviz.compute_metrics(graphs)`
 
 Aggregate a list of `RunGraph` snapshots into a single cross-run analytics object. This is the pure function behind the `GET /metrics` endpoint and the UI analytics dashboard — it reads only the node data every integration already produces, so no extra instrumentation is required.
 
 ```python
-vap.compute_metrics(graphs: list[RunGraph]) -> Metrics
+vapviz.compute_metrics(graphs: list[RunGraph]) -> Metrics
 ```
 
 | Parameter | Type | Description |
@@ -309,25 +309,25 @@ vap.compute_metrics(graphs: list[RunGraph]) -> Metrics
 The model name for each LLM node is taken from `node.data["input"]["model"]`, falling back to the `llm/` label prefix.
 
 ```python
-import vap
-from vap.backends.sqlite import SqliteStore
+import vapviz
+from vapviz.backends.sqlite import SqliteStore
 
-store = SqliteStore("vap.db")
+store = SqliteStore("vapviz.db")
 graphs = [g for g in (store.get_graph(s.run_id) for s in store.list_runs()) if g]
-metrics = vap.compute_metrics(graphs)
+metrics = vapviz.compute_metrics(graphs)
 
 print(metrics.total_cost_usd, metrics.success_rate)
 for m in metrics.by_model:
     print(m.model, m.calls, m.cost_usd)
 ```
 
-Available as `vap.compute_metrics` / `vap.Metrics`, or `from vap.metrics import compute_metrics`.
+Available as `vapviz.compute_metrics` / `vapviz.Metrics`, or `from vapviz.metrics import compute_metrics`.
 
 ---
 
-#### `vap.Budget` / `vap.check_budget` / `vap.enable_budget_alerts`
+#### `vapviz.Budget` / `vapviz.check_budget` / `vapviz.enable_budget_alerts`
 
-Cost & latency guardrails. Import from `vap` or `vap.budgets`.
+Cost & latency guardrails. Import from `vapviz` or `vapviz.budgets`.
 
 ```python
 class Budget(BaseModel):
@@ -350,13 +350,13 @@ A limit left as `None` is ignored; a missing duration (a still-running run) skip
 
 **`enable_budget_alerts(budget, *, store=None, on_alert=None) -> BudgetAlertHandle`** — wraps the
 store so every completed run (`agent_end`) is checked; on a violation it calls `on_alert(report)`
-(default: logs a warning on the `vap.budgets` logger). `handle.disable()` restores the store.
+(default: logs a warning on the `vapviz.budgets` logger). `handle.disable()` restores the store.
 
 ```python
-import vap
-from vap.budgets import Budget, enable_budget_alerts
+import vapviz
+from vapviz.budgets import Budget, enable_budget_alerts
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 handle = enable_budget_alerts(
     Budget(max_cost_usd=0.05, max_duration_ms=5000),
     on_alert=lambda r: print("OVER BUDGET", r.run_id, r.violations),
@@ -365,13 +365,13 @@ handle = enable_budget_alerts(
 
 ---
 
-#### `vap.eval_run` and checks
+#### `vapviz.eval_run` and checks
 
-Run pass/fail assertions against a run — regression testing for agents. Import from `vap` or
-`vap.evals`.
+Run pass/fail assertions against a run — regression testing for agents. Import from `vapviz` or
+`vapviz.evals`.
 
 **`eval_run(run_or_graph, checks: list[Check]) -> EvalResult`** — accepts a `RunGraph` or a
-`RunContext` (from `vap.trace()`). Returns an `EvalResult`:
+`RunContext` (from `vapviz.trace()`). Returns an `EvalResult`:
 
 | Field | Description |
 |---|---|
@@ -395,8 +395,8 @@ Run pass/fail assertions against a run — regression testing for agents. Import
 | `judge(name, fn)` | `fn(graph)` returns `(passed, detail, score)` — an LLM-as-judge or any scorer you supply |
 
 ```python
-import vap
-from vap.evals import eval_run, max_cost, no_errors, output_contains
+import vapviz
+from vapviz.evals import eval_run, max_cost, no_errors, output_contains
 
 result = eval_run(run, [max_cost(0.02), no_errors(), output_contains("ticket")])
 assert result.passed, result.summary()
@@ -408,26 +408,26 @@ specs (`{"type": "max_cost", "value": 0.02}`, `{"type": "output_contains", "valu
 
 ---
 
-#### `vap.create_app(store=None)`
+#### `vapviz.create_app(store=None)`
 
 Create a new FastAPI application instance.
 
 ```python
-vap.create_app(store: RunStore | None = None) -> FastAPI
+vapviz.create_app(store: RunStore | None = None) -> FastAPI
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `store` | `RunStore \| None` | `None` | Store backend to use. Defaults to `vap.store.default_store`. |
+| `store` | `RunStore \| None` | `None` | Store backend to use. Defaults to `vapviz.store.default_store`. |
 
 Returns a `FastAPI` instance. Use with any ASGI server:
 
 ```python
-import uvicorn, vap
-from vap.backends.sqlite import SqliteStore
+import uvicorn, vapviz
+from vapviz.backends.sqlite import SqliteStore
 
 store = SqliteStore("runs.db")
-app = vap.create_app(store=store)
+app = vapviz.create_app(store=store)
 uvicorn.run(app, host="0.0.0.0", port=8001)
 ```
 
@@ -437,15 +437,15 @@ The app wires `store.set_loop()` in its `lifespan` startup handler and calls `st
 
 ### Tracer
 
-`vap.Tracer` is the class underlying the module-level `trace` / `atrace` functions. Use it when you need an isolated tracer with its own store (e.g. in tests).
+`vapviz.Tracer` is the class underlying the module-level `trace` / `atrace` functions. Use it when you need an isolated tracer with its own store (e.g. in tests).
 
 ```python
-class vap.Tracer(store: RunStore | None = None)
+class vapviz.Tracer(store: RunStore | None = None)
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `store` | `RunStore \| None` | `None` | Explicit store. If `None`, reads `vap.store.default_store` dynamically at call time. |
+| `store` | `RunStore \| None` | `None` | Explicit store. If `None`, reads `vapviz.store.default_store` dynamically at call time. |
 
 #### Methods
 
@@ -456,7 +456,7 @@ class vap.Tracer(store: RunStore | None = None)
 | `get_current_step()` | `StepContext \| None` | Active step in current context. |
 
 ```python
-from vap import Tracer, MemoryStore
+from vapviz import Tracer, MemoryStore
 
 store = MemoryStore()
 tracer = Tracer(store=store)
@@ -514,7 +514,7 @@ async def fetch(run, url):
         step.set_output({"bytes": len(data)})
         return data
 
-async with vap.atrace("Research") as run:
+async with vapviz.atrace("Research") as run:
     results = await asyncio.gather(
         fetch(run, "https://example.com/a"),
         fetch(run, "https://example.com/b"),
@@ -576,10 +576,10 @@ with run.step("process", kind="tool") as step:
 
 #### `RunStore` (ABC)
 
-Abstract base class for all store backends. Import from `vap.store`.
+Abstract base class for all store backends. Import from `vapviz.store`.
 
 ```python
-from vap.store import RunStore
+from vapviz.store import RunStore
 ```
 
 | Method | Signature | Description |
@@ -602,7 +602,7 @@ from vap.store import RunStore
 Default in-memory implementation. Thread-safe. Runs are lost when the process exits.
 
 ```python
-from vap.store import MemoryStore
+from vapviz.store import MemoryStore
 
 store = MemoryStore()
 ```
@@ -613,10 +613,10 @@ No constructor arguments.
 
 #### `SqliteStore`
 
-Persistent SQLite-backed store. Import from `vap.backends.sqlite` or `vap.SqliteStore`.
+Persistent SQLite-backed store. Import from `vapviz.backends.sqlite` or `vapviz.SqliteStore`.
 
 ```python
-from vap.backends.sqlite import SqliteStore
+from vapviz.backends.sqlite import SqliteStore
 
 store = SqliteStore(db_path: str | Path)
 ```
@@ -653,7 +653,7 @@ CREATE TABLE events (
 
 ### Event models
 
-All models are Pydantic `BaseModel` subclasses. Import from `vap.events`.
+All models are Pydantic `BaseModel` subclasses. Import from `vapviz.events`.
 
 ---
 
@@ -782,33 +782,33 @@ All enums extend `str, Enum` — their `.value` is the wire string.
 
 ### `VapCallbackHandler`
 
-LangChain/LangGraph callback handler. Import from `vap.integrations.langchain`.
+LangChain/LangGraph callback handler. Import from `vapviz.integrations.langchain`.
 
 ```python
-from vap.integrations.langchain import VapCallbackHandler
+from vapviz.integrations.langchain import VapCallbackHandler
 
 VapCallbackHandler(run: RunContext)
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `run` | `RunContext` | The active run context from `vap.trace()` or `vap.atrace()`. |
+| `run` | `RunContext` | The active run context from `vapviz.trace()` or `vapviz.atrace()`. |
 
 Raises `ImportError` at instantiation time if `langchain-core` is not installed.
 
 **Usage:**
 
 ```python
-from vap.integrations.langchain import VapCallbackHandler
+from vapviz.integrations.langchain import VapCallbackHandler
 
-with vap.trace("LangGraph Agent") as run:
+with vapviz.trace("LangGraph Agent") as run:
     handler = VapCallbackHandler(run)
     result = graph.invoke(inputs, config={"callbacks": [handler]})
 ```
 
 **Callbacks handled:**
 
-| LangChain callback | VaP node kind | Open event | Close event |
+| LangChain callback | vapviz node kind | Open event | Close event |
 |---|---|---|---|
 | `on_chain_start` / `on_chain_end` | `step` | `step_start` | `step_end` |
 | `on_tool_start` / `on_tool_end` | `tool` | `tool_call` | `tool_result` |
@@ -818,7 +818,7 @@ with vap.trace("LangGraph Agent") as run:
 
 **Parent tracking:**
 
-LangChain passes `run_id` (UUID) and `parent_run_id` (UUID) into each callback. `VapCallbackHandler` maps these to VaP `StepContext` objects so the graph nests correctly. Top-level chains with no `parent_run_id` are parented to the `RunContext` root node.
+LangChain passes `run_id` (UUID) and `parent_run_id` (UUID) into each callback. `VapCallbackHandler` maps these to vapviz `StepContext` objects so the graph nests correctly. Top-level chains with no `parent_run_id` are parented to the `RunContext` root node.
 
 **Tool input parsing:**
 
@@ -830,27 +830,27 @@ Requires: `pip install "vapviz[langchain]"`
 
 ### `VapCrewAIListener`
 
-CrewAI event bus listener. Import from `vap.integrations.crewai_listener`.
+CrewAI event bus listener. Import from `vapviz.integrations.crewai_listener`.
 
 ```python
-from vap.integrations.crewai_listener import VapCrewAIListener
+from vapviz.integrations.crewai_listener import VapCrewAIListener
 
 VapCrewAIListener(run: RunContext | None = None)
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `run` | `RunContext \| None` | `None` | Optional existing run context (manual mode). When `None`, a new VaP run is created automatically for each `crew.kickoff()` call (auto mode). |
+| `run` | `RunContext \| None` | `None` | Optional existing run context (manual mode). When `None`, a new vapviz run is created automatically for each `crew.kickoff()` call (auto mode). |
 
 Raises `ImportError` at instantiation time if `crewai` is not installed.
 
 **Auto mode** — instantiate once at module level; every subsequent `crew.kickoff()` creates its own run:
 
 ```python
-import vap
-from vap.integrations.crewai_listener import VapCrewAIListener
+import vapviz
+from vapviz.integrations.crewai_listener import VapCrewAIListener
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 VapCrewAIListener()           # register before any kickoff()
 
 result = crew.kickoff(inputs={"topic": "AI"})
@@ -859,14 +859,14 @@ result = crew.kickoff(inputs={"topic": "AI"})
 **Manual mode** — attach to an existing `RunContext` so the crew appears as a sub-section:
 
 ```python
-with vap.trace("Full Pipeline") as run:
+with vapviz.trace("Full Pipeline") as run:
     VapCrewAIListener(run=run)
     result = crew.kickoff(inputs={...})
 ```
 
-**Events captured and VaP node mapping:**
+**Events captured and vapviz node mapping:**
 
-| CrewAI event | VaP node kind | Parent |
+| CrewAI event | vapviz node kind | Parent |
 |---|---|---|
 | `CrewKickoffStartedEvent` | `agent` (auto) or `step` (manual) | none / run root |
 | `TaskStartedEvent` | `step` (`task/…`) | crew root |
@@ -877,7 +877,7 @@ with vap.trace("Full Pipeline") as run:
 **Cost tracking:**
 
 `LLMCallCompletedEvent.usage` is a LiteLLM-style dict (`prompt_tokens`, `completion_tokens`).
-The listener reads it, normalises the keys, and calls `vap.calculate_cost(model, input_tokens,
+The listener reads it, normalises the keys, and calls `vapviz.calculate_cost(model, input_tokens,
 output_tokens)` automatically. `cost_usd` appears on the node when the model is in the pricing
 table.
 
@@ -895,30 +895,30 @@ Requires: `pip install "vapviz[crewai]"`
 
 ### `VapPydanticAI`
 
-Pydantic AI integration. Import from `vap.integrations.pydantic_ai`.
+Pydantic AI integration. Import from `vapviz.integrations.pydantic_ai`.
 
 ```python
-from vap.integrations.pydantic_ai import VapPydanticAI
+from vapviz.integrations.pydantic_ai import VapPydanticAI
 
 VapPydanticAI(run: RunContext | None = None, *, patch: bool = True)
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `run` | `RunContext \| None` | `None` | Optional existing run context (manual mode). When `None`, a new VaP run is created for each `agent.run()` / `run_sync()` call (auto mode). |
+| `run` | `RunContext \| None` | `None` | Optional existing run context (manual mode). When `None`, a new vapviz run is created for each `agent.run()` / `run_sync()` call (auto mode). |
 | `patch` | `bool` | `True` | Patch `Agent` immediately. Set `False` to defer to `.patch()`. |
 
 Raises `ImportError` at instantiation time if `pydantic-ai` is not installed.
 
 It wraps `Agent.run` and `Agent.run_sync` (a re-entrancy guard prevents double-counting when `run_sync` delegates to `run`). After each run completes, the graph is reconstructed from `result.all_messages()`.
 
-**Auto mode** — instantiate once; every subsequent agent run becomes its own VaP run:
+**Auto mode** — instantiate once; every subsequent agent run becomes its own vapviz run:
 
 ```python
-import vap
-from vap.integrations.pydantic_ai import VapPydanticAI
+import vapviz
+from vapviz.integrations.pydantic_ai import VapPydanticAI
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 VapPydanticAI()                       # patch before any agent.run()
 
 result = agent.run_sync("What's the weather in Paris?")
@@ -927,20 +927,20 @@ result = agent.run_sync("What's the weather in Paris?")
 **Manual mode** — attach to an existing `RunContext` so the agent nests inside a pipeline:
 
 ```python
-with vap.trace("Trip planner") as run:
+with vapviz.trace("Trip planner") as run:
     VapPydanticAI(run)
     result = agent.run_sync("Is Lisbon warm?")
 ```
 
-**Pydantic AI → VaP node mapping:**
+**Pydantic AI → vapviz node mapping:**
 
-| Source | VaP node kind | Parent |
+| Source | vapviz node kind | Parent |
 |---|---|---|
 | the agent run | `agent` (auto) or `step` (`agent/<name>`, manual) | none / run root |
 | each `ModelResponse` | `llm` (`llm/<model_name>`) | agent node |
 | each tool call (`ToolCallPart` → `ToolReturnPart`) | `tool` | the model request that called it |
 
-**Cost & tokens:** each `ModelResponse` carries `usage` (input/output tokens) and `model_name`; the listener calls `vap.calculate_cost(model_name, …)` per request and aggregates totals onto the agent node. Node timings come from the messages' timestamps.
+**Cost & tokens:** each `ModelResponse` carries `usage` (input/output tokens) and `model_name`; the listener calls `vapviz.calculate_cost(model_name, …)` per request and aggregates totals onto the agent node. Node timings come from the messages' timestamps.
 
 **`detach()`** restores the original `Agent` methods:
 
@@ -960,18 +960,18 @@ Requires: `pip install "vapviz[pydantic-ai]"`
 
 ### `VapLlamaIndex`
 
-LlamaIndex integration. Import from `vap.integrations.llamaindex`. Registers a span handler on
-LlamaIndex's instrumentation dispatcher; every instrumented span becomes a VaP node.
+LlamaIndex integration. Import from `vapviz.integrations.llamaindex`. Registers a span handler on
+LlamaIndex's instrumentation dispatcher; every instrumented span becomes a vapviz node.
 
 ```python
-from vap.integrations.llamaindex import VapLlamaIndex
+from vapviz.integrations.llamaindex import VapLlamaIndex
 
 VapLlamaIndex(run: RunContext | None = None, *, register: bool = True)
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `run` | `RunContext \| None` | `None` | Existing run context (manual mode) — all spans attach under it. When `None` (auto mode), each top-level span starts its own VaP run. |
+| `run` | `RunContext \| None` | `None` | Existing run context (manual mode) — all spans attach under it. When `None` (auto mode), each top-level span starts its own vapviz run. |
 | `register` | `bool` | `True` | Register on the root dispatcher immediately. Set `False` to defer. |
 
 Raises `ImportError` at instantiation time if `llama-index-core` is not installed.
@@ -979,19 +979,19 @@ Raises `ImportError` at instantiation time if `llama-index-core` is not installe
 **Manual mode** — wrap a whole RAG workflow in one run (recommended):
 
 ```python
-import vap
+import vapviz
 from llama_index.core import VectorStoreIndex
-from vap.integrations.llamaindex import VapLlamaIndex
+from vapviz.integrations.llamaindex import VapLlamaIndex
 
-with vap.trace("RAG query") as run:
+with vapviz.trace("RAG query") as run:
     VapLlamaIndex(run)
     index = VectorStoreIndex.from_documents(docs)
     index.as_query_engine().query("…")
 ```
 
-**Span → VaP node mapping:**
+**Span → vapviz node mapping:**
 
-| LlamaIndex | VaP node kind |
+| LlamaIndex | vapviz node kind |
 |---|---|
 | span whose instance class ends with `LLM` (or an LLM method: `chat`/`complete`/`predict`/…) | `llm` |
 | span whose instance class ends with `Retriever`, or a `retrieve` call | `tool` |
@@ -1013,18 +1013,18 @@ Requires: `pip install "vapviz[llamaindex]"`
 
 ### `VapAutoGen`
 
-AutoGen (AG2) integration. Import from `vap.integrations.autogen`. Wraps `ConversableAgent` so a
-multi-agent conversation becomes a VaP graph.
+AutoGen (AG2) integration. Import from `vapviz.integrations.autogen`. Wraps `ConversableAgent` so a
+multi-agent conversation becomes a vapviz graph.
 
 ```python
-from vap.integrations.autogen import VapAutoGen
+from vapviz.integrations.autogen import VapAutoGen
 
 VapAutoGen(run: RunContext | None = None, *, patch: bool = True)
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `run` | `RunContext \| None` | `None` | Existing run context (manual mode) — conversations attach under it. When `None` (auto mode), each `initiate_chat` starts its own VaP run. |
+| `run` | `RunContext \| None` | `None` | Existing run context (manual mode) — conversations attach under it. When `None` (auto mode), each `initiate_chat` starts its own vapviz run. |
 | `patch` | `bool` | `True` | Patch `ConversableAgent` immediately. |
 
 Raises `ImportError` at instantiation time if `autogen` (ag2) is not installed.
@@ -1032,7 +1032,7 @@ Raises `ImportError` at instantiation time if `autogen` (ag2) is not installed.
 It monkey-patches three `ConversableAgent` methods and keeps a thread-local stack of open nodes so
 nesting (tools under the turn that called them, nested chats) is correct:
 
-| Patched method | VaP node kind | Meaning |
+| Patched method | vapviz node kind | Meaning |
 |---|---|---|
 | `initiate_chat` | `step` `chat/<recipient>` (or `agent` run root in auto mode) | the conversation |
 | `generate_reply` | `step` `agent/<name>` | one agent turn |
@@ -1051,7 +1051,7 @@ Requires: `pip install "vapviz[autogen]"`
 
 ### OpenTelemetry export
 
-Mirror VaP runs into OpenTelemetry. Import from `vap.integrations.otel`. One **trace per run**; each
+Mirror vapviz runs into OpenTelemetry. Import from `vapviz.integrations.otel`. One **trace per run**; each
 node becomes a span whose parent is the node's parent. Requires `pip install "vapviz[otel]"`.
 
 #### `enable_otel_export(...)`
@@ -1062,7 +1062,7 @@ enable_otel_export(
     tracer_provider=None,
     endpoint: str | None = None,
     protocol: str = "grpc",          # "grpc" or "http"
-    service_name: str = "vap",
+    service_name: str = "vapviz",
     insecure: bool = True,
     store=None,
 ) -> OtelExportHandle
@@ -1077,16 +1077,16 @@ Wraps a store's `add_event` so that each run is exported when its `agent_end` ev
 | `protocol` | `"grpc"` (default) or `"http"` — selects the OTLP exporter (imported lazily). |
 | `service_name` | `service.name` resource attribute when a provider is created here. |
 | `insecure` | gRPC insecure channel (default `True`). |
-| `store` | Store to wrap. Defaults to `vap.store.default_store`. |
+| `store` | Store to wrap. Defaults to `vapviz.store.default_store`. |
 
 Returns an `OtelExportHandle` with `.disable()` (restore the original `add_event`) and `.shutdown()`
 (disable + flush the provider). Only runs that complete **after** the call are exported.
 
 ```python
-import vap
-from vap.integrations.otel import enable_otel_export
+import vapviz
+from vapviz.integrations.otel import enable_otel_export
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 handle = enable_otel_export(endpoint="http://localhost:4317")
 # ... run agents ...
 handle.shutdown()
@@ -1104,24 +1104,24 @@ explicit start/end times. Returns the span count.
 
 **Span mapping:**
 
-| VaP | OpenTelemetry |
+| vapviz | OpenTelemetry |
 |---|---|
 | run | one trace |
 | node (`agent`/`step`/`tool`/`llm`) | span (parent = parent node's span) |
 | `started_at` / `ended_at` | span start / end (nanoseconds) |
 | `error` status | span `Status(ERROR)` with the error message |
-| LLM model / tokens / cost | `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd` |
-| kind / status / run id / I-O | `vap.node.kind`, `vap.node.status`, `vap.run_id`, `vap.input`, `vap.output` |
+| LLM model / tokens / cost | `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vapviz.cost_usd` |
+| kind / status / run id / I-O | `vapviz.node.kind`, `vapviz.node.status`, `vapviz.run_id`, `vapviz.input`, `vapviz.output` |
 
 ---
 
 ## CLI
 
 ```
-vap serve [OPTIONS]
+vapviz serve [OPTIONS]
 ```
 
-Start the VaP HTTP server.
+Start the vapviz HTTP server.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
@@ -1136,18 +1136,18 @@ Start the VaP HTTP server.
 
 ```bash
 # In-memory store (default)
-vap serve
+vapviz serve
 
 # SQLite persistence, custom port, verbose logs
-vap serve --db runs.db --port 9000 --log-level info
+vapviz serve --db runs.db --port 9000 --log-level info
 
 # Development mode with reload
-vap serve --db dev.db --reload --log-level debug
+vapviz serve --db dev.db --reload --log-level debug
 ```
 
 When `--db` is supplied the CLI:
 1. Creates a `SqliteStore` pointing at the file
-2. Sets `vap.store.default_store` to it (so in-process traces land there too)
+2. Sets `vapviz.store.default_store` to it (so in-process traces land there too)
 3. Passes the store to `create_app(store=store)`
 
 ---
@@ -1393,7 +1393,7 @@ Download the full run graph as a JSON file.
 
 **Path parameter:** `run_id`
 
-**Response** `200 OK` — `application/json` with `Content-Disposition: attachment; filename="vap-{run_id}.json"`
+**Response** `200 OK` — `application/json` with `Content-Disposition: attachment; filename="vapviz-{run_id}.json"`
 
 The response body is the same schema as `GET /runs/{run_id}/graph` (a `RunGraph` object), pretty-printed with 2-space indentation, suitable for archiving or loading into external tools.
 
@@ -1407,7 +1407,7 @@ const blob = await resp.blob();
 const url  = URL.createObjectURL(blob);
 const a    = document.createElement("a");
 a.href     = url;
-a.download = `vap-${runId}.json`;
+a.download = `vapviz-${runId}.json`;
 a.click();
 URL.revokeObjectURL(url);
 ```
@@ -1622,7 +1622,7 @@ post({
 })
 ```
 
-The VaP server is language-agnostic — any HTTP client can push events, including agents written in Node.js, Go, or Java.
+The vapviz server is language-agnostic — any HTTP client can push events, including agents written in Node.js, Go, or Java.
 
 ---
 
@@ -1737,12 +1737,12 @@ interface RunGraph {
 
 ### v1.0.1
 
-- **Renamed the PyPI distribution to `vapviz`** — the name `vap` was already taken on PyPI by an unrelated project. Install with `pip install vapviz`; the import package (`import vap`) and the `vap` CLI command are unchanged.
+- **Renamed the project to `vapviz`** — the PyPI name `vap` was already taken by an unrelated project, so the distribution, the import package, and the CLI are all `vapviz` (`pip install vapviz`, `import vapviz`, `vapviz serve`). The `Vap*` public class names (`VapEvent`, `VapPydanticAI`, …) are unchanged.
 
 ### v1.0.0
 
 - **First stable release** — the public API now follows semantic versioning (see [README → Versioning & Stability](../README.md#versioning--stability) for the tracked surface)
-- **UI bundled in the wheel** — `ui/dist` is force-included as `vap/_static`; `create_app` auto-serves it when `--static-dir` is omitted, so `pip install vapviz && vap serve` shows the full UI with no Node build. CI/release build the UI before packaging and assert it's bundled
+- **UI bundled in the wheel** — `ui/dist` is force-included as `vapviz/_static`; `create_app` auto-serves it when `--static-dir` is omitted, so `pip install vapviz && vapviz serve` shows the full UI with no Node build. CI/release build the UI before packaging and assert it's bundled
 - **Anthropic integration tests** — `tests/test_anthropic_patch.py` (13 tests); **269 passing** total
 - **Docs** — root `CHANGELOG.md`, README stability policy, refreshed hero screenshot
 - Promoted to `Development Status :: 5 - Production/Stable`; no new tracing/integration features beyond 0.15.0
@@ -1757,7 +1757,7 @@ interface RunGraph {
 
 ### v0.14.0
 
-- **Run search** — `vap/search.py` `run_matches(graph, query=, status=, kind=, tool=)`; `GET /search` composes it with tag filtering and returns matching `RunSummary` list
+- **Run search** — `vapviz/search.py` `run_matches(graph, query=, status=, kind=, tool=)`; `GET /search` composes it with tag filtering and returns matching `RunSummary` list
 - **Tags** — persistent per-run tags: `RunStore.get_tags` / `set_tags` (in-memory default; `SqliteStore` persists to a `tags` table), `RunSummary.tags`, and `GET` / `PUT /runs/{id}/tags`
 - **UI** — content search box, clickable tag chips on runs (filter by tag), and an inline tag editor (`TagEditor.tsx`) in the run header
 - **Test suite** — `tests/test_search.py` with 18 tests (predicate, in-memory + SQLite tag persistence, endpoints); **256 passing** total
@@ -1765,25 +1765,25 @@ interface RunGraph {
 
 ### v0.13.0
 
-- **Agent evals & scoring** — `vap/evals.py`: `eval_run(run_or_graph, checks) -> EvalResult` (per-check `passed`/`score`/`detail` + overall `passed`/`score`); built-in `max_cost`, `max_latency`, `max_tokens`, `no_errors`, `output_contains`, plus `custom` and `judge` hooks
+- **Agent evals & scoring** — `vapviz/evals.py`: `eval_run(run_or_graph, checks) -> EvalResult` (per-check `passed`/`score`/`detail` + overall `passed`/`score`); built-in `max_cost`, `max_latency`, `max_tokens`, `no_errors`, `output_contains`, plus `custom` and `judge` hooks
 - **Declarative checks** — `run_checks(graph, specs)` builds checks from JSON specs; powers `POST /runs/{id}/eval`
 - **Workflow** — accepts a `RunContext` or `RunGraph`; `assert eval_run(...).passed` for pytest/CI; a throwing check counts as a failure
-- **Exports** — `vap.eval_run`, `vap.run_checks`, `vap.EvalResult`, `vap.Check`, and the check builders; `examples/evals_demo.py`
+- **Exports** — `vapviz.eval_run`, `vapviz.run_checks`, `vapviz.EvalResult`, `vapviz.Check`, and the check builders; `examples/evals_demo.py`
 - **Test suite** — `tests/test_evals.py` with 20 tests; **238 passing** total
 - **Package version** bumped to `0.13.0`
 
 ### v0.12.0
 
-- **Cost & latency budgets** — `vap/budgets.py`: `Budget` (max cost / duration / tokens), `check_budget(graph, budget) -> BudgetReport` with per-metric `violations`
+- **Cost & latency budgets** — `vapviz/budgets.py`: `Budget` (max cost / duration / tokens), `check_budget(graph, budget) -> BudgetReport` with per-metric `violations`
 - **Alerting** — `enable_budget_alerts(budget, on_alert=…)` wraps the store and fires a callback (default: logs a warning) when a completed run exceeds the budget; `BudgetAlertHandle.disable()` restores the store
 - **`GET /runs/{id}/budget`** — check any run against a budget via query params
-- **Exports** — `vap.Budget`, `vap.BudgetReport`, `vap.check_budget`, `vap.enable_budget_alerts`; `examples/budgets_demo.py` (no API key)
+- **Exports** — `vapviz.Budget`, `vapviz.BudgetReport`, `vapviz.check_budget`, `vapviz.enable_budget_alerts`; `examples/budgets_demo.py` (no API key)
 - **Test suite** — `tests/test_budgets.py` with 13 tests; **218 passing** total
 - **Package version** bumped to `0.12.0`
 
 ### v0.11.0
 
-- **AutoGen integration** — `vap/integrations/autogen.py`: `VapAutoGen` monkey-patches `ConversableAgent.initiate_chat` / `generate_reply` / `execute_function`, reproducing a multi-agent conversation as a chat root, an agent-turn node per reply, and tool nodes per function call
+- **AutoGen integration** — `vapviz/integrations/autogen.py`: `VapAutoGen` monkey-patches `ConversableAgent.initiate_chat` / `generate_reply` / `execute_function`, reproducing a multi-agent conversation as a chat root, an agent-turn node per reply, and tool nodes per function call
 - **Correct nesting** — a thread-local node stack parents tool calls under the turn that made them and supports nested chats; agent turns are siblings under the chat; timings are live
 - **Two usage modes** — manual (under a provided run) and auto (each `initiate_chat` = its own run); dropped/raised calls mark nodes `error`; double-patching never stacks wrappers; `detach()` restores originals
 - **`pip install "vapviz[autogen]"`** — new optional extra (`ag2`, classic `ConversableAgent` API) + `examples/autogen_demo.py` (offline `register_reply` agents, no API key)
@@ -1792,7 +1792,7 @@ interface RunGraph {
 
 ### v0.10.0
 
-- **LlamaIndex integration** — `vap/integrations/llamaindex.py`: `VapLlamaIndex` registers a span handler on LlamaIndex's instrumentation dispatcher and reproduces every span (query engines, retrievers, embeddings, synthesizers, LLM calls) as a VaP node, with `parent_span_id` → node hierarchy and live timings
+- **LlamaIndex integration** — `vapviz/integrations/llamaindex.py`: `VapLlamaIndex` registers a span handler on LlamaIndex's instrumentation dispatcher and reproduces every span (query engines, retrievers, embeddings, synthesizers, LLM calls) as a vapviz node, with `parent_span_id` → node hierarchy and live timings
 - **Kind classification** — retrievers/embeddings → `tool`, LLM spans → `llm`, the rest → `step`; dropped spans mark the node `error`
 - **Two usage modes** — manual (all spans under a provided run) and auto (each top-level span = its own run); `register()` / `detach()` manage the dispatcher hook
 - **`pip install "vapviz[llamaindex]"`** — new optional extra (`llama-index-core`) + `examples/llamaindex_demo.py` (MockLLM/MockEmbedding, no API key)
@@ -1801,8 +1801,8 @@ interface RunGraph {
 
 ### v0.9.0
 
-- **OpenTelemetry export** — `vap/integrations/otel.py`: `enable_otel_export(...)` wraps a store to emit each completed run as an OTLP trace (one trace per run; node hierarchy → span parent/child) via a BatchSpanProcessor; `export_run()` / `build_spans()` for one-shot export
-- **GenAI semantics** — spans carry `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vap.cost_usd`, `vap.node.*`, real node start/end times, and ERROR status
+- **OpenTelemetry export** — `vapviz/integrations/otel.py`: `enable_otel_export(...)` wraps a store to emit each completed run as an OTLP trace (one trace per run; node hierarchy → span parent/child) via a BatchSpanProcessor; `export_run()` / `build_spans()` for one-shot export
+- **GenAI semantics** — spans carry `gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`, `vapviz.cost_usd`, `vapviz.node.*`, real node start/end times, and ERROR status
 - **Flexible wiring** — bring your own `TracerProvider`, pass an OTLP `endpoint` (gRPC/HTTP), or use the global provider; OTLP exporter imported lazily; `OtelExportHandle.disable()` / `.shutdown()`
 - **`pip install "vapviz[otel]"`** — new optional extra (`opentelemetry-sdk`, `opentelemetry-exporter-otlp`) + `examples/otel_demo.py` (ConsoleSpanExporter, no network)
 - **Test suite** — `tests/test_otel.py` with 11 tests (in-memory exporter); **175 passing** total
@@ -1810,10 +1810,10 @@ interface RunGraph {
 
 ### v0.8.0
 
-- **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync` and reconstructs the agent, each model request (tokens + cost), and each tool call as nested VaP nodes from `result.all_messages()`; tool nodes are parented under the model request that called them
-- **Two usage modes** — auto mode (new VaP run per `agent.run()`) and manual mode (agent nests inside an existing `RunContext`); `.detach()` restores the original methods
+- **Pydantic AI integration** — `VapPydanticAI` wraps `Agent.run` / `run_sync` and reconstructs the agent, each model request (tokens + cost), and each tool call as nested vapviz nodes from `result.all_messages()`; tool nodes are parented under the model request that called them
+- **Two usage modes** — auto mode (new vapviz run per `agent.run()`) and manual mode (agent nests inside an existing `RunContext`); `.detach()` restores the original methods
 - **`patch_pydantic_ai(run=None)`** convenience wrapper; re-entrancy guard prevents double-counting when `run_sync` delegates to `run`
-- **`vap/integrations/pydantic_ai.py`** + `examples/pydantic_ai_demo.py` (runs with no API key via `TestModel`)
+- **`vapviz/integrations/pydantic_ai.py`** + `examples/pydantic_ai_demo.py` (runs with no API key via `TestModel`)
 - **`pip install "vapviz[pydantic-ai]"`** — new optional extra (`pydantic-ai-slim>=1.0.0`)
 - **Test suite** — `tests/test_pydantic_ai.py` with 13 tests (manual/auto/async modes, tool parenting, cost wiring, error path, detach, double-patch guard); **164 passing** total
 - **Package version** bumped to `0.8.0` (was stale at `0.6.0`)
@@ -1822,8 +1822,8 @@ interface RunGraph {
 
 - **Analytics dashboard** — cross-run overview in the UI: run/success counts, total & average cost, average duration, LLM-call and token totals, a per-model breakdown table, a cost-over-time bar chart, and a nodes-by-kind breakdown. Toggled from the sidebar header; auto-refreshes every 5 s
 - **`GET /metrics`** — aggregates every stored run into one `Metrics` snapshot
-- **`vap.compute_metrics(graphs)`** — pure aggregation function over `RunGraph` snapshots; exported as `vap.compute_metrics` / `vap.Metrics`
-- **`vap/metrics.py`** — `Metrics`, `ModelStat`, `TokenTotals`, `KindCounts`, `DailyCost` pydantic models + `compute_metrics()`
+- **`vapviz.compute_metrics(graphs)`** — pure aggregation function over `RunGraph` snapshots; exported as `vapviz.compute_metrics` / `vapviz.Metrics`
+- **`vapviz/metrics.py`** — `Metrics`, `ModelStat`, `TokenTotals`, `KindCounts`, `DailyCost` pydantic models + `compute_metrics()`
 - **`Dashboard.tsx`** + `view` state in `runStore` (`"runs" | "dashboard"`); selecting a run returns to the graph view
 - **Test suite** — `tests/test_metrics.py` with 14 tests (empty input, status/duration/cost aggregation, model breakdown + label fallback, daily bucketing, and the endpoint); **151 passing** total
 - **Fix: test isolation** — an `autouse` fixture in `tests/conftest.py` resets the `_current_step` ContextVar between tests, so a `RunContext._start()` without a matching `_end()` (as in the CrewAI listener tests) no longer leaks into later test files
@@ -1831,10 +1831,10 @@ interface RunGraph {
 ### v0.6.0
 
 - **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native `BaseEventListener` event bus; traces Crew runs, Tasks, Agent executions, Tool calls, and LLM round-trips automatically
-- **Two usage modes** — auto mode (new VaP run per `kickoff()`) and manual mode (tasks as children of an existing `RunContext`)
+- **Two usage modes** — auto mode (new vapviz run per `kickoff()`) and manual mode (tasks as children of an existing `RunContext`)
 - **LLM cost on CrewAI nodes** — `cost_usd` automatically attached to every `llm/` node when the model is in the pricing table (LiteLLM usage dict parsed transparently)
 - **`pip install "vapviz[crewai]"`** — new optional extra; `crewai>=1.0.0` dependency
-- **`vap/integrations/crewai_listener.py`** — `VapCrewAIListener`, `detach()` helper for manual cleanup
+- **`vapviz/integrations/crewai_listener.py`** — `VapCrewAIListener`, `detach()` helper for manual cleanup
 - **`examples/crewai_demo.py`** — two-demo example (sequential crew + pipeline embedding); no custom tools required
 - **Test suite** — `tests/test_crewai_listener.py` with 19 tests across 7 classes; skipped when `crewai` is not installed
 - **Fix: deadlock in `_on_agent_exec_start`** — `_get_crew_root()` was called while holding `self._lock`; since `_get_crew_root()` also acquires the same non-reentrant lock, accumulated listener instances from multiple test runs deadlocked the `ThreadPoolExecutor` thread pool. Fixed by calling `_get_crew_root()` outside the lock block.
@@ -1851,9 +1851,9 @@ interface RunGraph {
 ### v0.4.0
 
 - **Token cost overlay** — per-node `cost_usd` on every `llm_response` event; total run cost in sidebar
-- **Pricing table** (`vap/cost.py`) — 20+ OpenAI and Anthropic models with prefix-match fallback for versioned variants
-- **`vap.calculate_cost(model, input_tokens, output_tokens)`** — public cost utility, returns `float | None`
-- **`vap.format_cost(cost_usd)`** — display helper for USD amounts
+- **Pricing table** (`vapviz/cost.py`) — 20+ OpenAI and Anthropic models with prefix-match fallback for versioned variants
+- **`vapviz.calculate_cost(model, input_tokens, output_tokens)`** — public cost utility, returns `float | None`
+- **`vapviz.format_cost(cost_usd)`** — display helper for USD amounts
 - **`RunSummary.total_cost_usd`** — new optional field; `None` when no LLM nodes have a recognised model
 - **`patch_openai` + `patch_anthropic`** now attach `cost_usd` to every `llm_response` output when the model is in the pricing table
 - **React UI** — `AgentGraph` shows cost on LLM nodes; `RunList` shows per-run total; `NodeDetail` shows cost badge; `runStore` recomputes `total_cost_usd` live on every event
@@ -1868,10 +1868,10 @@ interface RunGraph {
 
 ### v0.2.0
 
-- **Async tracer** — `vap.atrace()` and `run.astep()` with `asynccontextmanager`
-- **SQLite persistence** — `SqliteStore` in `vap/backends/sqlite.py`; WAL mode, startup replay
-- **`vap.configure(db=...)`** — module-level store configuration
-- **CLI** — `vap serve --db <path> --port <n> --reload`
+- **Async tracer** — `vapviz.atrace()` and `run.astep()` with `asynccontextmanager`
+- **SQLite persistence** — `SqliteStore` in `vapviz/backends/sqlite.py`; WAL mode, startup replay
+- **`vapviz.configure(db=...)`** — module-level store configuration
+- **CLI** — `vapviz serve --db <path> --port <n> --reload`
 - **Async Anthropic patch** — `patch_anthropic()` auto-detects `AsyncAnthropic`
 - **New REST endpoints** — `GET /runs/{id}`, `DELETE /runs/{id}`
 - **`schema_version`** field on `VapEvent` (default `1`)

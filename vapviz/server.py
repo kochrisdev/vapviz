@@ -33,7 +33,7 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
         if hasattr(_store, "close"):
             _store.close()  # type: ignore[attr-defined]
 
-    app = FastAPI(title="VaP — Visualization Agentic Process", lifespan=lifespan)
+    app = FastAPI(title="vapviz — Visualization Agentic Process", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -169,7 +169,7 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
         return Response(
             content=graph.model_dump_json(indent=2),
             media_type="application/json",
-            headers={"Content-Disposition": f'attachment; filename="vap-{run_id}.json"'},
+            headers={"Content-Disposition": f'attachment; filename="vapviz-{run_id}.json"'},
         )
 
     # ------------------------------------------------------------------
@@ -232,8 +232,8 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
     #
     # Resolution order:
     #   1. an explicit static_dir argument
-    #   2. the UI bundled into the installed package (vap/_static) — present in
-    #      the published wheel, so `pip install vap && vap serve` just works
+    #   2. the UI bundled into the installed package (vapviz/_static) — present in
+    #      the published wheel, so `pip install vapviz && vapviz serve` just works
     # ------------------------------------------------------------------
 
     from pathlib import Path

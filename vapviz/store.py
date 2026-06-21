@@ -94,7 +94,7 @@ def _apply_event_to_graph(graph: RunGraph, event: VapEvent) -> None:
 # ---------------------------------------------------------------------------
 
 class RunStore(ABC):
-    """Abstract interface for a VaP event store."""
+    """Abstract interface for a vapviz event store."""
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         """Inject the running asyncio event loop (called by the server on startup).
@@ -288,7 +288,7 @@ class MemoryStore(RunStore):
 
 
 # ---------------------------------------------------------------------------
-# Module-level default — replaced by vap.configure() or vap serve --db
+# Module-level default — replaced by vapviz.configure() or vapviz serve --db
 # ---------------------------------------------------------------------------
 
 default_store: RunStore = MemoryStore()

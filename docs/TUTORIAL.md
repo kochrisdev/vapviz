@@ -1,13 +1,13 @@
-# VaP Tutorial — Step-by-Step Guide
+# vapviz Tutorial — Step-by-Step Guide
 
 This tutorial walks you from zero to a fully instrumented AI agent pipeline. Each step builds on
-the last, so work through them in order. No prior VaP knowledge required.
+the last, so work through them in order. No prior vapviz knowledge required.
 
 ---
 
 ## Contents
 
-1. [What is VaP?](#1-what-is-vap)
+1. [What is vapviz?](#1-what-is-vapviz)
 2. [Installation](#2-installation)
 3. [Your First Trace](#3-your-first-trace)
 4. [Adding Steps and Tools](#4-adding-steps-and-tools)
@@ -37,9 +37,9 @@ the last, so work through them in order. No prior VaP knowledge required.
 
 ---
 
-## 1. What is VaP?
+## 1. What is vapviz?
 
-VaP (**Visualization Agentic Process**) is a lightweight Python + React framework that lets you
+vapviz (**Visualization Agentic Process**) is a lightweight Python + React framework that lets you
 **trace and visualize AI agent pipelines in real time**. You instrument your Python code with a
 single context manager; every step, tool call, and LLM invocation appears instantly as a
 live interactive graph in the browser.
@@ -48,7 +48,7 @@ live interactive graph in the browser.
 Your agent code
      │  VapEvents (in-process)
      ▼
-Python VaP store
+Python vapviz store
      │  asyncio.Queue
      ▼
 FastAPI server (REST + SSE)
@@ -61,7 +61,7 @@ React UI  →  you see a live graph in the browser
 
 | Term | Meaning |
 |---|---|
-| **Run** | One execution of your agent (one call to `vap.trace()`). Each run gets an entry in the sidebar. |
+| **Run** | One execution of your agent (one call to `vapviz.trace()`). Each run gets an entry in the sidebar. |
 | **Node** | A single traced unit of work (a step, tool call, or LLM call). Nodes appear as boxes in the graph. |
 | **Event** | A lightweight JSON message emitted when a node starts or ends. The graph is built from events. |
 | **Store** | The backend that accumulates events. In-memory by default; SQLite for persistence. |
@@ -74,7 +74,7 @@ React UI  →  you see a live graph in the browser
 
 ```bash
 git clone https://github.com/kochrisdev/vap.git
-cd vap
+cd vapviz
 
 # Core package (no LLM integrations)
 pip install -e .
@@ -91,14 +91,14 @@ npm install
 npm run dev      # starts on http://localhost:5173
 ```
 
-### Start the VaP server
+### Start the vapviz server
 
 Open a second terminal in the repo root:
 
 ```bash
-vap serve        # in-memory store, resets on restart
+vapviz serve        # in-memory store, resets on restart
 # or
-vap serve --db vap.db   # SQLite store, survives restarts
+vapviz serve --db vapviz.db   # SQLite store, survives restarts
 ```
 
 Open **http://localhost:5173** — you should see an empty sidebar that says "No runs yet".
@@ -114,12 +114,12 @@ Create a file `my_agent.py`:
 
 ```python
 import time
-import vap
+import vapviz
 
-# Tell VaP to store runs in SQLite so they survive restarts
-vap.configure(db="vap.db")
+# Tell vapviz to store runs in SQLite so they survive restarts
+vapviz.configure(db="vapviz.db")
 
-with vap.trace("Hello VaP") as run:
+with vapviz.trace("Hello vapviz") as run:
     print(f"Run started: {run.run_id}")
     time.sleep(0.5)   # simulate work
 
@@ -134,11 +134,11 @@ python my_agent.py
 
 **What you'll see in the browser:**
 
-- A new entry "Hello VaP" appears in the sidebar with a green ✓ badge.
-- Click it — the graph shows a single indigo node labelled "Hello VaP".
+- A new entry "Hello vapviz" appears in the sidebar with a green ✓ badge.
+- Click it — the graph shows a single indigo node labelled "Hello vapviz".
 - The right panel shows the run ID, start time, duration, and status.
 
-That single indigo node is the **agent root node**, created automatically by `vap.trace()`.
+That single indigo node is the **agent root node**, created automatically by `vapviz.trace()`.
 
 ---
 
@@ -148,11 +148,11 @@ A flat agent with just a root node isn't very useful. Add child nodes with `run.
 
 ```python
 import time
-import vap
+import vapviz
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
-with vap.trace("Research Agent") as run:
+with vapviz.trace("Research Agent") as run:
 
     # A planning step
     with run.step("plan", kind="step") as step:
@@ -193,11 +193,11 @@ to attach any JSON-serialisable dict:
 
 ```python
 import time
-import vap
+import vapviz
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
-with vap.trace("Data Pipeline") as run:
+with vapviz.trace("Data Pipeline") as run:
 
     with run.step("ingest", kind="step") as step:
         step.set_input({"source": "s3://bucket/data.parquet", "format": "parquet"})
@@ -228,16 +228,16 @@ the data you attached, rendered as formatted JSON. You'll also see the node's du
 
 ## 6. Automatic Nesting
 
-VaP uses Python's `contextvars.ContextVar` to track the current node automatically. You never
+vapviz uses Python's `contextvars.ContextVar` to track the current node automatically. You never
 pass parent IDs — just nest your `with run.step(...)` blocks and the graph wires itself up:
 
 ```python
 import time
-import vap
+import vapviz
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
-with vap.trace("Nested Pipeline") as run:
+with vapviz.trace("Nested Pipeline") as run:
 
     with run.step("phase_1", kind="step") as step:
         step.set_input({"items": 3})
@@ -281,12 +281,12 @@ For async agents use `atrace` and `astep`. The API is identical — just add `as
 
 ```python
 import asyncio
-import vap
+import vapviz
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
 
-async def fetch(run: vap.RunContext, url: str) -> dict:
+async def fetch(run: vapviz.RunContext, url: str) -> dict:
     async with run.astep(f"fetch/{url.split('/')[-1]}", kind="tool") as step:
         step.set_input({"url": url})
         await asyncio.sleep(0.15)   # simulate HTTP call
@@ -295,7 +295,7 @@ async def fetch(run: vap.RunContext, url: str) -> dict:
 
 
 async def main():
-    async with vap.atrace("Async Research Agent") as run:
+    async with vapviz.atrace("Async Research Agent") as run:
 
         async with run.astep("plan", kind="step") as step:
             step.set_input({"goal": "fetch three pages"})
@@ -333,11 +333,11 @@ Exceptions inside a `with run.step(...)` block are automatically caught, recorde
 
 ```python
 import time
-import vap
+import vapviz
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
-with vap.trace("Error Demo") as run:
+with vapviz.trace("Error Demo") as run:
 
     with run.step("setup", kind="step") as step:
         step.set_input({"config": "prod"})
@@ -350,7 +350,7 @@ with vap.trace("Error Demo") as run:
             step.set_input({"url": "https://api.example.com"})
             time.sleep(0.1)
             raise ConnectionError("API timeout after 10 s")
-            # VaP catches this, marks node red, then re-raises
+            # vapviz catches this, marks node red, then re-raises
     except ConnectionError as exc:
         print(f"[handled] {exc}")
 
@@ -371,31 +371,31 @@ with vap.trace("Error Demo") as run:
 **Nested errors:** If an inner step raises and the exception propagates through an outer step, both
 nodes turn red. See `examples/error_handling_demo.py` for all three scenarios.
 
-> **Rule of thumb:** Catch exceptions outside the `with run.step(...)` block (not inside), so VaP
+> **Rule of thumb:** Catch exceptions outside the `with run.step(...)` block (not inside), so vapviz
 > always gets to record the error before you handle it.
 
 ---
 
 ## 9. LLM Cost Tracking
 
-VaP ships a pricing table covering 20+ OpenAI and Anthropic models. You can attach cost to any
+vapviz ships a pricing table covering 20+ OpenAI and Anthropic models. You can attach cost to any
 node manually — no API key needed to explore this feature:
 
 ```python
 import time
-import vap
+import vapviz
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
 
-def simulate_llm(run: vap.RunContext, label: str, model: str,
+def simulate_llm(run: vapviz.RunContext, label: str, model: str,
                  input_tokens: int, output_tokens: int, text: str) -> str:
     """Create a traced LLM node with cost attached."""
     with run.step(label, kind="llm") as step:
         step.set_input({"model": model, "input_tokens": input_tokens})
         time.sleep(0.05)
 
-        cost = vap.calculate_cost(model, input_tokens, output_tokens)
+        cost = vapviz.calculate_cost(model, input_tokens, output_tokens)
         output = {
             "text": text,
             "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
@@ -407,7 +407,7 @@ def simulate_llm(run: vap.RunContext, label: str, model: str,
         return text
 
 
-with vap.trace("Cost Demo") as run:
+with vapviz.trace("Cost Demo") as run:
 
     simulate_llm(run, "llm/plan",      "gpt-4o-mini", 500,  150, "Plan: search → analyse → summarise")
     simulate_llm(run, "llm/analyse",   "gpt-4o-mini", 800,  300, "Analysis: three key themes found.")
@@ -423,7 +423,7 @@ with vap.trace("Cost Demo") as run:
 **Check which models are supported and what they cost:**
 
 ```python
-import vap
+import vapviz
 
 models = [
     ("gpt-4o-mini",               1_000, 500),
@@ -435,8 +435,8 @@ models = [
 ]
 
 for model, inp, out in models:
-    cost = vap.calculate_cost(model, inp, out)
-    label = vap.format_cost(cost) if cost is not None else "unknown model"
+    cost = vapviz.calculate_cost(model, inp, out)
+    label = vapviz.format_cost(cost) if cost is not None else "unknown model"
     print(f"  {model:<38}  {label}")
 ```
 
@@ -448,23 +448,23 @@ for model, inp, out in models:
 
 ## 10. OpenAI Auto-Instrumentation
 
-When you call `vap.patch_openai(client)`, every subsequent `client.chat.completions.create()` call
+When you call `vapviz.patch_openai(client)`, every subsequent `client.chat.completions.create()` call
 is automatically wrapped in a `kind="llm"` step — model name, token counts, cost, and response
 text are all captured without any manual code:
 
 ```python
 import os
 import time
-import vap
+import vapviz
 import openai
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
 # Requires: pip install "vapviz[openai]"  and  export OPENAI_API_KEY=sk-...
 client = openai.OpenAI()
-vap.patch_openai(client)    # one line — that's all the instrumentation needed
+vapviz.patch_openai(client)    # one line — that's all the instrumentation needed
 
-with vap.trace("OpenAI Agent") as run:
+with vapviz.trace("OpenAI Agent") as run:
 
     with run.step("research", kind="step") as step:
         step.set_input({"topic": "agent architectures"})
@@ -491,14 +491,14 @@ cost — zero manual `set_input` / `set_output` calls needed.
 **Async OpenAI** is also supported:
 
 ```python
-import asyncio, openai, vap
+import asyncio, openai, vapviz
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 client = openai.AsyncOpenAI()
-vap.patch_openai(client)
+vapviz.patch_openai(client)
 
 async def main():
-    async with vap.atrace("Async OpenAI Agent") as run:
+    async with vapviz.atrace("Async OpenAI Agent") as run:
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             max_tokens=50,
@@ -513,21 +513,21 @@ asyncio.run(main())
 
 ## 11. Anthropic Auto-Instrumentation
 
-Same pattern as OpenAI — `vap.patch_anthropic(client)` does the work:
+Same pattern as OpenAI — `vapviz.patch_anthropic(client)` does the work:
 
 ```python
 import os
 import time
-import vap
+import vapviz
 import anthropic
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
 # Requires: pip install "vapviz[anthropic]"  and  export ANTHROPIC_API_KEY=sk-ant-...
 client = anthropic.Anthropic()
-vap.patch_anthropic(client)
+vapviz.patch_anthropic(client)
 
-with vap.trace("Anthropic Agent") as run:
+with vapviz.trace("Anthropic Agent") as run:
 
     with run.step("plan", kind="step") as step:
         step.set_input({"goal": "Summarise AI news"})
@@ -550,7 +550,7 @@ with vap.trace("Anthropic Agent") as run:
 ```
 
 **Async Anthropic** works the same way — create an `anthropic.AsyncAnthropic()` client, patch it,
-and use `async with vap.atrace(...)`.
+and use `async with vapviz.atrace(...)`.
 
 ---
 
@@ -561,8 +561,8 @@ every chain, tool call, and LLM round-trip is traced automatically:
 
 ```python
 import os
-import vap
-from vap.integrations.langchain import VapCallbackHandler
+import vapviz
+from vapviz.integrations.langchain import VapCallbackHandler
 
 # Requires: pip install "vapviz[langchain]" langgraph langchain-openai
 # and: export OPENAI_API_KEY=sk-...
@@ -571,7 +571,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
 
 @tool
@@ -589,8 +589,8 @@ def calculate(expression: str) -> str:
 llm   = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 agent = create_react_agent(llm, [search_web, calculate])
 
-with vap.trace("LangGraph ReAct Agent") as run:
-    handler = VapCallbackHandler(run)   # attach VaP to this run
+with vapviz.trace("LangGraph ReAct Agent") as run:
+    handler = VapCallbackHandler(run)   # attach vapviz to this run
 
     result = agent.invoke(
         {"messages": [{"role": "user", "content": "Search for AI trends and calculate 128 * 37."}]},
@@ -617,13 +617,13 @@ arriving at its final answer.
 ### Auto mode — one trace per kickoff
 
 ```python
-import vap
-from vap.integrations.crewai_listener import VapCrewAIListener
+import vapviz
+from vapviz.integrations.crewai_listener import VapCrewAIListener
 from crewai import Agent, Crew, Process, Task
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
-# Register listener once — auto-creates a VaP run for every kickoff()
+# Register listener once — auto-creates a vapviz run for every kickoff()
 VapCrewAIListener()
 
 researcher = Agent(
@@ -659,7 +659,7 @@ print(result.raw)
 
 **What you'll see:**
 
-The VaP graph has this structure:
+The vapviz graph has this structure:
 
 ```
 Research Crew (agent root)
@@ -679,12 +679,12 @@ here as `tool/` nodes if the agents have tools attached.
 
 ```python
 import time
-import vap
-from vap.integrations.crewai_listener import VapCrewAIListener
+import vapviz
+from vapviz.integrations.crewai_listener import VapCrewAIListener
 
-with vap.trace("Full Pipeline") as run:
+with vapviz.trace("Full Pipeline") as run:
 
-    # Step 1 — plain VaP, no CrewAI
+    # Step 1 — plain vapviz, no CrewAI
     with run.step("load_data", kind="step") as step:
         step.set_input({"source": "s3://bucket/data.csv"})
         time.sleep(0.05)
@@ -694,7 +694,7 @@ with vap.trace("Full Pipeline") as run:
     VapCrewAIListener(run=run)
     result = crew.kickoff(inputs={"topic": "quarterly trends"})
 
-    # Step 3 — plain VaP again
+    # Step 3 — plain vapviz again
     with run.step("store_report", kind="step") as step:
         step.set_input({"destination": "reports/q4.json"})
         time.sleep(0.03)
@@ -707,7 +707,7 @@ One run in the sidebar called "Full Pipeline". `load_data`, the `crew/` step con
 and `store_report` all sit side by side as siblings.
 
 > **Note:** In manual mode the listener does NOT close the provided `RunContext` — your
-> `with vap.trace(...)` block controls the run lifecycle.
+> `with vapviz.trace(...)` block controls the run lifecycle.
 
 ---
 
@@ -721,14 +721,14 @@ cost), and each tool call (with its arguments and result) — with no changes to
 pip install "vapviz[pydantic-ai]"
 ```
 
-**Auto mode** — one fresh VaP run per `agent.run()`:
+**Auto mode** — one fresh vapviz run per `agent.run()`:
 
 ```python
-import vap
+import vapviz
 from pydantic_ai import Agent
-from vap.integrations.pydantic_ai import VapPydanticAI
+from vapviz.integrations.pydantic_ai import VapPydanticAI
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
 agent = Agent("openai:gpt-4o-mini", name="weather-agent")
 
@@ -752,7 +752,7 @@ weather-agent                 (agent — the run root)
 **Manual mode** — nest the agent inside a larger pipeline by passing a `RunContext`:
 
 ```python
-with vap.trace("Trip planner") as run:
+with vapviz.trace("Trip planner") as run:
     with run.step("load_preferences", kind="step") as step:
         step.set_output({"prefers": "warm cities"})
 
@@ -780,25 +780,25 @@ the totals are aggregated onto the agent node. Tool calls are matched to their r
 
 `VapLlamaIndex` traces [LlamaIndex](https://docs.llamaindex.ai/) by registering a span handler on
 its instrumentation dispatcher. A whole RAG query — query engine, retriever, embeddings, response
-synthesizer, and LLM calls — shows up as a nested VaP graph with real timings, no changes to your
+synthesizer, and LLM calls — shows up as a nested vapviz graph with real timings, no changes to your
 LlamaIndex code.
 
 ```bash
 pip install "vapviz[llamaindex]"
 ```
 
-The recommended pattern is **manual mode**: wrap your indexing/query work in a `vap.trace()` so the
+The recommended pattern is **manual mode**: wrap your indexing/query work in a `vapviz.trace()` so the
 whole workflow is one run.
 
 ```python
-import vap
+import vapviz
 from llama_index.core import VectorStoreIndex, Document
-from vap.integrations.llamaindex import VapLlamaIndex
+from vapviz.integrations.llamaindex import VapLlamaIndex
 
-with vap.trace("RAG query") as run:
+with vapviz.trace("RAG query") as run:
     VapLlamaIndex(run)
-    index = VectorStoreIndex.from_documents([Document(text="VaP traces AI agents.")])
-    response = index.as_query_engine().query("What does VaP do?")
+    index = VectorStoreIndex.from_documents([Document(text="vapviz traces AI agents.")])
+    response = index.as_query_engine().query("What does vapviz do?")
 ```
 
 The resulting graph reflects LlamaIndex's real call tree, for example:
@@ -818,7 +818,7 @@ become `llm` nodes, and orchestration (query engines, synthesizers, splitters) s
 timings are captured live, so durations are real.
 
 Prefer one run per top-level call instead? Use **auto mode** — `VapLlamaIndex()` with no run — and
-each top-level instrumented call (e.g. each `.query(...)`) becomes its own VaP run. Call `.detach()`
+each top-level instrumented call (e.g. each `.query(...)`) becomes its own vapviz run. Call `.detach()`
 to remove the handler when you're done.
 
 > **Try it with no API key:** `python examples/llamaindex_demo.py` uses LlamaIndex's `MockLLM` and
@@ -837,17 +837,17 @@ agent code.
 pip install "vapviz[autogen]"
 ```
 
-Wrap your conversation in a `vap.trace()` (manual mode):
+Wrap your conversation in a `vapviz.trace()` (manual mode):
 
 ```python
-import vap
+import vapviz
 from autogen import ConversableAgent
-from vap.integrations.autogen import VapAutoGen
+from vapviz.integrations.autogen import VapAutoGen
 
 assistant = ConversableAgent("assistant", llm_config={"model": "gpt-4o-mini"})
 user = ConversableAgent("user", human_input_mode="NEVER", max_consecutive_auto_reply=2)
 
-with vap.trace("Support chat") as run:
+with vapviz.trace("Support chat") as run:
     VapAutoGen(run)
     user.initiate_chat(assistant, message="How do I reset my password?")
 ```
@@ -867,7 +867,7 @@ Each `generate_reply` becomes an `agent/<name>` turn node; `execute_function` to
 conversation order.
 
 Prefer one run per conversation instead? Use **auto mode** — `VapAutoGen()` with no run — and each
-`initiate_chat` becomes its own VaP run. Call `.detach()` to restore the original methods.
+`initiate_chat` becomes its own vapviz run. Call `.detach()` to restore the original methods.
 
 > **Try it with no API key:** `python examples/autogen_demo.py` uses offline agents (registered reply
 > functions), so it runs fully offline.
@@ -879,7 +879,7 @@ Prefer one run per conversation instead? Use **auto mode** — `VapAutoGen()` wi
 
 ## 17. Remote Ingest (any language)
 
-You don't need to import `vap` in the process that runs your agent. Any process — including
+You don't need to import `vapviz` in the process that runs your agent. Any process — including
 non-Python code — can push events by POSTing JSON to `POST /runs/{run_id}/events`.
 
 Here is a minimal Python example using only the standard library:
@@ -950,12 +950,12 @@ print(f"View at {SERVER}  run_id={run_id}")
 **Make sure the server is running first:**
 
 ```bash
-vap serve --db vap.db
+vapviz serve --db vapviz.db
 python my_remote_agent.py
 ```
 
 **What you'll see:** The run appears in the browser in real time as each event is posted — even
-though the agent process has no knowledge of VaP internals.
+though the agent process has no knowledge of vapviz internals.
 
 > **Full event reference:** see `POST /runs/{id}/events` in
 > [DEVELOPER_REFERENCE.md](DEVELOPER_REFERENCE.md#post-runsrunid-events--remote-event-ingest) for
@@ -1001,7 +1001,7 @@ Every run can be exported in two formats from the **Export ▾** button in the t
 
 ### JSON export
 
-Downloads the complete `RunGraph` as a JSON file (`vap-{run_id}.json`). The JSON contains every
+Downloads the complete `RunGraph` as a JSON file (`vapviz-{run_id}.json`). The JSON contains every
 node, every edge, all input/output data, durations, and status. Useful for:
 
 - Archiving important runs
@@ -1025,18 +1025,18 @@ screenshot includes the layout exactly as you see it — useful for reports or d
 
 ## 20. Persistence with SQLite
 
-By default VaP uses an in-memory store — fast, zero setup, but all runs are lost when the
+By default vapviz uses an in-memory store — fast, zero setup, but all runs are lost when the
 process exits. Switch to SQLite with one line:
 
 ```python
-import vap
-vap.configure(db="vap.db")
+import vapviz
+vapviz.configure(db="vapviz.db")
 ```
 
 Or via the CLI:
 
 ```bash
-vap serve --db vap.db
+vapviz serve --db vapviz.db
 ```
 
 **What this gives you:**
@@ -1052,13 +1052,13 @@ Start the server against an existing database and all previous runs appear immed
 sidebar:
 
 ```bash
-vap serve --db vap.db        # loads all past runs on startup
+vapviz serve --db vapviz.db        # loads all past runs on startup
 ```
 
 **Backup:**
 
 ```bash
-sqlite3 vap.db ".backup vap_backup_$(date +%Y%m%d).db"
+sqlite3 vapviz.db ".backup vap_backup_$(date +%Y%m%d).db"
 ```
 
 > **Note:** SQLite is well-suited for single-machine deployments. If you need multiple server
@@ -1091,16 +1091,16 @@ curl http://localhost:8001/metrics
 ```
 
 ```python
-import vap
-from vap.backends.sqlite import SqliteStore
+import vapviz
+from vapviz.backends.sqlite import SqliteStore
 
-store = SqliteStore("vap.db")
+store = SqliteStore("vapviz.db")
 graphs = [g for g in (store.get_graph(s.run_id) for s in store.list_runs()) if g]
-metrics = vap.compute_metrics(graphs)
+metrics = vapviz.compute_metrics(graphs)
 
-print(f"{metrics.run_count} runs · {vap.format_cost(metrics.total_cost_usd)} total")
+print(f"{metrics.run_count} runs · {vapviz.format_cost(metrics.total_cost_usd)} total")
 for m in metrics.by_model:
-    print(f"  {m.model}: {m.calls} calls, {vap.format_cost(m.cost_usd)}")
+    print(f"  {m.model}: {m.calls} calls, {vapviz.format_cost(m.cost_usd)}")
 ```
 
 See the [`GET /metrics`](DEVELOPER_REFERENCE.md#get-metrics) reference for the full field list.
@@ -1109,10 +1109,10 @@ See the [`GET /metrics`](DEVELOPER_REFERENCE.md#get-metrics) reference for the f
 
 ## 22. OpenTelemetry Export
 
-VaP can mirror every run into [OpenTelemetry](https://opentelemetry.io/) — useful when you already
+vapviz can mirror every run into [OpenTelemetry](https://opentelemetry.io/) — useful when you already
 run Jaeger, Grafana Tempo, or Datadog and want your agent traces alongside the rest of your service
 telemetry. Each run becomes **one OTel trace**; each node (agent / step / tool / LLM) becomes a span
-nested exactly like the VaP graph.
+nested exactly like the vapviz graph.
 
 ```bash
 pip install "vapviz[otel]"
@@ -1121,13 +1121,13 @@ pip install "vapviz[otel]"
 Point it at an OTLP collector and every completed run is exported automatically:
 
 ```python
-import vap
-from vap.integrations.otel import enable_otel_export
+import vapviz
+from vapviz.integrations.otel import enable_otel_export
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 enable_otel_export(endpoint="http://localhost:4317")   # OTLP/gRPC (use protocol="http" for 4318)
 
-with vap.trace("My agent") as run:
+with vapviz.trace("My agent") as run:
     with run.step("ask", kind="llm") as s:
         s.set_input({"model": "gpt-4o"})
         s.set_output({"usage": {"input_tokens": 1200, "output_tokens": 180}, "cost_usd": 0.0048})
@@ -1135,7 +1135,7 @@ with vap.trace("My agent") as run:
 ```
 
 LLM spans use the OTel **GenAI semantic conventions** (`gen_ai.request.model`,
-`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`), cost rides along as `vap.cost_usd`, and a
+`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`), cost rides along as `vapviz.cost_usd`, and a
 failed node sets the span's status to `ERROR`.
 
 **Already have OpenTelemetry configured?** Call `enable_otel_export()` with no arguments to use your
@@ -1144,36 +1144,36 @@ existing global `TracerProvider`, or pass your own with `enable_otel_export(trac
 **Export on demand** (instead of auto-export) — convert any stored run to spans yourself:
 
 ```python
-from vap.integrations.otel import export_run
+from vapviz.integrations.otel import export_run
 export_run(store.get_graph(run_id), tracer_provider=my_provider)
 ```
 
 > **Try it with no collector:** `python examples/otel_demo.py` exports a run to the console via
 > OpenTelemetry's `ConsoleSpanExporter`, so you can see the spans without any backend.
 
-This is **export**, not replacement — runs still stream into the VaP UI as usual.
+This is **export**, not replacement — runs still stream into the vapviz UI as usual.
 
 ---
 
 ## 23. Cost & Latency Budgets
 
-Once you're tracking cost and duration, you can set **budgets** — limits that VaP checks on every
+Once you're tracking cost and duration, you can set **budgets** — limits that vapviz checks on every
 completed run, alerting you when one is exceeded. This turns passive metrics into active guardrails
 (catch a runaway agent, a prompt that 10×'d your token use, or a slow regression).
 
 Define a `Budget` and enable alerts:
 
 ```python
-import vap
-from vap.budgets import Budget, enable_budget_alerts
+import vapviz
+from vapviz.budgets import Budget, enable_budget_alerts
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
 # Any limit left unset is not enforced.
 enable_budget_alerts(Budget(max_cost_usd=0.05, max_duration_ms=5000, max_total_tokens=20_000))
 
 # From here on, any run that finishes over budget logs a warning:
-#   WARNING vap.budgets: VaP budget exceeded for run <id>: cost_usd 0.08 > 0.05 (+60%)
+#   WARNING vapviz.budgets: vapviz budget exceeded for run <id>: cost_usd 0.08 > 0.05 (+60%)
 ```
 
 Do something custom on a violation by passing `on_alert` — page someone, post to Slack, raise, etc.:
@@ -1190,7 +1190,7 @@ enable_budget_alerts(Budget(max_cost_usd=0.05), on_alert=on_over_budget)
 Check a single run on demand (no alerting), or from any language via the REST API:
 
 ```python
-from vap.budgets import Budget, check_budget
+from vapviz.budgets import Budget, check_budget
 
 report = check_budget(store.get_graph(run_id), Budget(max_cost_usd=0.02, max_duration_ms=3000))
 print(report.status)        # "ok" or "exceeded"
@@ -1208,14 +1208,14 @@ curl "http://localhost:8001/runs/{run_id}/budget?max_cost_usd=0.02&max_duration_
 ## 24. Agent Evals & Scoring
 
 Budgets catch runs that are *too expensive or slow*. **Evals** go further: they assert a run did the
-*right thing* — turning VaP into a regression-testing tool for your agents. Trace a run, then check it
+*right thing* — turning vapviz into a regression-testing tool for your agents. Trace a run, then check it
 against a list of assertions and get a pass/fail with a score.
 
 ```python
-import vap
-from vap.evals import eval_run, max_cost, max_latency, no_errors, output_contains
+import vapviz
+from vapviz.evals import eval_run, max_cost, max_latency, no_errors, output_contains
 
-with vap.trace("support agent") as run:
+with vapviz.trace("support agent") as run:
     answer_support_ticket("How do I reset my password?")    # your agent
 
 result = eval_run(run, [
@@ -1244,10 +1244,10 @@ check produces a 0–1 score; `result.score` is their mean and `result.passed` i
 check passed.
 
 **Your own checks** — `custom` for a quick predicate, `judge` for an LLM-as-judge (you supply the
-scoring function, so VaP stays provider-agnostic):
+scoring function, so vapviz stays provider-agnostic):
 
 ```python
-from vap.evals import custom, judge
+from vapviz.evals import custom, judge
 
 eval_run(run, [
     custom("two_tool_calls", lambda g: sum(n.kind.value == "tool" for n in g.nodes) == 2),
@@ -1292,7 +1292,7 @@ curl -X PUT http://localhost:8001/runs/{run_id}/tags \
   -H "Content-Type: application/json" -d '{"tags": ["prod", "v2-prompt"]}'
 ```
 
-When the server runs with `--db vap.db`, tags persist across restarts.
+When the server runs with `--db vapviz.db`, tags persist across restarts.
 
 > **Tip:** tag your baseline runs (e.g. `baseline`) and your experiments (`v2-prompt`), then use the
 > [comparison view](#18-comparing-runs) to diff one against the other.
@@ -1355,13 +1355,13 @@ python examples/crewai_demo.py      # requires pip install "vapviz[crewai]"
 **Pattern 1 — wrap an existing function without modifying it:**
 
 ```python
-import vap
+import vapviz
 
 def my_function(data: dict) -> dict:
     # existing code, untouched
     return {"result": data}
 
-with vap.trace("Wrapped Agent") as run:
+with vapviz.trace("Wrapped Agent") as run:
     with run.step("my_function", kind="tool") as step:
         step.set_input(data)
         result = my_function(data)
@@ -1372,12 +1372,12 @@ with vap.trace("Wrapped Agent") as run:
 
 ```python
 import threading
-import vap
+import vapviz
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
 def background_job():
-    with vap.trace("Background Job") as run:
+    with vapviz.trace("Background Job") as run:
         with run.step("batch_process", kind="step") as step:
             step.set_input({"items": 10_000})
             # ... long work ...
@@ -1391,12 +1391,12 @@ t.start()
 **Pattern 3 — multiple concurrent agents in the same process:**
 
 ```python
-import asyncio, vap
+import asyncio, vapviz
 
-vap.configure(db="vap.db")
+vapviz.configure(db="vapviz.db")
 
 async def agent(name: str, delay: float):
-    async with vap.atrace(name) as run:
+    async with vapviz.atrace(name) as run:
         async with run.astep("work", kind="step") as step:
             step.set_input({"agent": name})
             await asyncio.sleep(delay)

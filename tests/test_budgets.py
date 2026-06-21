@@ -1,4 +1,4 @@
-"""Tests for vap/budgets.py — cost/latency budget checks + alerting + endpoint."""
+"""Tests for vapviz/budgets.py — cost/latency budget checks + alerting + endpoint."""
 from __future__ import annotations
 
 import time
@@ -7,8 +7,8 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from vap.budgets import Budget, check_budget, enable_budget_alerts
-from vap.events import (
+from vapviz.budgets import Budget, check_budget, enable_budget_alerts
+from vapviz.events import (
     EventType,
     GraphNode,
     NodeKind,
@@ -16,8 +16,8 @@ from vap.events import (
     RunGraph,
     VapEvent,
 )
-from vap.server import create_app
-from vap.store import MemoryStore
+from vapviz.server import create_app
+from vapviz.store import MemoryStore
 
 
 # ---------------------------------------------------------------------------

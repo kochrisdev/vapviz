@@ -3,20 +3,20 @@ LlamaIndex demo — traces a RAG query with VapLlamaIndex.
 
 VapLlamaIndex registers a span handler on LlamaIndex's instrumentation
 dispatcher, so the whole query pipeline — query engine, retriever, embeddings,
-response synthesizer, LLM calls — appears as a nested VaP graph with real timings.
+response synthesizer, LLM calls — appears as a nested vapviz graph with real timings.
 
 This demo uses LlamaIndex's MockLLM + MockEmbedding, so it runs with **no API key
 and no network**. To use real models, set an API key and install the provider
 package (e.g. `pip install llama-index-llms-openai`) and drop the Settings overrides.
 
 Requirements:
-    pip install "vap[llamaindex]"
+    pip install "vapviz[llamaindex]"
 
 Run (server + query in one process):
     python examples/llamaindex_demo.py
 
 Or start the server first:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/llamaindex_demo.py --agent-only
 
 Open http://localhost:8001 to see the graph.
@@ -25,7 +25,7 @@ import sys
 import threading
 import time
 
-import vap
+import vapviz
 
 
 def _check_deps() -> None:
@@ -34,7 +34,7 @@ def _check_deps() -> None:
     except ImportError:
         raise SystemExit(
             "llama-index-core is not installed.\n"
-            'Run: pip install "vap[llamaindex]"'
+            'Run: pip install "vapviz[llamaindex]"'
         )
 
 
@@ -45,34 +45,34 @@ def run_agent() -> None:
     from llama_index.core.embeddings import MockEmbedding
     from llama_index.core.llms import MockLLM
 
-    from vap.integrations.llamaindex import VapLlamaIndex
+    from vapviz.integrations.llamaindex import VapLlamaIndex
 
     # Offline models — no API key needed.
     Settings.llm = MockLLM(max_tokens=32)
     Settings.embed_model = MockEmbedding(embed_dim=8)
 
     documents = [
-        Document(text="VaP traces and visualizes AI agent pipelines in real time."),
+        Document(text="vapviz traces and visualizes AI agent pipelines in real time."),
         Document(text="LlamaIndex is a framework for building RAG applications."),
         Document(text="Retrieval-augmented generation grounds LLM answers in your data."),
     ]
 
-    print("\n── RAG query traced under one VaP run (manual mode) ───────────")
-    with vap.trace("LlamaIndex RAG") as run:
+    print("\n── RAG query traced under one vapviz run (manual mode) ───────────")
+    with vapviz.trace("LlamaIndex RAG") as run:
         listener = VapLlamaIndex(run)
         index = VectorStoreIndex.from_documents(documents)
-        response = index.as_query_engine().query("What is VaP and how does it relate to RAG?")
+        response = index.as_query_engine().query("What is vapviz and how does it relate to RAG?")
         listener.detach()
 
     print(f"[demo] answer: {str(response)[:80]}")
-    print(f"[vap] Run complete (run_id={run.run_id}). View at http://localhost:8001")
+    print(f"[vapviz] Run complete (run_id={run.run_id}). View at http://localhost:8001")
 
 
 def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -86,7 +86,7 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

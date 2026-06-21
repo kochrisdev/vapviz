@@ -1,4 +1,4 @@
-"""Tests for vap/integrations/anthropic_sdk.py — uses MagicMock, no real API key."""
+"""Tests for vapviz/integrations/anthropic_sdk.py — uses MagicMock, no real API key."""
 from __future__ import annotations
 
 import asyncio
@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from vap.events import EventType
-from vap.integrations.anthropic_sdk import _extract_output, _patch_async, _patch_sync
-from vap.store import MemoryStore
-from vap.tracer import Tracer
+from vapviz.events import EventType
+from vapviz.integrations.anthropic_sdk import _extract_output, _patch_async, _patch_sync
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer
 
 
 # ---------------------------------------------------------------------------

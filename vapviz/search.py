@@ -1,5 +1,5 @@
 """
-Run search for VaP.
+Run search for vapviz.
 
 A pure predicate over a run graph: does it match a free-text query and/or a set
 of structural filters (status, node kind, tool name)? The server composes this

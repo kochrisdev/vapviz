@@ -3,10 +3,10 @@ CrewAI demo — traces a multi-agent crew with VapCrewAIListener.
 
 VapCrewAIListener hooks into CrewAI's native event bus, so every Task,
 Agent execution, Tool call, and LLM round-trip appears as a correctly
-nested node in the VaP graph — no manual instrumentation needed.
+nested node in the vapviz graph — no manual instrumentation needed.
 
 Requirements:
-    pip install "vap[crewai]"
+    pip install "vapviz[crewai]"
     export OPENAI_API_KEY=sk-...
 
     # or use any LiteLLM-compatible model, e.g. Anthropic:
@@ -17,7 +17,7 @@ Run (server + crew in one process):
     python examples/crewai_demo.py
 
 Or start the server first:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/crewai_demo.py --agent-only
 
 Open http://localhost:8001 to see the graph.
@@ -32,19 +32,19 @@ Two separate traces:
    - task/write     →  agent/Content Writer
        └─ llm/gpt-4o-mini  (writing LLM calls)
 
-2. "Mixed Pipeline" — CrewAI run embedded inside a larger VaP trace:
-   - pre_process    (regular vap step)
+2. "Mixed Pipeline" — CrewAI run embedded inside a larger vapviz trace:
+   - pre_process    (regular vapviz step)
    - crew/Pipeline Crew
        └─ task/summarise  →  agent/Summariser
               └─ llm/gpt-4o-mini
-   - post_process   (regular vap step)
+   - post_process   (regular vapviz step)
 """
 import os
 import sys
 import time
 import threading
 
-import vap
+import vapviz
 
 
 # ── Agent logic ────────────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ def _check_deps() -> None:
     except ImportError:
         raise SystemExit(
             "CrewAI is not installed.\n"
-            'Run: pip install "vap[crewai]"'
+            'Run: pip install "vapviz[crewai]"'
         )
 
 
@@ -69,7 +69,7 @@ def run_demo_1_sequential_crew() -> None:
     Demo 1 — Auto mode.
 
     VapCrewAIListener is registered once at module level; each
-    crew.kickoff() automatically creates its own VaP run.
+    crew.kickoff() automatically creates its own vapviz run.
     """
     from crewai import Agent, Crew, Process, Task
 
@@ -128,11 +128,11 @@ def run_demo_2_manual_mode() -> None:
     """
     Demo 2 — Manual mode.
 
-    The crew is a sub-section of a larger vap.trace() run, with regular
+    The crew is a sub-section of a larger vapviz.trace() run, with regular
     pre/post-processing steps on either side.
     """
     from crewai import Agent, Crew, Process, Task
-    from vap.integrations.crewai_listener import VapCrewAIListener
+    from vapviz.integrations.crewai_listener import VapCrewAIListener
 
     summariser = Agent(
         role="Summariser",
@@ -156,9 +156,9 @@ def run_demo_2_manual_mode() -> None:
         verbose=False,
     )
 
-    with vap.trace("Mixed Pipeline") as run:
+    with vapviz.trace("Mixed Pipeline") as run:
 
-        # Pre-processing step (plain VaP, no CrewAI)
+        # Pre-processing step (plain vapviz, no CrewAI)
         with run.step("pre_process", kind="step") as step:
             step.set_input({"source": "database", "rows": 500})
             time.sleep(0.05)
@@ -185,7 +185,7 @@ def run_demo_2_manual_mode() -> None:
 def run_agent() -> None:
     _check_deps()
 
-    from vap.integrations.crewai_listener import VapCrewAIListener
+    from vapviz.integrations.crewai_listener import VapCrewAIListener
 
     # Register the listener in auto mode once — it will auto-trace
     # every crew.kickoff() called from this point on.
@@ -197,7 +197,7 @@ def run_agent() -> None:
     print("\n── Demo 2: Crew inside a larger pipeline (manual mode) ─────────")
     run_demo_2_manual_mode()
 
-    print("\n[vap] Both runs complete. View at http://localhost:8001")
+    print("\n[vapviz] Both runs complete. View at http://localhost:8001")
 
 
 # ── Entry points ───────────────────────────────────────────────────────────────
@@ -205,8 +205,8 @@ def run_agent() -> None:
 def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -220,7 +220,7 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

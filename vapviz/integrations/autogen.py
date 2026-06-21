@@ -1,7 +1,7 @@
 """
-VaP tracing integration for AutoGen (AG2).
+vapviz tracing integration for AutoGen (AG2).
 
-Wraps ``ConversableAgent`` so a multi-agent conversation is reproduced as a VaP
+Wraps ``ConversableAgent`` so a multi-agent conversation is reproduced as a vapviz
 graph: the chat as a root, each agent turn (``generate_reply``) as a child node,
 and each tool/function call (``execute_function``) nested under the turn that
 made it. Node timings are real (turns are captured live as they run).
@@ -11,21 +11,21 @@ Targets the classic ``autogen.ConversableAgent`` API (``ag2`` / ``pyautogen``).
 Two usage modes
 ---------------
 
-**Manual mode** — attach the conversation to an existing ``vap.trace()``::
+**Manual mode** — attach the conversation to an existing ``vapviz.trace()``::
 
-    import vap
-    from vap.integrations.autogen import VapAutoGen
+    import vapviz
+    from vapviz.integrations.autogen import VapAutoGen
 
-    with vap.trace("Support chat") as run:
+    with vapviz.trace("Support chat") as run:
         VapAutoGen(run)
         user.initiate_chat(assistant, message="...")
 
-**Auto mode** — each ``initiate_chat`` becomes its own VaP run::
+**Auto mode** — each ``initiate_chat`` becomes its own vapviz run::
 
-    import vap
-    from vap.integrations.autogen import VapAutoGen
+    import vapviz
+    from vapviz.integrations.autogen import VapAutoGen
 
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     VapAutoGen()
     user.initiate_chat(assistant, message="...")
 
@@ -33,7 +33,7 @@ Call ``.detach()`` to restore the original ``ConversableAgent`` methods.
 
 Requirements
 ------------
-    pip install "vap[autogen]"
+    pip install "vapviz[autogen]"
 """
 from __future__ import annotations
 
@@ -75,14 +75,14 @@ _PATCH_FLAG = "_vap_autogen_original"
 
 class VapAutoGen:
     """
-    VaP tracing for AutoGen / AG2 ``ConversableAgent`` conversations.
+    vapviz tracing for AutoGen / AG2 ``ConversableAgent`` conversations.
 
     Parameters
     ----------
     run:
-        Optional ``RunContext`` from ``vap.trace()``. When provided (manual
+        Optional ``RunContext`` from ``vapviz.trace()``. When provided (manual
         mode), conversations attach under that run. When omitted (auto mode),
-        each ``initiate_chat`` creates its own VaP run.
+        each ``initiate_chat`` creates its own vapviz run.
     patch:
         Patch ``ConversableAgent`` immediately (default ``True``).
     """
@@ -91,7 +91,7 @@ class VapAutoGen:
         if not _AUTOGEN_AVAILABLE:
             raise ImportError(
                 "autogen (ag2) is required for VapAutoGen. "
-                'Install it with: pip install "vap[autogen]"'
+                'Install it with: pip install "vapviz[autogen]"'
             )
         self._provided_run = run
         self._patched: list[tuple[type, str, Any]] = []
@@ -214,7 +214,7 @@ class VapAutoGen:
                 parent_id = self._provided_run._root_node_id
                 is_run_root = False
             else:
-                import vap.store as _sm
+                import vapviz.store as _sm
 
                 store = _sm.default_store
                 run_id = _uid()

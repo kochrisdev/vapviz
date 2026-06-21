@@ -1,12 +1,12 @@
-"""Tests for the FastAPI server endpoints (vap/server.py)."""
+"""Tests for the FastAPI server endpoints (vapviz/server.py)."""
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
 
-from vap.events import EventType, NodeKind
-from vap.server import create_app
-from vap.store import MemoryStore
+from vapviz.events import EventType, NodeKind
+from vapviz.server import create_app
+from vapviz.store import MemoryStore
 
 import time
 import uuid
@@ -27,7 +27,7 @@ def app_client():
 
 def _seed_run(store: MemoryStore, label="Test Run") -> str:
     """Insert a minimal completed run into the store, return run_id."""
-    from vap.events import VapEvent
+    from vapviz.events import VapEvent
 
     run_id = uuid.uuid4().hex[:12]
     root_id = uuid.uuid4().hex[:12]
@@ -223,7 +223,7 @@ class TestExportRun:
 
     def test_export_json_is_valid_run_graph(self, app_client):
         """The exported JSON round-trips back to a RunGraph model."""
-        from vap.events import RunGraph
+        from vapviz.events import RunGraph
         client, store = app_client
         run_id = _seed_run(store)
         r = client.get(f"/runs/{run_id}/export")

@@ -19,7 +19,7 @@ WORKDIR /app
 
 # Install Python package
 COPY pyproject.toml ./
-COPY vap/ ./vap/
+COPY vapviz/ ./vapviz/
 RUN pip install --no-cache-dir -e .
 
 # Copy built UI from stage 1
@@ -30,11 +30,11 @@ RUN mkdir -p /data
 
 EXPOSE 8001
 
-# Default: persist to /data/vap.db and serve the built UI.
+# Default: persist to /data/vapviz.db and serve the built UI.
 # Override CMD or set env vars at runtime to customise.
-CMD ["vap", "serve", \
+CMD ["vapviz", "serve", \
      "--host", "0.0.0.0", \
      "--port", "8001", \
-     "--db", "/data/vap.db", \
+     "--db", "/data/vapviz.db", \
      "--static-dir", "ui/dist", \
      "--log-level", "info"]

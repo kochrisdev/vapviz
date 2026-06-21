@@ -19,7 +19,7 @@ ui/dist/
 ui/.vite/
 
 # Bundled UI copied into the package at build time
-vap/_static/
+vapviz/_static/
 
 # Logs
 *.log
@@ -39,9 +39,9 @@ Thumbs.db
 /C:/Temp/
 
 # Runtime data — local SQLite stores and server logs
-vap.db
-vap.db-shm
-vap.db-wal
+vapviz.db
+vapviz.db-shm
+vapviz.db-wal
 *.db
 *.db-shm
 *.db-wal

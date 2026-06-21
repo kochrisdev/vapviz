@@ -1,7 +1,7 @@
 """
 AutoGen (AG2) demo — traces a multi-agent conversation with VapAutoGen.
 
-VapAutoGen wraps ``ConversableAgent`` so a chat shows up as a VaP graph: the chat
+VapAutoGen wraps ``ConversableAgent`` so a chat shows up as a vapviz graph: the chat
 as a root, each agent turn as a child node, and any tool/function call nested
 under the turn that made it.
 
@@ -11,13 +11,13 @@ give the agents an ``llm_config`` with your provider/key and drop the
 ``register_reply`` calls.
 
 Requirements:
-    pip install "vap[autogen]"
+    pip install "vapviz[autogen]"
 
 Run (server + chat in one process):
     python examples/autogen_demo.py
 
 Or start the server first:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/autogen_demo.py --agent-only
 
 Open http://localhost:8001 to see the graph.
@@ -26,7 +26,7 @@ import sys
 import threading
 import time
 
-import vap
+import vapviz
 
 
 def _check_deps() -> None:
@@ -35,7 +35,7 @@ def _check_deps() -> None:
     except ImportError:
         raise SystemExit(
             "autogen (ag2) is not installed.\n"
-            'Run: pip install "vap[autogen]"'
+            'Run: pip install "vapviz[autogen]"'
         )
 
 
@@ -44,7 +44,7 @@ def run_agent() -> None:
 
     from autogen import ConversableAgent
 
-    from vap.integrations.autogen import VapAutoGen
+    from vapviz.integrations.autogen import VapAutoGen
 
     # A tiny scripted "researcher → writer" conversation, fully offline.
     researcher = ConversableAgent(
@@ -69,8 +69,8 @@ def run_agent() -> None:
         ),
     )
 
-    print("\n── Two-agent conversation traced under one VaP run ────────────")
-    with vap.trace("Research conversation") as run:
+    print("\n── Two-agent conversation traced under one vapviz run ────────────")
+    with vapviz.trace("Research conversation") as run:
         listener = VapAutoGen(run)
         writer.initiate_chat(
             researcher,
@@ -79,14 +79,14 @@ def run_agent() -> None:
         )
         listener.detach()
 
-    print(f"\n[vap] Conversation complete (run_id={run.run_id}). View at http://localhost:8001")
+    print(f"\n[vapviz] Conversation complete (run_id={run.run_id}). View at http://localhost:8001")
 
 
 def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -100,7 +100,7 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

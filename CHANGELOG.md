@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to VaP are documented here. The format is based on
+All notable changes to vapviz are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -14,9 +14,10 @@ _Nothing yet._
 ## [1.0.1]
 
 ### Changed
-- Renamed the **PyPI distribution** to `vapviz` (the name `vap` was already taken on PyPI by an
-  unrelated project). The import package (`import vap`) and the `vap` CLI command are unchanged —
-  only the install name differs: `pip install vapviz`.
+- **Renamed the project to `vapviz`.** The PyPI name `vap` was already taken by an unrelated
+  project, so the distribution, the import package, and the CLI are all `vapviz` now:
+  `pip install vapviz`, `import vapviz`, `vapviz serve`. (The `Vap*` public class names — `VapEvent`,
+  `VapPydanticAI`, etc. — are unchanged.)
 
 ## [1.0.0]
 
@@ -24,7 +25,7 @@ First stable release. The public API now follows [Semantic Versioning](https://s
 the [Versioning & Stability](README.md#versioning--stability) section for the tracked surface.
 
 ### Added
-- The published wheel bundles the built React UI, so `pip install vapviz && vap serve` serves the full UI with no Node build (`vap serve` auto-detects the bundled UI; `--static-dir` still overrides).
+- The published wheel bundles the built React UI, so `pip install vapviz && vapviz serve` serves the full UI with no Node build (`vapviz serve` auto-detects the bundled UI; `--static-dir` still overrides).
 - Root `CHANGELOG.md` and a documented public-API stability policy.
 - Anthropic integration tests (`tests/test_anthropic_patch.py`), closing the last integration coverage gap (269 tests).
 
@@ -89,7 +90,7 @@ This release adds no new tracing/integration features beyond 0.15.0 — it marks
 
 ## [0.2.0]
 ### Added
-- Async tracer (`atrace` / `astep`), SQLite persistence, the `vap serve` CLI.
+- Async tracer (`atrace` / `astep`), SQLite persistence, the `vapviz serve` CLI.
 
 ## [0.1.0]
 ### Added

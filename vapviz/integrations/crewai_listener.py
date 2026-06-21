@@ -1,19 +1,19 @@
 """
-VaP event listener for CrewAI.
+vapviz event listener for CrewAI.
 
 Hooks into CrewAI's native event bus (``BaseEventListener``) to automatically
-trace Crew runs, Tasks, Agent executions, Tool calls, and LLM calls as VaP
+trace Crew runs, Tasks, Agent executions, Tool calls, and LLM calls as vapviz
 nodes — no manual instrumentation needed.
 
 Two usage modes
 ---------------
 
-**Auto mode** — creates a new VaP run for each ``crew.kickoff()`` call:
+**Auto mode** — creates a new vapviz run for each ``crew.kickoff()`` call:
 
-    import vap
-    from vap.integrations.crewai_listener import VapCrewAIListener
+    import vapviz
+    from vapviz.integrations.crewai_listener import VapCrewAIListener
 
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     VapCrewAIListener()        # instantiate once before kickoff()
 
     crew = Crew(agents=[...], tasks=[...])
@@ -22,10 +22,10 @@ Two usage modes
 **Manual mode** — attach CrewAI nodes to an existing ``RunContext`` so
 the crew appears as a sub-section of a larger pipeline trace:
 
-    import vap
-    from vap.integrations.crewai_listener import VapCrewAIListener
+    import vapviz
+    from vapviz.integrations.crewai_listener import VapCrewAIListener
 
-    with vap.trace("My Pipeline") as run:
+    with vapviz.trace("My Pipeline") as run:
         with run.step("pre_process", kind="step") as step:
             step.set_input({...}); ...
             step.set_output({...})
@@ -35,7 +35,7 @@ the crew appears as a sub-section of a larger pipeline trace:
 
 Requirements
 ------------
-    pip install "vap[crewai]"
+    pip install "vapviz[crewai]"
 """
 from __future__ import annotations
 
@@ -111,37 +111,37 @@ except ImportError:
 
 class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
     """
-    VaP tracing integration for CrewAI.
+    vapviz tracing integration for CrewAI.
 
     Hooks into CrewAI's event bus to trace Crew runs, Tasks, Agent
-    executions, Tool calls, and LLM calls as VaP nodes with inputs,
+    executions, Tool calls, and LLM calls as vapviz nodes with inputs,
     outputs, durations, token usage, and USD cost.
 
     Parameters
     ----------
     run:
-        Optional ``RunContext`` yielded by ``vap.trace()``. When provided
+        Optional ``RunContext`` yielded by ``vapviz.trace()``. When provided
         (manual mode), CrewAI tasks appear as children of this run's root
-        node. When omitted (auto mode), a new VaP run is created
+        node. When omitted (auto mode), a new vapviz run is created
         automatically for each ``crew.kickoff()`` call and closed when
         the crew finishes.
 
     Example — auto mode::
 
-        import vap
-        from vap.integrations.crewai_listener import VapCrewAIListener
+        import vapviz
+        from vapviz.integrations.crewai_listener import VapCrewAIListener
 
-        vap.configure(db="vap.db")
+        vapviz.configure(db="vapviz.db")
         VapCrewAIListener()          # register once before crew runs
 
         result = crew.kickoff(inputs={"topic": "AI"})
 
     Example — manual mode::
 
-        import vap
-        from vap.integrations.crewai_listener import VapCrewAIListener
+        import vapviz
+        from vapviz.integrations.crewai_listener import VapCrewAIListener
 
-        with vap.trace("Full Pipeline") as run:
+        with vapviz.trace("Full Pipeline") as run:
             listener = VapCrewAIListener(run=run)
             result = crew.kickoff(inputs={...})
     """
@@ -150,7 +150,7 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
         if not _CREWAI_AVAILABLE:
             raise ImportError(
                 "crewai is required for VapCrewAIListener. "
-                'Install it with: pip install "vap[crewai]"'
+                'Install it with: pip install "vapviz[crewai]"'
             )
         self._provided_run: Optional[RunContext] = run
 
@@ -194,7 +194,7 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
     def _get_store(self) -> Any:
         if self._provided_run is not None:
             return self._provided_run._store
-        import vap.store as _sm
+        import vapviz.store as _sm
         return _sm.default_store
 
     def _get_run_id(self, crew_event_id: Optional[str] = None) -> Optional[str]:
@@ -271,8 +271,8 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
                 ctx.set_input({"crew": crew_name, "inputs": _truncate(inputs)})
                 ctx._emit(EventType.STEP_START)
             else:
-                # Auto mode: create a new VaP run
-                import vap.store as _sm
+                # Auto mode: create a new vapviz run
+                import vapviz.store as _sm
                 store = _sm.default_store
                 run = RunContext(label=crew_name, store=store)
                 run._start()
@@ -720,7 +720,7 @@ class VapCrewAIListener(BaseEventListener):  # type: ignore[misc]
 
         Normally not needed — the crew lifecycle events close everything
         automatically. Call this in manual mode if you need to guarantee
-        all nodes are closed before the ``with vap.trace(...)`` block exits.
+        all nodes are closed before the ``with vapviz.trace(...)`` block exits.
         """
         with self._lock:
             for ctx in list(self._llm_nodes.values()):

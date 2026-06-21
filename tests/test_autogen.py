@@ -13,11 +13,11 @@ pytest.importorskip("autogen", reason="autogen (ag2) not installed")
 
 from autogen import ConversableAgent
 
-import vap.store as _sm
-from vap.events import NodeKind, NodeStatus
-from vap.integrations.autogen import VapAutoGen
-from vap.store import MemoryStore
-from vap.tracer import Tracer
+import vapviz.store as _sm
+from vapviz.events import NodeKind, NodeStatus
+from vapviz.integrations.autogen import VapAutoGen
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer
 
 
 # ---------------------------------------------------------------------------

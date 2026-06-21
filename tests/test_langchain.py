@@ -1,5 +1,5 @@
 """
-Tests for vap/integrations/langchain.py — uses minimal stubs so langchain-core
+Tests for vapviz/integrations/langchain.py — uses minimal stubs so langchain-core
 is not required to run the suite.  When langchain-core IS installed the tests
 exercise the real BaseCallbackHandler inheritance.
 """
@@ -10,16 +10,16 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from vap.events import EventType, NodeKind, NodeStatus
-from vap.integrations.langchain import (
+from vapviz.events import EventType, NodeKind, NodeStatus
+from vapviz.integrations.langchain import (
     VapCallbackHandler,
     _extract_name,
     _extract_llm_result,
     _safe_dict,
     _LANGCHAIN_AVAILABLE,
 )
-from vap.store import MemoryStore
-from vap.tracer import Tracer
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer
 
 
 # ---------------------------------------------------------------------------

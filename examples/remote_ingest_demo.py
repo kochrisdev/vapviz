@@ -5,18 +5,18 @@ This example shows how to trace an agent that runs in a completely separate
 process (or even a different machine / language) by posting VapEvent JSON
 payloads to POST /runs/{run_id}/events.
 
-The vap package does NOT need to be imported in the agent process — only
+The vapviz package does NOT need to be imported in the agent process — only
 an HTTP client is required. This script uses stdlib urllib.request so it
 works with no extra dependencies.
 
 Architecture:
-    Agent process  ──POST /runs/{id}/events──►  VaP Server  ──SSE──►  Browser
+    Agent process  ──POST /runs/{id}/events──►  vapviz Server  ──SSE──►  Browser
 
 Run (starts server + agent in one process):
     python examples/remote_ingest_demo.py
 
 Or push to an already-running server:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/remote_ingest_demo.py --agent-only --server-url http://localhost:8001
 
 Open http://localhost:8001 to see the run appear in real time.
@@ -32,7 +32,7 @@ import uuid
 # ── HTTP helper (no extra deps) ────────────────────────────────────────────────
 
 def post_event(server: str, run_id: str, event: dict) -> None:
-    """POST a single VapEvent dict to the VaP server."""
+    """POST a single VapEvent dict to the vapviz server."""
     body = json.dumps(event).encode()
     req  = urllib.request.Request(
         f"{server}/runs/{run_id}/events",
@@ -47,7 +47,7 @@ def uid() -> str:
     return uuid.uuid4().hex[:12]
 
 
-# ── Remote agent (uses only stdlib — no vap import needed) ────────────────────
+# ── Remote agent (uses only stdlib — no vapviz import needed) ────────────────────
 
 def run_remote_agent(server: str) -> str:
     """
@@ -169,11 +169,11 @@ def run_remote_agent(server: str) -> str:
 # ── Entry points ───────────────────────────────────────────────────────────────
 
 def main_with_server() -> None:
-    import vap
+    import vapviz
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -184,7 +184,7 @@ def main_with_server() -> None:
 
     server_url = "http://localhost:8001"
     run_id = run_remote_agent(server_url)
-    print(f"\n[vap] View at {server_url}  run_id={run_id}")
+    print(f"\n[vapviz] View at {server_url}  run_id={run_id}")
     input("\nPress Enter to exit…")
 
 
@@ -196,7 +196,7 @@ def main_agent_only() -> None:
             server_url = sys.argv[i + 1]
 
     run_id = run_remote_agent(server_url)
-    print(f"\n[vap] View at {server_url}  run_id={run_id}")
+    print(f"\n[vapviz] View at {server_url}  run_id={run_id}")
 
 
 if __name__ == "__main__":

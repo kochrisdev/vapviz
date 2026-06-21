@@ -1,5 +1,5 @@
 """
-Agent evals & scoring for VaP.
+Agent evals & scoring for vapviz.
 
 Turn a traced run into a set of pass/fail assertions — *regression testing for
 agents*. Define checks (cost, latency, tokens, error-free, output contains, or
@@ -8,10 +8,10 @@ with a per-check breakdown and an overall score.
 
 In a test or CI::
 
-    import vap
-    from vap.evals import eval_run, max_cost, max_latency, no_errors, output_contains
+    import vapviz
+    from vapviz.evals import eval_run, max_cost, max_latency, no_errors, output_contains
 
-    with vap.trace("support agent") as run:
+    with vapviz.trace("support agent") as run:
         ...
 
     result = eval_run(run, [
@@ -24,7 +24,7 @@ In a test or CI::
 
 Declarative checks (JSON-friendly, used by ``POST /runs/{id}/eval``)::
 
-    from vap.evals import run_checks
+    from vapviz.evals import run_checks
     result = run_checks(graph, [
         {"type": "max_cost", "value": 0.02},
         {"type": "output_contains", "value": "ticket"},
@@ -162,7 +162,7 @@ def custom(name: str, fn: Callable[[RunGraph], Any]) -> Check:
 def judge(name: str, fn: Callable[[RunGraph], Any]) -> Check:
     """An LLM-as-judge (or any scoring) check.
 
-    ``fn(graph)`` should return ``(passed, detail, score)`` — VaP does not call an
+    ``fn(graph)`` should return ``(passed, detail, score)`` — vapviz does not call an
     LLM itself; you supply the judging function so it stays provider-agnostic and
     testable.
     """
@@ -187,7 +187,7 @@ def _as_graph(run_or_graph: Union[RunGraph, RunContext]) -> RunGraph:
 def eval_run(run_or_graph: Union[RunGraph, RunContext], checks: list[Check]) -> EvalResult:
     """Run *checks* against a run and return an :class:`EvalResult`.
 
-    Accepts a ``RunGraph`` or a ``RunContext`` (from ``vap.trace()``).
+    Accepts a ``RunGraph`` or a ``RunContext`` (from ``vapviz.trace()``).
     """
     graph = _as_graph(run_or_graph)
     results = [c.evaluate(graph) for c in checks]

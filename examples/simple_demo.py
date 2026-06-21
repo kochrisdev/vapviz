@@ -1,14 +1,14 @@
 """
 Simple demo — runs a fake multi-step research agent with no API key needed.
 
-Starts the VaP server in a background thread and runs a simulated pipeline
+Starts the vapviz server in a background thread and runs a simulated pipeline
 with nested steps, tool calls, and a sub-agent to show off the graph layout.
 
 Run:
     python examples/simple_demo.py
 
 Or start the server separately first and run just the agent:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/simple_demo.py --agent-only
 
 Open http://localhost:8001 to see the live graph (UI built) or
@@ -19,13 +19,13 @@ import time
 import threading
 import uvicorn
 
-import vap
+import vapviz
 
 
 # ── Agent logic ────────────────────────────────────────────────────────────────
 
 def run_agent() -> None:
-    with vap.trace("Research Agent") as run:
+    with vapviz.trace("Research Agent") as run:
 
         # Tool: search the web
         with run.step("search_web", kind="tool") as step:
@@ -64,16 +64,16 @@ def run_agent() -> None:
 
             report_step.set_output({"report": "Final report assembled.", "word_count": 500})
 
-    print(f"\n[vap] Run complete  run_id={run.run_id}")
-    print(f"[vap] View at http://localhost:8001  (or http://localhost:5173 for Vite dev server)")
+    print(f"\n[vapviz] Run complete  run_id={run.run_id}")
+    print(f"[vapviz] View at http://localhost:8001  (or http://localhost:5173 for Vite dev server)")
 
 
 # ── Entry points ───────────────────────────────────────────────────────────────
 
 def main_with_server() -> None:
-    """Start the VaP server in-process, then run the agent."""
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    """Start the vapviz server in-process, then run the agent."""
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -87,8 +87,8 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    """Just run the agent; assumes `vap serve` is already running."""
-    vap.configure(db="vap.db")
+    """Just run the agent; assumes `vapviz serve` is already running."""
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

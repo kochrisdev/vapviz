@@ -23,10 +23,10 @@ def _make_llm_ctx(kwargs: dict[str, Any]) -> StepContext | None:
     ctx.set_input({
         "model": model,
         "messages": kwargs.get("messages", []),
-        "system": kwargs.get("system"),
         "max_tokens": kwargs.get("max_tokens"),
         "tools": [
-            t.get("name") if isinstance(t, dict) else str(t)
+            # OpenAI tools are {"type": "function", "function": {"name": ...}}
+            t.get("function", {}).get("name") if isinstance(t, dict) else str(t)
             for t in kwargs.get("tools", [])
         ],
     })
@@ -34,19 +34,20 @@ def _make_llm_ctx(kwargs: dict[str, Any]) -> StepContext | None:
 
 
 def _extract_output(result: Any, model: str = "") -> dict[str, Any]:
-    """Pull text, stop_reason, token usage, and cost from an Anthropic message response."""
+    """Pull text, finish_reason, token usage, and cost from an OpenAI ChatCompletion."""
     from ..cost import calculate_cost
 
     output: dict[str, Any] = {}
-    if hasattr(result, "content") and result.content:
-        output["text"] = "\n".join(
-            b.text if hasattr(b, "text") else str(b) for b in result.content
-        )
-    if hasattr(result, "stop_reason"):
-        output["stop_reason"] = result.stop_reason
+    if hasattr(result, "choices") and result.choices:
+        choice = result.choices[0]
+        if hasattr(choice, "message") and hasattr(choice.message, "content"):
+            if choice.message.content is not None:
+                output["text"] = choice.message.content
+        if hasattr(choice, "finish_reason") and choice.finish_reason:
+            output["finish_reason"] = choice.finish_reason
     if hasattr(result, "usage") and result.usage:
-        input_tokens = result.usage.input_tokens
-        output_tokens = result.usage.output_tokens
+        input_tokens = result.usage.prompt_tokens
+        output_tokens = result.usage.completion_tokens
         output["usage"] = {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
@@ -58,7 +59,7 @@ def _extract_output(result: Any, model: str = "") -> dict[str, Any]:
 
 
 def _patch_sync(client: Any) -> None:
-    original = client.messages.create
+    original = client.chat.completions.create
 
     def patched(*args: Any, **kwargs: Any) -> Any:
         ctx = _make_llm_ctx(kwargs)
@@ -77,11 +78,11 @@ def _patch_sync(client: Any) -> None:
         finally:
             _current_step.reset(token)
 
-    client.messages.create = patched
+    client.chat.completions.create = patched
 
 
 def _patch_async(client: Any) -> None:
-    original = client.messages.create
+    original = client.chat.completions.create
 
     async def patched(*args: Any, **kwargs: Any) -> Any:
         ctx = _make_llm_ctx(kwargs)
@@ -100,30 +101,35 @@ def _patch_async(client: Any) -> None:
         finally:
             _current_step.reset(token)
 
-    client.messages.create = patched
+    client.chat.completions.create = patched
 
 
-def patch_anthropic(client: Any) -> None:
+def patch_openai(client: Any) -> None:
     """
-    Auto-instrument an Anthropic client so every ``messages.create`` call is
-    traced as an LLM node under the current VaP step.
+    Auto-instrument an OpenAI client so every ``chat.completions.create`` call
+    is traced as an LLM node under the current vapviz step.
 
-    Handles both sync (``anthropic.Anthropic``) and async
-    (``anthropic.AsyncAnthropic``) clients automatically.
+    Handles both sync (``openai.OpenAI``) and async (``openai.AsyncOpenAI``)
+    clients automatically.
+
+    Requires the ``openai`` package: ``pip install "vapviz[openai]"``
 
     Usage::
 
-        import anthropic, vap
+        import openai, vapviz
 
-        client = anthropic.Anthropic()
-        vap.patch_anthropic(client)           # sync
+        client = openai.OpenAI()
+        vapviz.patch_openai(client)                    # sync
 
-        async_client = anthropic.AsyncAnthropic()
-        vap.patch_anthropic(async_client)     # async — same call
+        async_client = openai.AsyncOpenAI()
+        vapviz.patch_openai(async_client)              # async — same call
+
+    Each ``chat.completions.create`` call becomes a purple **llm** node
+    showing model name, messages, token usage, and the response text.
     """
     try:
-        import anthropic as _anthropic
-        if isinstance(client, _anthropic.AsyncAnthropic):
+        import openai as _openai
+        if isinstance(client, _openai.AsyncOpenAI):
             _patch_async(client)
             return
     except ImportError:

@@ -1,27 +1,27 @@
 """
 OpenTelemetry export demo.
 
-Shows how a VaP run is mirrored into OpenTelemetry spans (one trace per run).
+Shows how a vapviz run is mirrored into OpenTelemetry spans (one trace per run).
 This demo prints the spans to the console via OTel's ConsoleSpanExporter, so it
 needs **no collector and no network** — you can see the exported trace directly.
 
 To send the same spans to a real backend instead, swap the provider setup for an
 OTLP exporter (or just call ``enable_otel_export(endpoint="http://localhost:4317")``
-after configuring VaP):
+after configuring vapviz):
 
-    from vap.integrations.otel import enable_otel_export
+    from vapviz.integrations.otel import enable_otel_export
     enable_otel_export(endpoint="http://localhost:4317")   # Jaeger / Tempo / Datadog …
 
 Requirements:
-    pip install "vap[otel]"
+    pip install "vapviz[otel]"
 
 Run:
     python examples/otel_demo.py
 """
 import time
 
-import vap
-from vap.store import MemoryStore
+import vapviz
+from vapviz.store import MemoryStore
 
 
 def main() -> None:
@@ -32,21 +32,21 @@ def main() -> None:
     except ImportError:
         raise SystemExit(
             "opentelemetry-sdk is not installed.\n"
-            'Run: pip install "vap[otel]"'
+            'Run: pip install "vapviz[otel]"'
         )
 
-    from vap.integrations.otel import enable_otel_export
+    from vapviz.integrations.otel import enable_otel_export
 
     # A console-printing OTel provider (stands in for an OTLP backend).
-    provider = TracerProvider(resource=Resource.create({"service.name": "vap-demo"}))
+    provider = TracerProvider(resource=Resource.create({"service.name": "vapviz-demo"}))
     provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
 
     # Trace into an isolated store and export every completed run to OTel.
     store = MemoryStore()
-    tracer = vap.Tracer(store=store)
+    tracer = vapviz.Tracer(store=store)
     handle = enable_otel_export(tracer_provider=provider, store=store)
 
-    print("\n[vap] Running a traced agent — spans print below as the run completes:\n")
+    print("\n[vapviz] Running a traced agent — spans print below as the run completes:\n")
     with tracer.trace("Research agent") as run:
         with run.step("search_web", kind="tool") as step:
             step.set_input({"query": "renewable energy 2024"})
@@ -66,7 +66,7 @@ def main() -> None:
             parent.set_output({"summary_ready": True})
 
     handle.shutdown()   # flush spans
-    print(f"\n[vap] Done. The run above was exported as one OTel trace "
+    print(f"\n[vapviz] Done. The run above was exported as one OTel trace "
           f"(run_id={run.run_id}).")
 
 

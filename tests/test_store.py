@@ -1,4 +1,4 @@
-"""Tests for MemoryStore and SqliteStore (vap/store.py, vap/backends/sqlite.py)."""
+"""Tests for MemoryStore and SqliteStore (vapviz/store.py, vapviz/backends/sqlite.py)."""
 from __future__ import annotations
 
 import os
@@ -8,9 +8,9 @@ import time
 
 import pytest
 
-from vap.events import EventType, NodeKind, NodeStatus, VapEvent
-from vap.store import MemoryStore, _apply_event_to_graph
-from vap.events import RunGraph
+from vapviz.events import EventType, NodeKind, NodeStatus, VapEvent
+from vapviz.store import MemoryStore, _apply_event_to_graph
+from vapviz.events import RunGraph
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +241,7 @@ class TestSqliteStore:
 
     @pytest.fixture
     def sqlite_store(self, db_path):
-        from vap.backends.sqlite import SqliteStore
+        from vapviz.backends.sqlite import SqliteStore
         s = SqliteStore(db_path)
         yield s
         s.close()
@@ -254,7 +254,7 @@ class TestSqliteStore:
         assert events[0].id == e.id
 
     def test_persistence_across_instances(self, db_path):
-        from vap.backends.sqlite import SqliteStore
+        from vapviz.backends.sqlite import SqliteStore
 
         s1 = SqliteStore(db_path)
         e = _agent_start("r1", label="Persistent")
@@ -268,7 +268,7 @@ class TestSqliteStore:
         s2.close()
 
     def test_replay_on_startup_rebuilds_graph(self, db_path):
-        from vap.backends.sqlite import SqliteStore
+        from vapviz.backends.sqlite import SqliteStore
 
         s1 = SqliteStore(db_path)
         s1.add_event(_agent_start("r1", "root"))
@@ -285,7 +285,7 @@ class TestSqliteStore:
         s2.close()
 
     def test_delete_run_removes_from_db(self, db_path):
-        from vap.backends.sqlite import SqliteStore
+        from vapviz.backends.sqlite import SqliteStore
 
         s1 = SqliteStore(db_path)
         s1.add_event(_agent_start("r1"))
@@ -297,7 +297,7 @@ class TestSqliteStore:
         s2.close()
 
     def test_clear_removes_all_from_db(self, db_path):
-        from vap.backends.sqlite import SqliteStore
+        from vapviz.backends.sqlite import SqliteStore
 
         s1 = SqliteStore(db_path)
         s1.add_event(_agent_start("r1"))
@@ -310,7 +310,7 @@ class TestSqliteStore:
         s2.close()
 
     def test_insert_or_ignore_prevents_duplicate(self, db_path):
-        from vap.backends.sqlite import SqliteStore
+        from vapviz.backends.sqlite import SqliteStore
 
         s = SqliteStore(db_path)
         e = _agent_start("r1")

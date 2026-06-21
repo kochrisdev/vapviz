@@ -3,17 +3,17 @@ LangGraph demo — traces a ReAct agent with VapCallbackHandler.
 
 VapCallbackHandler wires into LangChain's callback system, so every
 chain invocation, tool call, and LLM round-trip appears as a correctly
-nested node in the VaP graph — no manual instrumentation needed.
+nested node in the vapviz graph — no manual instrumentation needed.
 
 Requirements:
-    pip install "vap[langchain]" langgraph langchain-openai
+    pip install "vapviz[langchain]" langgraph langchain-openai
     export OPENAI_API_KEY=sk-...
 
 Run (server + agent in one process):
     python examples/langgraph_demo.py
 
 Or start the server first:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/langgraph_demo.py --agent-only
 
 Open http://localhost:8001 (or http://localhost:5173 for Vite dev server).
@@ -23,7 +23,7 @@ import sys
 import time
 import threading
 
-import vap
+import vapviz
 
 
 # ── Agent logic ────────────────────────────────────────────────────────────────
@@ -42,10 +42,10 @@ def run_agent() -> None:
     except ImportError:
         raise SystemExit(
             "LangGraph dependencies not installed.\n"
-            'Run: pip install "vap[langchain]" langgraph langchain-openai'
+            'Run: pip install "vapviz[langchain]" langgraph langchain-openai'
         )
 
-    from vap.integrations.langchain import VapCallbackHandler
+    from vapviz.integrations.langchain import VapCallbackHandler
 
     # ── Define tools ──────────────────────────────────────────────────────
 
@@ -79,9 +79,9 @@ def run_agent() -> None:
     tools = [search_web, calculate, summarize_findings]
     agent = create_react_agent(llm, tools)
 
-    # ── Run with VaP tracing ──────────────────────────────────────────────
+    # ── Run with vapviz tracing ──────────────────────────────────────────────
 
-    with vap.trace("LangGraph ReAct Agent") as run:
+    with vapviz.trace("LangGraph ReAct Agent") as run:
         handler = VapCallbackHandler(run)
 
         result = agent.invoke(
@@ -101,8 +101,8 @@ def run_agent() -> None:
         final_msg = result["messages"][-1].content
         print(f"\n[agent] {final_msg[:300]}")
 
-    print(f"\n[vap] Run complete  run_id={run.run_id}")
-    print("[vap] View at http://localhost:8001")
+    print(f"\n[vapviz] Run complete  run_id={run.run_id}")
+    print("[vapviz] View at http://localhost:8001")
 
 
 # ── Entry points ───────────────────────────────────────────────────────────────
@@ -110,8 +110,8 @@ def run_agent() -> None:
 def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -125,7 +125,7 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

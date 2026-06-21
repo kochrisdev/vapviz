@@ -1,4 +1,4 @@
-"""Tests for vap/metrics.py — cross-run analytics aggregation + /metrics endpoint."""
+"""Tests for vapviz/metrics.py — cross-run analytics aggregation + /metrics endpoint."""
 from __future__ import annotations
 
 import time
@@ -7,7 +7,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from vap.events import (
+from vapviz.events import (
     EventType,
     GraphNode,
     NodeKind,
@@ -15,9 +15,9 @@ from vap.events import (
     RunGraph,
     VapEvent,
 )
-from vap.metrics import compute_metrics
-from vap.server import create_app
-from vap.store import MemoryStore
+from vapviz.metrics import compute_metrics
+from vapviz.server import create_app
+from vapviz.store import MemoryStore
 
 
 # ---------------------------------------------------------------------------

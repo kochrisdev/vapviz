@@ -1,4 +1,4 @@
-"""Tests for vap/integrations/openai_sdk.py — uses MagicMock, no real API key."""
+"""Tests for vapviz/integrations/openai_sdk.py — uses MagicMock, no real API key."""
 from __future__ import annotations
 
 import asyncio
@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from vap.events import EventType
-from vap.integrations.openai_sdk import patch_openai, _extract_output
-from vap.store import MemoryStore
-from vap.tracer import Tracer
+from vapviz.events import EventType
+from vapviz.integrations.openai_sdk import patch_openai, _extract_output
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer
 
 
 # ---------------------------------------------------------------------------
@@ -20,7 +20,7 @@ def _make_sync_client():
     """Minimal mock that looks like openai.OpenAI."""
     client = MagicMock()
     # Ensure isinstance check fails so _patch_sync path is taken
-    with patch("vap.integrations.openai_sdk.__import__", side_effect=ImportError):
+    with patch("vapviz.integrations.openai_sdk.__import__", side_effect=ImportError):
         pass
     return client
 
@@ -81,11 +81,11 @@ class TestSyncPatch:
         client = MagicMock()
         client.chat.completions.create.return_value = _fake_response("Answer")
         # Force sync path by making isinstance(client, AsyncOpenAI) fail
-        with patch("vap.integrations.openai_sdk.patch_openai", wraps=patch_openai):
+        with patch("vapviz.integrations.openai_sdk.patch_openai", wraps=patch_openai):
             pass
 
         # Manually call _patch_sync to avoid the ImportError check
-        from vap.integrations.openai_sdk import _patch_sync
+        from vapviz.integrations.openai_sdk import _patch_sync
         _patch_sync(client)
         return client, tracer, store
 
@@ -123,7 +123,7 @@ class TestSyncPatch:
         client = MagicMock()
         client.chat.completions.create.return_value = _fake_response()
 
-        from vap.integrations.openai_sdk import _patch_sync
+        from vapviz.integrations.openai_sdk import _patch_sync
         _patch_sync(client)
         # Call outside any trace — original should be called, no events stored
         client.chat.completions.create(model="gpt-4o", messages=[])
@@ -135,7 +135,7 @@ class TestSyncPatch:
         client = MagicMock()
         client.chat.completions.create.side_effect = RuntimeError("API down")
 
-        from vap.integrations.openai_sdk import _patch_sync
+        from vapviz.integrations.openai_sdk import _patch_sync
         _patch_sync(client)
 
         with pytest.raises(RuntimeError, match="API down"):
@@ -172,7 +172,7 @@ class TestAsyncPatch:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(return_value=_fake_response("Async answer"))
 
-        from vap.integrations.openai_sdk import _patch_async
+        from vapviz.integrations.openai_sdk import _patch_async
         _patch_async(client)
         return client, tracer, store
 
@@ -195,7 +195,7 @@ class TestAsyncPatch:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(return_value=_fake_response())
 
-        from vap.integrations.openai_sdk import _patch_async
+        from vapviz.integrations.openai_sdk import _patch_async
         _patch_async(client)
 
         async def _inner():
@@ -210,7 +210,7 @@ class TestAsyncPatch:
         client = MagicMock()
         client.chat.completions.create = AsyncMock(side_effect=RuntimeError("timeout"))
 
-        from vap.integrations.openai_sdk import _patch_async
+        from vapviz.integrations.openai_sdk import _patch_async
         _patch_async(client)
 
         async def _inner():

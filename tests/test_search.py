@@ -1,15 +1,15 @@
-"""Tests for run search & tagging — vap/search.py, store tags, and the endpoints."""
+"""Tests for run search & tagging — vapviz/search.py, store tags, and the endpoints."""
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
 
-from vap.backends.sqlite import SqliteStore
-from vap.events import NodeStatus
-from vap.search import run_matches
-from vap.server import create_app
-from vap.store import MemoryStore
-from vap.tracer import Tracer
+from vapviz.backends.sqlite import SqliteStore
+from vapviz.events import NodeStatus
+from vapviz.search import run_matches
+from vapviz.server import create_app
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer
 
 
 # ---------------------------------------------------------------------------

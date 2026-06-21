@@ -11,9 +11,9 @@ Run:
 import logging
 import time
 
-import vap
-from vap.budgets import Budget, check_budget, enable_budget_alerts
-from vap.store import MemoryStore
+import vapviz
+from vapviz.budgets import Budget, check_budget, enable_budget_alerts
+from vapviz.store import MemoryStore
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 
@@ -33,7 +33,7 @@ def run_agent(tracer, label, *, cost, work_s):
 
 def main() -> None:
     store = MemoryStore()
-    tracer = vap.Tracer(store=store)
+    tracer = vapviz.Tracer(store=store)
 
     budget = Budget(max_cost_usd=0.02, max_duration_ms=500)
     print(f"\nBudget: max ${budget.max_cost_usd} / run, max {budget.max_duration_ms:.0f} ms / run\n")

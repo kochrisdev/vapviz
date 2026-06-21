@@ -1,5 +1,5 @@
 """
-Tests for the OpenTelemetry export (vap/integrations/otel.py).
+Tests for the OpenTelemetry export (vapviz/integrations/otel.py).
 
 Uses the in-memory span exporter so nothing leaves the process. Skipped
 automatically if opentelemetry-sdk is not installed.
@@ -17,10 +17,10 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
-from vap.events import GraphNode, NodeKind, NodeStatus, RunGraph
-from vap.integrations.otel import build_spans, enable_otel_export, export_run
-from vap.store import MemoryStore
-from vap.tracer import Tracer
+from vapviz.events import GraphNode, NodeKind, NodeStatus, RunGraph
+from vapviz.integrations.otel import build_spans, enable_otel_export, export_run
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def _graph_with_error():
 class TestBuildSpans:
     def test_one_trace_per_run_and_span_count(self, exporter_provider):
         exporter, provider = exporter_provider
-        n = build_spans(_graph_with_error(), provider.get_tracer("vap"))
+        n = build_spans(_graph_with_error(), provider.get_tracer("vapviz"))
         provider.force_flush()
         spans = exporter.get_finished_spans()
         assert n == 3
@@ -74,7 +74,7 @@ class TestBuildSpans:
 
     def test_hierarchy_mirrors_parent_id(self, exporter_provider):
         exporter, provider = exporter_provider
-        build_spans(_graph_with_error(), provider.get_tracer("vap"))
+        build_spans(_graph_with_error(), provider.get_tracer("vapviz"))
         provider.force_flush()
         spans = exporter.get_finished_spans()
         by = _by_name(spans)
@@ -84,7 +84,7 @@ class TestBuildSpans:
 
     def test_error_status_propagated(self, exporter_provider):
         exporter, provider = exporter_provider
-        build_spans(_graph_with_error(), provider.get_tracer("vap"))
+        build_spans(_graph_with_error(), provider.get_tracer("vapviz"))
         provider.force_flush()
         by = _by_name(exporter.get_finished_spans())
         assert by["bad-tool"].status.status_code == StatusCode.ERROR
@@ -93,7 +93,7 @@ class TestBuildSpans:
 
     def test_timestamps_from_node_times(self, exporter_provider):
         exporter, provider = exporter_provider
-        build_spans(_graph_with_error(), provider.get_tracer("vap"))
+        build_spans(_graph_with_error(), provider.get_tracer("vapviz"))
         provider.force_flush()
         by = _by_name(exporter.get_finished_spans())
         root = by["agent"]
@@ -102,11 +102,11 @@ class TestBuildSpans:
 
     def test_attributes_kind_and_runid(self, exporter_provider):
         exporter, provider = exporter_provider
-        build_spans(_graph_with_error(), provider.get_tracer("vap"))
+        build_spans(_graph_with_error(), provider.get_tracer("vapviz"))
         provider.force_flush()
         by = _by_name(exporter.get_finished_spans())
-        assert by["bad-tool"].attributes["vap.node.kind"] == "tool"
-        assert by["agent"].attributes["vap.run_id"] == "run123"
+        assert by["bad-tool"].attributes["vapviz.node.kind"] == "tool"
+        assert by["agent"].attributes["vapviz.run_id"] == "run123"
 
     def test_export_run_none_is_noop(self, exporter_provider):
         _, provider = exporter_provider
@@ -135,7 +135,7 @@ class TestLlmAttributes:
         assert ask.attributes["gen_ai.request.model"] == "gpt-4o"
         assert ask.attributes["gen_ai.usage.input_tokens"] == 100
         assert ask.attributes["gen_ai.usage.output_tokens"] == 20
-        assert ask.attributes["vap.cost_usd"] == pytest.approx(0.0025)
+        assert ask.attributes["vapviz.cost_usd"] == pytest.approx(0.0025)
 
 
 # ---------------------------------------------------------------------------

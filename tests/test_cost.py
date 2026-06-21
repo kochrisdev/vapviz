@@ -1,8 +1,8 @@
-"""Tests for vap/cost.py — pricing table and cost calculation."""
+"""Tests for vapviz/cost.py — pricing table and cost calculation."""
 from __future__ import annotations
 
 import pytest
-from vap.cost import calculate_cost, format_cost, PRICING
+from vapviz.cost import calculate_cost, format_cost, PRICING
 
 
 class TestCalculateCost:
@@ -85,8 +85,8 @@ class TestCostInStore:
     """Integration: cost flows from integration output into RunSummary."""
 
     def test_total_cost_none_when_no_llm_nodes(self):
-        from vap.store import MemoryStore
-        from vap.tracer import Tracer
+        from vapviz.store import MemoryStore
+        from vapviz.tracer import Tracer
 
         store = MemoryStore()
         tracer = Tracer(store=store)
@@ -98,8 +98,8 @@ class TestCostInStore:
         assert summary.total_cost_usd is None
 
     def test_total_cost_aggregated_from_llm_nodes(self):
-        from vap.store import MemoryStore, _total_cost
-        from vap.events import RunGraph, NodeStatus, GraphNode, NodeKind
+        from vapviz.store import MemoryStore, _total_cost
+        from vapviz.events import RunGraph, NodeStatus, GraphNode, NodeKind
 
         graph = RunGraph(run_id="r1", label="test", status=NodeStatus.SUCCESS, started_at=1.0)
         # Simulate two LLM nodes with cost in their data
@@ -116,8 +116,8 @@ class TestCostInStore:
         assert total == pytest.approx(0.015, rel=1e-6)
 
     def test_total_cost_skips_nodes_without_cost(self):
-        from vap.store import _total_cost
-        from vap.events import RunGraph, NodeStatus, GraphNode, NodeKind
+        from vapviz.store import _total_cost
+        from vapviz.events import RunGraph, NodeStatus, GraphNode, NodeKind
 
         graph = RunGraph(run_id="r1", label="test", status=NodeStatus.SUCCESS, started_at=1.0)
         graph.nodes.append(GraphNode(
@@ -137,7 +137,7 @@ class TestCostInIntegrations:
 
     def test_openai_output_includes_cost_for_known_model(self):
         from unittest.mock import MagicMock
-        from vap.integrations.openai_sdk import _extract_output
+        from vapviz.integrations.openai_sdk import _extract_output
 
         result = MagicMock()
         result.choices = [MagicMock()]
@@ -152,7 +152,7 @@ class TestCostInIntegrations:
 
     def test_openai_output_no_cost_for_unknown_model(self):
         from unittest.mock import MagicMock
-        from vap.integrations.openai_sdk import _extract_output
+        from vapviz.integrations.openai_sdk import _extract_output
 
         result = MagicMock()
         result.choices = [MagicMock()]
@@ -166,7 +166,7 @@ class TestCostInIntegrations:
 
     def test_anthropic_output_includes_cost(self):
         from unittest.mock import MagicMock
-        from vap.integrations.anthropic_sdk import _extract_output
+        from vapviz.integrations.anthropic_sdk import _extract_output
 
         result = MagicMock()
         result.content = [MagicMock(text="Hi")]

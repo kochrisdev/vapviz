@@ -1,4 +1,4 @@
-# VaP 1.0.1 🎉
+# vapviz 1.0.1 🎉
 
 **Visualization Agentic Process** — trace and visualize AI agent pipelines in real time.
 
@@ -6,17 +6,15 @@ This is the **first stable release**. Instrument your agent with a single contex
 every step, tool call, and LLM invocation appear instantly as a live, interactive graph in the
 browser — with inputs, outputs, durations, token usage, cost, and errors.
 
-> Installed as **`vapviz`** on PyPI (the name `vap` was taken) — the import and CLI stay `vap`.
-
 ```bash
 pip install vapviz
-vap serve --db vap.db        # UI + API at http://localhost:8001  (UI is bundled — no Node build)
+vapviz serve --db vapviz.db        # UI + API at http://localhost:8001  (UI is bundled — no Node build)
 ```
 
 ```python
-import vap
+import vapviz
 
-with vap.trace("My agent") as run:
+with vapviz.trace("My agent") as run:
     with run.step("search", kind="tool") as step:
         step.set_input({"query": "..."})
         step.set_output({"results": 3})
@@ -36,8 +34,8 @@ with vap.trace("My agent") as run:
 
 ## Stability
 
-VaP now follows [Semantic Versioning](https://semver.org/). The public, stability-tracked surface
-(top-level `vap` exports, the `vap.integrations.*` listeners, the `vap serve` CLI, and the REST + SSE
+vapviz now follows [Semantic Versioning](https://semver.org/). The public, stability-tracked surface
+(top-level `vapviz` exports, the `vapviz.integrations.*` listeners, the `vapviz serve` CLI, and the REST + SSE
 schema) is documented in the [Versioning & Stability](https://github.com/kochrisdev/vap#versioning--stability)
 section of the README.
 

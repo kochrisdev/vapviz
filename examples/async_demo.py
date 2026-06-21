@@ -1,5 +1,5 @@
 """
-Async demo — shows vap.atrace() and run.astep() with asyncio.
+Async demo — shows vapviz.atrace() and run.astep() with asyncio.
 
 Demonstrates concurrent fan-out tool calls using asyncio.gather — each
 parallel task automatically inherits the correct parent context via
@@ -9,7 +9,7 @@ Run (server + agent in one process):
     python examples/async_demo.py
 
 Or start the server first and run just the agent:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/async_demo.py --agent-only
 
 Open http://localhost:8001 (or http://localhost:5173 for Vite dev server).
@@ -19,12 +19,12 @@ import sys
 import time
 import threading
 
-import vap
+import vapviz
 
 
 # ── Agent logic ────────────────────────────────────────────────────────────────
 
-async def _fetch_url(run: vap.RunContext, url: str) -> str:
+async def _fetch_url(run: vapviz.RunContext, url: str) -> str:
     """Simulate an async HTTP fetch as a traced tool call."""
     async with run.astep(f"fetch/{url.split('/')[-1]}", kind="tool") as step:
         step.set_input({"url": url})
@@ -35,7 +35,7 @@ async def _fetch_url(run: vap.RunContext, url: str) -> str:
 
 
 async def run_agent() -> None:
-    async with vap.atrace("Async Research Agent") as run:
+    async with vapviz.atrace("Async Research Agent") as run:
 
         # Phase 1: plan
         async with run.astep("plan", kind="step") as step:
@@ -76,8 +76,8 @@ async def run_agent() -> None:
                 "confidence": 0.87,
             })
 
-    print(f"\n[vap] Run complete  run_id={run.run_id}")
-    print("[vap] View at http://localhost:8001")
+    print(f"\n[vapviz] Run complete  run_id={run.run_id}")
+    print("[vapviz] View at http://localhost:8001")
 
 
 # ── Entry points ───────────────────────────────────────────────────────────────
@@ -85,8 +85,8 @@ async def run_agent() -> None:
 async def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -96,12 +96,12 @@ async def main_with_server() -> None:
     await asyncio.sleep(1.0)
 
     await run_agent()
-    print("[vap] Press Ctrl-C to stop.")
+    print("[vapviz] Press Ctrl-C to stop.")
     await asyncio.sleep(999_999)
 
 
 async def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     await run_agent()
 
 

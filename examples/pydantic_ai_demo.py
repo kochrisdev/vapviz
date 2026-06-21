@@ -3,21 +3,21 @@ Pydantic AI demo — traces an agent run with VapPydanticAI.
 
 VapPydanticAI wraps ``Agent.run`` / ``Agent.run_sync`` so every model request
 (with token usage and cost) and every tool call (with its arguments and result)
-appears as a correctly nested node in the VaP graph — no changes to your agent
+appears as a correctly nested node in the vapviz graph — no changes to your agent
 code.
 
 This demo uses Pydantic AI's built-in ``TestModel`` so it runs with **no API key
-and no network** — perfect for trying VaP out. To use a real model instead, set
+and no network** — perfect for trying vapviz out. To use a real model instead, set
 an API key and pass e.g. ``"openai:gpt-4o-mini"`` as the agent's model.
 
 Requirements:
-    pip install "vap[pydantic-ai]"
+    pip install "vapviz[pydantic-ai]"
 
 Run (server + agent in one process):
     python examples/pydantic_ai_demo.py
 
 Or start the server first:
-    vap serve --db vap.db
+    vapviz serve --db vapviz.db
     python examples/pydantic_ai_demo.py --agent-only
 
 Open http://localhost:8001 to see the graph.
@@ -26,24 +26,24 @@ What you'll see
 ---------------
 Two traces:
 
-1. "Weather agent" (auto mode) — a fresh VaP run per agent.run_sync():
+1. "Weather agent" (auto mode) — a fresh vapviz run per agent.run_sync():
    - agent root
        ├─ llm/test           (first model request → calls tools)
        │     ├─ get_weather  (tool)
        │     └─ get_forecast (tool)
        └─ llm/test           (final model response)
 
-2. "Trip planner" (manual mode) — the agent embedded in a larger VaP pipeline:
-   - load_preferences   (regular vap step)
+2. "Trip planner" (manual mode) — the agent embedded in a larger vapviz pipeline:
+   - load_preferences   (regular vapviz step)
    - agent/trip-planner
        └─ llm/test → temperature (tool)
-   - format_itinerary   (regular vap step)
+   - format_itinerary   (regular vapviz step)
 """
 import sys
 import threading
 import time
 
-import vap
+import vapviz
 
 
 # ── Tools ────────────────────────────────────────────────────────────────────
@@ -75,22 +75,22 @@ def _build_agent(name: str):
 # ── Demos ──────────────────────────────────────────────────────────────────────
 
 def run_demo_1_auto() -> None:
-    """Auto mode — VapPydanticAI() patches once; each run becomes its own VaP run."""
+    """Auto mode — VapPydanticAI() patches once; each run becomes its own vapviz run."""
     agent = _build_agent("weather-agent")
     result = agent.run_sync("What's the weather and 3-day forecast for Paris?")
     print(f"[demo 1] output: {result.output!r}")
 
 
 def run_demo_2_manual() -> None:
-    """Manual mode — the agent run nests inside a larger vap.trace() pipeline."""
+    """Manual mode — the agent run nests inside a larger vapviz.trace() pipeline."""
     agent = _build_agent("trip-planner")
 
-    with vap.trace("Trip planner") as run:
+    with vapviz.trace("Trip planner") as run:
         with run.step("load_preferences", kind="step") as step:
             step.set_input({"user": "demo"})
             step.set_output({"prefers": "warm cities"})
 
-        from vap.integrations.pydantic_ai import VapPydanticAI
+        from vapviz.integrations.pydantic_ai import VapPydanticAI
 
         listener = VapPydanticAI(run)
         result = agent.run_sync("Is Lisbon warm enough for a beach trip?")
@@ -109,24 +109,24 @@ def _check_deps() -> None:
     except ImportError:
         raise SystemExit(
             "pydantic-ai is not installed.\n"
-            'Run: pip install "vap[pydantic-ai]"'
+            'Run: pip install "vapviz[pydantic-ai]"'
         )
 
 
 def run_agent() -> None:
     _check_deps()
 
-    from vap.integrations.pydantic_ai import VapPydanticAI
+    from vapviz.integrations.pydantic_ai import VapPydanticAI
 
     print("\n── Demo 1: Weather agent (auto mode) ──────────────────────────")
-    listener = VapPydanticAI()        # auto mode: one VaP run per agent.run_sync()
+    listener = VapPydanticAI()        # auto mode: one vapviz run per agent.run_sync()
     run_demo_1_auto()
     listener.detach()
 
     print("\n── Demo 2: Trip planner inside a pipeline (manual mode) ───────")
     run_demo_2_manual()
 
-    print("\n[vap] Both runs complete. View at http://localhost:8001")
+    print("\n[vapviz] Both runs complete. View at http://localhost:8001")
 
 
 # ── Entry points ───────────────────────────────────────────────────────────────
@@ -134,8 +134,8 @@ def run_agent() -> None:
 def main_with_server() -> None:
     import uvicorn
 
-    vap.configure(db="vap.db")
-    server_app = vap.create_app()
+    vapviz.configure(db="vapviz.db")
+    server_app = vapviz.create_app()
 
     t = threading.Thread(
         target=lambda: uvicorn.run(server_app, host="0.0.0.0", port=8001, log_level="warning"),
@@ -149,7 +149,7 @@ def main_with_server() -> None:
 
 
 def main_agent_only() -> None:
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     run_agent()
 
 

@@ -6,7 +6,7 @@ Sources: OpenAI pricing page and Anthropic pricing page (May 2025).
 
 Usage::
 
-    from vap.cost import calculate_cost
+    from vapviz.cost import calculate_cost
 
     cost = calculate_cost("gpt-4o", input_tokens=500, output_tokens=200)
     # -> 0.003250  (USD)

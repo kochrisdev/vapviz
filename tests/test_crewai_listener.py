@@ -38,9 +38,9 @@ from crewai.events import (
 )
 from crewai.tasks.task_output import TaskOutput
 
-from vap import MemoryStore
-from vap.integrations.crewai_listener import VapCrewAIListener
-from vap.tracer import RunContext
+from vapviz import MemoryStore
+from vapviz.integrations.crewai_listener import VapCrewAIListener
+from vapviz.tracer import RunContext
 
 
 # ---------------------------------------------------------------------------
@@ -433,7 +433,7 @@ class TestCostTracking:
 
 class TestImportGuard:
     def test_raises_if_crewai_missing(self):
-        import vap.integrations.crewai_listener as mod
+        import vapviz.integrations.crewai_listener as mod
         original = mod._CREWAI_AVAILABLE
         mod._CREWAI_AVAILABLE = False
         try:

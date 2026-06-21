@@ -1,11 +1,11 @@
-"""Shared pytest fixtures for the VaP test suite."""
+"""Shared pytest fixtures for the vapviz test suite."""
 from __future__ import annotations
 
 import asyncio
 import pytest
 
-from vap.store import MemoryStore
-from vap.tracer import Tracer, _current_step
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer, _current_step
 
 
 @pytest.fixture

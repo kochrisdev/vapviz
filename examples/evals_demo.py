@@ -1,7 +1,7 @@
 """
 Agent evals & scoring demo.
 
-Shows VaP used as a *regression test for agents*: trace a run, then assert it
+Shows vapviz used as a *regression test for agents*: trace a run, then assert it
 meets cost / latency / correctness checks. Runs with **no API key**.
 
 This is exactly the pattern you'd put in a pytest test or a CI step — swap the
@@ -12,9 +12,9 @@ Run:
 """
 import time
 
-import vap
-from vap.evals import eval_run, max_cost, max_latency, no_errors, output_contains, judge
-from vap.store import MemoryStore
+import vapviz
+from vapviz.evals import eval_run, max_cost, max_latency, no_errors, output_contains, judge
+from vapviz.store import MemoryStore
 
 
 def run_support_agent(tracer, question: str):
@@ -44,7 +44,7 @@ def looks_helpful(graph) -> tuple:
 
 def main() -> None:
     store = MemoryStore()
-    tracer = vap.Tracer(store=store)
+    tracer = vapviz.Tracer(store=store)
 
     run = run_support_agent(tracer, "How do I reset my password?")
 

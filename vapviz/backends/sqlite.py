@@ -50,13 +50,13 @@ class SqliteStore(RunStore):
 
     Usage::
 
-        store = SqliteStore("vap.db")
-        app   = vap.create_app(store=store)
-        tracer = vap.Tracer(store=store)
+        store = SqliteStore("vapviz.db")
+        app   = vapviz.create_app(store=store)
+        tracer = vapviz.Tracer(store=store)
 
     Or via the CLI::
 
-        vap serve --db vap.db
+        vapviz serve --db vapviz.db
     """
 
     def __init__(self, db_path: str | Path) -> None:

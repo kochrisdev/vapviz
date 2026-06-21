@@ -1,38 +1,38 @@
 """
-VaP tracing integration for Pydantic AI.
+vapviz tracing integration for Pydantic AI.
 
 Wraps ``Agent.run`` / ``Agent.run_sync`` so that every Pydantic AI agent run is
-reconstructed as a VaP node graph — the agent, each model request (with token
+reconstructed as a vapviz node graph — the agent, each model request (with token
 usage and USD cost), and each tool call (with its arguments and result) — with
 no changes to your agent code.
 
 Two usage modes
 ---------------
 
-**Manual mode** — attach the agent runs to an existing ``vap.trace()`` so they
+**Manual mode** — attach the agent runs to an existing ``vapviz.trace()`` so they
 appear as a sub-section of a larger pipeline::
 
-    import vap
-    from vap.integrations.pydantic_ai import VapPydanticAI
+    import vapviz
+    from vapviz.integrations.pydantic_ai import VapPydanticAI
 
-    with vap.trace("Support pipeline") as run:
+    with vapviz.trace("Support pipeline") as run:
         VapPydanticAI(run)            # patch once, inside the trace
         result = agent.run_sync("How do I reset my password?")
 
-**Auto mode** — create a fresh VaP run for every ``agent.run()`` call::
+**Auto mode** — create a fresh vapviz run for every ``agent.run()`` call::
 
-    import vap
-    from vap.integrations.pydantic_ai import VapPydanticAI
+    import vapviz
+    from vapviz.integrations.pydantic_ai import VapPydanticAI
 
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     VapPydanticAI()                   # patch once at startup
-    result = agent.run_sync("...")    # each call becomes its own VaP run
+    result = agent.run_sync("...")    # each call becomes its own vapviz run
 
 Call ``.detach()`` to restore the original ``Agent`` methods.
 
 Requirements
 ------------
-    pip install "vap[pydantic-ai]"
+    pip install "vapviz[pydantic-ai]"
 
 Notes
 -----
@@ -83,15 +83,15 @@ _PATCH_FLAG = "_vap_pydantic_ai_original"
 
 class VapPydanticAI:
     """
-    VaP tracing for Pydantic AI agents.
+    vapviz tracing for Pydantic AI agents.
 
     Parameters
     ----------
     run:
-        Optional ``RunContext`` from ``vap.trace()``. When provided (manual
+        Optional ``RunContext`` from ``vapviz.trace()``. When provided (manual
         mode), each agent run is attached as an ``agent/<name>`` step under that
         run. When omitted (auto mode), every ``agent.run()`` call creates its
-        own VaP run in ``vap.store.default_store``.
+        own vapviz run in ``vapviz.store.default_store``.
     patch:
         Patch ``Agent`` immediately on construction (default ``True``). Set
         ``False`` to wire it up later with :meth:`patch`.
@@ -101,7 +101,7 @@ class VapPydanticAI:
         if not _PYDANTIC_AI_AVAILABLE:
             raise ImportError(
                 "pydantic-ai is required for VapPydanticAI. "
-                'Install it with: pip install "vap[pydantic-ai]"'
+                'Install it with: pip install "vapviz[pydantic-ai]"'
             )
         self._provided_run = run
         self._patched: list[tuple[type, str, Any]] = []
@@ -187,7 +187,7 @@ class VapPydanticAI:
             root_parent: Optional[str] = self._provided_run._root_node_id
             new_run = False
         else:
-            import vap.store as _sm
+            import vapviz.store as _sm
 
             store = _sm.default_store
             run_id = _uid()
@@ -318,7 +318,7 @@ class VapPydanticAI:
 
 
 def patch_pydantic_ai(run: Optional[RunContext] = None) -> VapPydanticAI:
-    """Patch Pydantic AI's ``Agent`` for VaP tracing and return the listener.
+    """Patch Pydantic AI's ``Agent`` for vapviz tracing and return the listener.
 
     Equivalent to ``VapPydanticAI(run)``; keep the returned object if you want to
     call ``.detach()`` later.

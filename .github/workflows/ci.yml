@@ -95,7 +95,7 @@ jobs:
           import zipfile, glob
           whl = glob.glob("dist/*.whl")[0]
           names = zipfile.ZipFile(whl).namelist()
-          assert "vap/_static/index.html" in names, "UI not bundled in wheel"
+          assert "vapviz/_static/index.html" in names, "UI not bundled in wheel"
           print("OK: UI bundled in", whl)
           PY
 

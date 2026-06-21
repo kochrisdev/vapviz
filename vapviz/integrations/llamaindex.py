@@ -1,32 +1,32 @@
 """
-VaP tracing integration for LlamaIndex.
+vapviz tracing integration for LlamaIndex.
 
 Registers a span handler on LlamaIndex's instrumentation dispatcher so that every
 instrumented call — query engines, retrievers, embeddings, response synthesizers,
-LLM calls — is reproduced as a VaP node. The span tree (each span's
-``parent_span_id``) maps directly onto VaP's node hierarchy, and node timings are
+LLM calls — is reproduced as a vapviz node. The span tree (each span's
+``parent_span_id``) maps directly onto vapviz's node hierarchy, and node timings are
 real (spans are captured live as they open and close).
 
 Two usage modes
 ---------------
 
-**Manual mode** — attach LlamaIndex activity to an existing ``vap.trace()`` so a
+**Manual mode** — attach LlamaIndex activity to an existing ``vapviz.trace()`` so a
 whole RAG workflow becomes one run (recommended)::
 
-    import vap
-    from vap.integrations.llamaindex import VapLlamaIndex
+    import vapviz
+    from vapviz.integrations.llamaindex import VapLlamaIndex
 
-    with vap.trace("RAG query") as run:
+    with vapviz.trace("RAG query") as run:
         VapLlamaIndex(run)
         index = VectorStoreIndex.from_documents(docs)
         response = index.as_query_engine().query("...")
 
-**Auto mode** — each top-level instrumented call becomes its own VaP run::
+**Auto mode** — each top-level instrumented call becomes its own vapviz run::
 
-    import vap
-    from vap.integrations.llamaindex import VapLlamaIndex
+    import vapviz
+    from vapviz.integrations.llamaindex import VapLlamaIndex
 
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     VapLlamaIndex()
     response = query_engine.query("...")
 
@@ -34,7 +34,7 @@ Call ``.detach()`` to remove the handler from the dispatcher.
 
 Requirements
 ------------
-    pip install "vap[llamaindex]"
+    pip install "vapviz[llamaindex]"
 """
 from __future__ import annotations
 
@@ -80,15 +80,15 @@ _END_EVENT = {
 
 class VapLlamaIndex(BaseSpanHandler):  # type: ignore[misc]
     """
-    VaP span handler for LlamaIndex.
+    vapviz span handler for LlamaIndex.
 
     Parameters
     ----------
     run:
-        Optional ``RunContext`` from ``vap.trace()``. When provided (manual
+        Optional ``RunContext`` from ``vapviz.trace()``. When provided (manual
         mode), every LlamaIndex span is attached under that run. When omitted
         (auto mode), each top-level span (one with no instrumented parent)
-        starts its own VaP run in ``vap.store.default_store``.
+        starts its own vapviz run in ``vapviz.store.default_store``.
     register:
         Register on LlamaIndex's root dispatcher immediately (default ``True``).
     """
@@ -101,7 +101,7 @@ class VapLlamaIndex(BaseSpanHandler):  # type: ignore[misc]
         if not _LLAMAINDEX_AVAILABLE:
             raise ImportError(
                 "llama-index-core is required for VapLlamaIndex. "
-                'Install it with: pip install "vap[llamaindex]"'
+                'Install it with: pip install "vapviz[llamaindex]"'
             )
         super().__init__(**kwargs)
         # Set private attrs explicitly — pydantic's PrivateAttr default_factory
@@ -180,7 +180,7 @@ class VapLlamaIndex(BaseSpanHandler):  # type: ignore[misc]
                 is_run_root = False
             else:
                 # Auto mode: this top-level span becomes its own run's root.
-                import vap.store as _sm
+                import vapviz.store as _sm
 
                 store = _sm.default_store
                 run_id = _uid()

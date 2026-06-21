@@ -1,15 +1,15 @@
 """
-Cost & latency budgets for VaP.
+Cost & latency budgets for vapviz.
 
-Turn the metrics VaP already captures into **guardrails**: define a budget
+Turn the metrics vapviz already captures into **guardrails**: define a budget
 (max cost, duration, and/or tokens) and check a run against it. ``check_budget``
 is a pure function; ``enable_budget_alerts`` wraps a store so every completed run
 is checked automatically and an alert fires when a limit is exceeded.
 
 Programmatic check::
 
-    import vap
-    from vap.budgets import Budget, check_budget
+    import vapviz
+    from vapviz.budgets import Budget, check_budget
 
     graph = store.get_graph(run_id)
     report = check_budget(graph, Budget(max_cost_usd=0.02, max_duration_ms=3000))
@@ -19,10 +19,10 @@ Programmatic check::
 
 Automatic alerting on every run::
 
-    import vap
-    from vap.budgets import Budget, enable_budget_alerts
+    import vapviz
+    from vapviz.budgets import Budget, enable_budget_alerts
 
-    vap.configure(db="vap.db")
+    vapviz.configure(db="vapviz.db")
     enable_budget_alerts(Budget(max_cost_usd=0.05, max_duration_ms=5000))
     # over-budget runs now log a warning (or call your on_alert callback)
 """
@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 
 from .events import EventType, NodeKind, RunGraph
 
-logger = logging.getLogger("vap.budgets")
+logger = logging.getLogger("vapviz.budgets")
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +67,7 @@ class BudgetReport(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Per-run measures (consistent with vap.metrics)
+# Per-run measures (consistent with vapviz.metrics)
 # ---------------------------------------------------------------------------
 
 def _run_cost(graph: RunGraph) -> float:
@@ -152,7 +152,7 @@ def _default_alert(report: BudgetReport) -> None:
     parts = ", ".join(
         f"{v.metric} {v.actual} > {v.limit} (+{v.pct_over:.0f}%)" for v in report.violations
     )
-    logger.warning("VaP budget exceeded for run %s: %s", report.run_id, parts)
+    logger.warning("vapviz budget exceeded for run %s: %s", report.run_id, parts)
 
 
 def enable_budget_alerts(
@@ -172,12 +172,12 @@ def enable_budget_alerts(
     budget:
         The limits to enforce.
     store:
-        Store to watch. Defaults to ``vap.store.default_store``.
+        Store to watch. Defaults to ``vapviz.store.default_store``.
     on_alert:
         Callback invoked with the :class:`BudgetReport` when a run exceeds the
-        budget. Defaults to logging a warning on the ``vap.budgets`` logger.
+        budget. Defaults to logging a warning on the ``vapviz.budgets`` logger.
     """
-    import vap.store as _sm
+    import vapviz.store as _sm
 
     target = store if store is not None else _sm.default_store
     original = target.add_event

@@ -1,5 +1,5 @@
 """
-Dev entry point: starts the VaP server AND runs a demo agent in one process.
+Dev entry point: starts the vapviz server AND runs a demo agent in one process.
 The server keeps running until you kill this script (Ctrl+C).
 
 Usage:
@@ -10,14 +10,14 @@ import threading
 import time
 import uvicorn
 
-import vap
+import vapviz
 
 
 def demo_agent() -> None:
     time.sleep(1.2)  # let uvicorn finish binding
 
-    print("\n[vap] Running demo agent…")
-    with vap.trace("Research Agent Demo") as run:
+    print("\n[vapviz] Running demo agent…")
+    with vapviz.trace("Research Agent Demo") as run:
         with run.step("search_web", kind="tool") as step:
             step.set_input({"query": "renewable energy 2024"})
             time.sleep(0.25)
@@ -48,13 +48,13 @@ def demo_agent() -> None:
             time.sleep(0.08)
             step.set_output({"report": "Final report: 3 paragraphs, 450 words."})
 
-    print(f"[vap] Demo run complete  ->  run_id={run.run_id}")
-    print("[vap] Open http://localhost:5173 and select the run in the sidebar.\n")
+    print(f"[vapviz] Demo run complete  ->  run_id={run.run_id}")
+    print("[vapviz] Open http://localhost:5173 and select the run in the sidebar.\n")
 
 
 if __name__ == "__main__":
     t = threading.Thread(target=demo_agent, daemon=True)
     t.start()
 
-    print("[vap] Server starting on http://localhost:8001 …")
-    uvicorn.run(vap.app, host="0.0.0.0", port=8001, log_level="warning")
+    print("[vapviz] Server starting on http://localhost:8001 …")
+    uvicorn.run(vapviz.app, host="0.0.0.0", port=8001, log_level="warning")

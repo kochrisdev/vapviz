@@ -1,4 +1,4 @@
-"""Tests for vap/evals.py — checks, eval_run, declarative specs, and the endpoint."""
+"""Tests for vapviz/evals.py — checks, eval_run, declarative specs, and the endpoint."""
 from __future__ import annotations
 
 import uuid
@@ -6,7 +6,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from vap.evals import (
+from vapviz.evals import (
     custom,
     eval_run,
     judge,
@@ -17,10 +17,10 @@ from vap.evals import (
     output_contains,
     run_checks,
 )
-from vap.events import GraphNode, NodeKind, NodeStatus, RunGraph
-from vap.server import create_app
-from vap.store import MemoryStore
-from vap.tracer import Tracer
+from vapviz.events import GraphNode, NodeKind, NodeStatus, RunGraph
+from vapviz.server import create_app
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer
 
 
 # ---------------------------------------------------------------------------

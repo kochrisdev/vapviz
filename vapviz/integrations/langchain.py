@@ -1,15 +1,15 @@
 """
-VaP callback handler for LangChain / LangGraph.
+vapviz callback handler for LangChain / LangGraph.
 
-Traces every chain, tool, and LLM call as VaP nodes under an existing
+Traces every chain, tool, and LLM call as vapviz nodes under an existing
 ``RunContext``.  Works with LangChain >= 0.1 (``langchain-core``).
 
 Usage::
 
-    import vap
-    from vap.integrations.langchain import VapCallbackHandler
+    import vapviz
+    from vapviz.integrations.langchain import VapCallbackHandler
 
-    with vap.trace("LangGraph Agent") as run:
+    with vapviz.trace("LangGraph Agent") as run:
         handler = VapCallbackHandler(run)
         result = graph.invoke(
             {"messages": [HumanMessage(content="Hello")]},
@@ -39,16 +39,16 @@ except ImportError:
 class VapCallbackHandler(_BaseCallbackHandler):  # type: ignore[misc]
     """
     LangChain/LangGraph callback handler that records all chain, tool, and
-    LLM invocations as VaP nodes under an existing ``RunContext``.
+    LLM invocations as vapviz nodes under an existing ``RunContext``.
 
     Parameters
     ----------
     run:
-        The ``RunContext`` yielded by ``vap.trace()`` or ``vap.atrace()``.
+        The ``RunContext`` yielded by ``vapviz.trace()`` or ``vapviz.atrace()``.
 
     Example::
 
-        with vap.trace("LangGraph Agent") as run:
+        with vapviz.trace("LangGraph Agent") as run:
             handler = VapCallbackHandler(run)
             result = graph.invoke(inputs, config={"callbacks": [handler]})
     """
@@ -57,11 +57,11 @@ class VapCallbackHandler(_BaseCallbackHandler):  # type: ignore[misc]
         if not _LANGCHAIN_AVAILABLE:
             raise ImportError(
                 "langchain-core is required for VapCallbackHandler. "
-                'Install it with: pip install "vap[langchain]"'
+                'Install it with: pip install "vapviz[langchain]"'
             )
         super().__init__()
         self._run = run
-        # Maps LangChain run UUID -> VaP StepContext
+        # Maps LangChain run UUID -> vapviz StepContext
         self._contexts: dict[UUID, StepContext] = {}
 
     # ------------------------------------------------------------------
@@ -69,7 +69,7 @@ class VapCallbackHandler(_BaseCallbackHandler):  # type: ignore[misc]
     # ------------------------------------------------------------------
 
     def _get_parent_ctx(self, parent_run_id: Optional[UUID]) -> StepContext:
-        """Return the VaP context for parent_run_id, falling back to run root."""
+        """Return the vapviz context for parent_run_id, falling back to run root."""
         if parent_run_id and parent_run_id in self._contexts:
             return self._contexts[parent_run_id]
         return self._run._root_ctx

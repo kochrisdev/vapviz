@@ -60,16 +60,16 @@ all         = ["anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "c
 dev         = ["pytest", "httpx", "pytest-asyncio", "anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "pydantic-ai-slim>=1.0.0", "opentelemetry-sdk>=1.20.0", "llama-index-core>=0.11.0"]
 
 [project.scripts]
-vap = "vap.cli:main"
+vapviz = "vapviz.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["vap"]
+packages = ["vapviz"]
 
-# Bundle the built React UI into the wheel so `pip install vap && vap serve`
+# Bundle the built React UI into the wheel so `pip install vapviz && vapviz serve`
 # serves the full UI with no Node build. Requires `ui/dist` to exist at build
 # time (CI/release build the UI first). force-include bypasses .gitignore.
 [tool.hatch.build.targets.wheel.force-include]
-"ui/dist" = "vap/_static"
+"ui/dist" = "vapviz/_static"
 
 # Carry the built UI in the sdist too, so a wheel built from the sdist
 # (the default `python -m build` flow) still bundles it.

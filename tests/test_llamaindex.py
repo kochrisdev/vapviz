@@ -17,11 +17,11 @@ from llama_index.core.embeddings import MockEmbedding
 from llama_index.core.instrumentation import get_dispatcher
 from llama_index.core.llms import MockLLM
 
-import vap.store as _sm
-from vap.events import NodeKind, NodeStatus
-from vap.integrations.llamaindex import VapLlamaIndex
-from vap.store import MemoryStore
-from vap.tracer import Tracer
+import vapviz.store as _sm
+from vapviz.events import NodeKind, NodeStatus
+from vapviz.integrations.llamaindex import VapLlamaIndex
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer
 
 
 @pytest.fixture(autouse=True)
@@ -49,12 +49,12 @@ def handlers():
     _sm.default_store = saved_store
 
 
-def _run_query(run=None, handlers=None, *, question="What does VaP do?"):
+def _run_query(run=None, handlers=None, *, question="What does vapviz do?"):
     h = VapLlamaIndex(run)
     if handlers is not None:
         handlers.append(h)
     index = VectorStoreIndex.from_documents(
-        [Document(text="VaP traces AI agents."), Document(text="LlamaIndex does RAG.")]
+        [Document(text="vapviz traces AI agents."), Document(text="LlamaIndex does RAG.")]
     )
     index.as_query_engine().query(question)
     return h

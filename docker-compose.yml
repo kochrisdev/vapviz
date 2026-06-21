@@ -1,12 +1,12 @@
 version: "3.8"
 
 services:
-  vap:
+  vapviz:
     build: .
     ports:
       - "8001:8001"   # API + UI on the same port
     volumes:
-      - vap-data:/data        # SQLite database persists across restarts
+      - vapviz-data:/data        # SQLite database persists across restarts
     environment:
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
@@ -19,5 +19,5 @@ services:
       start_period: 10s
 
 volumes:
-  vap-data:
+  vapviz-data:
     driver: local

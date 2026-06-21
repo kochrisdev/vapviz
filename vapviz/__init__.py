@@ -25,7 +25,7 @@ from .evals import (
 
 def configure(db: str | None = None) -> None:
     """
-    Configure the module-level VaP store backend.
+    Configure the module-level vapviz store backend.
 
     Call this once before any ``trace()`` / ``atrace()`` calls.
 
@@ -35,18 +35,18 @@ def configure(db: str | None = None) -> None:
 
     Example::
 
-        import vap
-        vap.configure(db="vap.db")          # persist to SQLite
+        import vapviz
+        vapviz.configure(db="vapviz.db")          # persist to SQLite
 
-        with vap.trace("My agent") as run:
+        with vapviz.trace("My agent") as run:
             ...
     """
     import sys
-    import vap.store as _sm
+    import vapviz.store as _sm
 
     new_store: RunStore = SqliteStore(db) if db is not None else MemoryStore()
     _sm.default_store = new_store
-    # Also update the binding on this module so vap.default_store stays current
+    # Also update the binding on this module so vapviz.default_store stays current
     sys.modules[__name__].default_store = new_store
 
 

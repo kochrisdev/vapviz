@@ -4,7 +4,7 @@ name: Release
 #
 # Uses PyPI Trusted Publishing (OIDC) — no API token/secret required. One-time
 # setup on PyPI: Project → Settings → Publishing → add a GitHub publisher with
-#   owner: kochrisdev   repo: vap   workflow: release.yml   environment: pypi
+#   owner: kochrisdev   repo: vapviz   workflow: release.yml   environment: pypi
 # See https://docs.pypi.org/trusted-publishers/
 
 on:

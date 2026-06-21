@@ -1,5 +1,5 @@
 """
-Cross-run analytics for VaP.
+Cross-run analytics for vapviz.
 
 ``compute_metrics`` is a pure function that takes a list of ``RunGraph``
 snapshots and returns aggregate statistics used by the ``/metrics`` endpoint

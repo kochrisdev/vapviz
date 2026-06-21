@@ -16,12 +16,12 @@ from pydantic_ai import Agent
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-import vap.store as _sm
-from vap.events import NodeKind, NodeStatus
-from vap.integrations import pydantic_ai as vap_pai
-from vap.integrations.pydantic_ai import VapPydanticAI
-from vap.store import MemoryStore
-from vap.tracer import Tracer
+import vapviz.store as _sm
+from vapviz.events import NodeKind, NodeStatus
+from vapviz.integrations import pydantic_ai as vap_pai
+from vapviz.integrations.pydantic_ai import VapPydanticAI
+from vapviz.store import MemoryStore
+from vapviz.tracer import Tracer
 
 
 # ---------------------------------------------------------------------------

@@ -6,26 +6,26 @@ import sys
 
 def _serve(args: argparse.Namespace) -> None:
     import uvicorn
-    from vap.server import create_app
-    import vap.store as _sm
+    from vapviz.server import create_app
+    import vapviz.store as _sm
 
     if args.db:
-        from vap.backends.sqlite import SqliteStore
+        from vapviz.backends.sqlite import SqliteStore
         store = SqliteStore(args.db)
         _sm.default_store = store          # in-process tracers pick this up
-        print(f"[vap] Using SQLite store: {args.db}")
+        print(f"[vapviz] Using SQLite store: {args.db}")
     else:
-        from vap.store import MemoryStore
+        from vapviz.store import MemoryStore
         store = MemoryStore()
-        print("[vap] Using in-memory store (runs will be lost on restart)")
-        print("[vap] Pass --db <path> to persist runs to SQLite")
+        print("[vapviz] Using in-memory store (runs will be lost on restart)")
+        print("[vapviz] Pass --db <path> to persist runs to SQLite")
 
     if args.static_dir:
-        print(f"[vap] Serving UI from: {args.static_dir}")
+        print(f"[vapviz] Serving UI from: {args.static_dir}")
 
     app = create_app(store=store, static_dir=args.static_dir)
 
-    print(f"[vap] Server starting on http://{args.host}:{args.port}")
+    print(f"[vapviz] Server starting on http://{args.host}:{args.port}")
     uvicorn.run(
         app,
         host=args.host,
@@ -37,13 +37,13 @@ def _serve(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="vap",
-        description="VaP — Visualization Agentic Process",
+        prog="vapviz",
+        description="vapviz — Visualization Agentic Process",
     )
     sub = parser.add_subparsers(dest="command")
 
-    # ── vap serve ──────────────────────────────────────────────────────
-    serve = sub.add_parser("serve", help="Start the VaP server")
+    # ── vapviz serve ──────────────────────────────────────────────────────
+    serve = sub.add_parser("serve", help="Start the vapviz server")
     serve.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
     serve.add_argument("--port", type=int, default=8001, help="Bind port (default: 8001)")
     serve.add_argument("--db", default=None, metavar="PATH",
