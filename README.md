@@ -837,6 +837,9 @@ with tracer.trace("isolated run") as run:
 
 ## Roadmap
 
+**What's next:** see **[ROADMAP.md](ROADMAP.md)** for the post-1.0 plan. The release history below
+records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
+
 ### v0.2.0 — Phase 1 (complete)
 - [x] **Persistent storage** — SQLite backend with WAL mode, replay on startup
 - [x] **Async tracer** — `atrace` / `astep` with `asynccontextmanager`
