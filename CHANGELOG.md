@@ -96,7 +96,7 @@ This release adds no new tracing/integration features beyond 0.15.0 — it marks
 ### Added
 - Initial release: sync tracer, in-memory store, FastAPI + SSE server, ReactFlow UI, Anthropic SDK integration.
 
-[Unreleased]: https://github.com/kochrisdev/vap/compare/v1.0.1...HEAD
-[1.0.1]: https://github.com/kochrisdev/vap/releases/tag/v1.0.1
-[1.0.0]: https://github.com/kochrisdev/vap/releases/tag/v1.0.0
-[0.15.0]: https://github.com/kochrisdev/vap/releases/tag/v0.15.0
+[Unreleased]: https://github.com/kochrisdev/vapviz/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/kochrisdev/vapviz/releases/tag/v1.0.1
+[1.0.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.0.0
+[0.15.0]: https://github.com/kochrisdev/vapviz/releases/tag/v0.15.0

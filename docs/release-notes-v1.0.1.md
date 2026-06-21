@@ -36,7 +36,7 @@ with vapviz.trace("My agent") as run:
 
 vapviz now follows [Semantic Versioning](https://semver.org/). The public, stability-tracked surface
 (top-level `vapviz` exports, the `vapviz.integrations.*` listeners, the `vapviz serve` CLI, and the REST + SSE
-schema) is documented in the [Versioning & Stability](https://github.com/kochrisdev/vap#versioning--stability)
+schema) is documented in the [Versioning & Stability](https://github.com/kochrisdev/vapviz#versioning--stability)
 section of the README.
 
 ## Quality
@@ -56,8 +56,8 @@ pip install "vapviz[crewai]"       # or pick one: anthropic / openai / langchain
 
 ## Getting started
 
-- 📖 [Tutorial](https://github.com/kochrisdev/vap/blob/main/docs/TUTORIAL.md) — step-by-step from install to a fully instrumented agent
-- 📚 [Developer Reference](https://github.com/kochrisdev/vap/blob/main/docs/DEVELOPER_REFERENCE.md) — full Python API, CLI, REST, SSE, TypeScript types
-- 🏗️ [Architecture](https://github.com/kochrisdev/vap/blob/main/docs/ARCHITECTURE.md) · 🚀 [Deployment](https://github.com/kochrisdev/vap/blob/main/docs/DEPLOYMENT.md)
+- 📖 [Tutorial](https://github.com/kochrisdev/vapviz/blob/main/docs/TUTORIAL.md) — step-by-step from install to a fully instrumented agent
+- 📚 [Developer Reference](https://github.com/kochrisdev/vapviz/blob/main/docs/DEVELOPER_REFERENCE.md) — full Python API, CLI, REST, SSE, TypeScript types
+- 🏗️ [Architecture](https://github.com/kochrisdev/vapviz/blob/main/docs/ARCHITECTURE.md) · 🚀 [Deployment](https://github.com/kochrisdev/vapviz/blob/main/docs/DEPLOYMENT.md)
 
-**Full changelog:** https://github.com/kochrisdev/vap/blob/main/CHANGELOG.md
+**Full changelog:** https://github.com/kochrisdev/vapviz/blob/main/CHANGELOG.md

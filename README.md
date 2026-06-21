@@ -1,6 +1,6 @@
 # vapviz — Visualization Agentic Process
 
-[![CI](https://github.com/kochrisdev/vap/actions/workflows/ci.yml/badge.svg)](https://github.com/kochrisdev/vap/actions/workflows/ci.yml)
+[![CI](https://github.com/kochrisdev/vapviz/actions/workflows/ci.yml/badge.svg)](https://github.com/kochrisdev/vapviz/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -74,7 +74,7 @@ Open **http://localhost:8001**.
 ### From source (for development)
 
 ```bash
-git clone https://github.com/kochrisdev/vap.git
+git clone https://github.com/kochrisdev/vapviz.git
 cd vapviz
 pip install -e ".[all]"           # + Anthropic, OpenAI, LangChain, CrewAI, Pydantic AI, LlamaIndex, AutoGen, OTel
 

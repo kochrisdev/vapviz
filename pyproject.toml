@@ -41,11 +41,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kochrisdev/vap"
-Repository = "https://github.com/kochrisdev/vap"
-Documentation = "https://github.com/kochrisdev/vap/tree/main/docs"
-Issues = "https://github.com/kochrisdev/vap/issues"
-Changelog = "https://github.com/kochrisdev/vap/blob/main/docs/DEVELOPER_REFERENCE.md#changelog"
+Homepage = "https://github.com/kochrisdev/vapviz"
+Repository = "https://github.com/kochrisdev/vapviz"
+Documentation = "https://github.com/kochrisdev/vapviz/tree/main/docs"
+Issues = "https://github.com/kochrisdev/vapviz/issues"
+Changelog = "https://github.com/kochrisdev/vapviz/blob/main/docs/DEVELOPER_REFERENCE.md#changelog"
 
 [project.optional-dependencies]
 anthropic   = ["anthropic>=0.28.0"]

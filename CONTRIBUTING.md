@@ -12,7 +12,7 @@ project's [MIT License](LICENSE).
 ## Ways to contribute
 
 - **Report a bug** or **request a feature** — open an
-  [issue](https://github.com/kochrisdev/vap/issues). For bugs, include the vapviz
+  [issue](https://github.com/kochrisdev/vapviz/issues). For bugs, include the vapviz
   version, Python version, a minimal repro, and the expected vs. actual behaviour.
 - **Improve the docs** — fixes to `README.md` or anything under `docs/` are very
   welcome and make great first contributions.
@@ -27,7 +27,7 @@ vapviz is a Python package (`vapviz/`) plus a Vite + React UI (`ui/`). You need
 **Python 3.11+** and **Node 20+**.
 
 ```bash
-git clone https://github.com/kochrisdev/vap.git
+git clone https://github.com/kochrisdev/vapviz.git
 cd vapviz
 
 # Python — editable install with all integrations + test/dev tooling
@@ -158,4 +158,4 @@ Releases are tag-driven and publish to PyPI via
 
 ---
 
-Questions? Open an [issue](https://github.com/kochrisdev/vap/issues) — happy to help.
+Questions? Open an [issue](https://github.com/kochrisdev/vapviz/issues) — happy to help.

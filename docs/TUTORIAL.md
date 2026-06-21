@@ -73,7 +73,7 @@ React UI  →  you see a live graph in the browser
 ### Clone and install the Python package
 
 ```bash
-git clone https://github.com/kochrisdev/vap.git
+git clone https://github.com/kochrisdev/vapviz.git
 cd vapviz
 
 # Core package (no LLM integrations)
@@ -1416,4 +1416,4 @@ asyncio.run(main())
 ---
 
 *Happy tracing! If you run into a problem or want to contribute, open an issue on
-[GitHub](https://github.com/kochrisdev/vap).*
+[GitHub](https://github.com/kochrisdev/vapviz).*
