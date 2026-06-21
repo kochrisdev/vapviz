@@ -58,6 +58,10 @@ llamaindex  = ["llama-index-core>=0.11.0"]
 autogen     = ["ag2>=0.4"]
 all         = ["anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "crewai>=1.0.0", "pydantic-ai-slim>=1.0.0", "opentelemetry-sdk>=1.20.0", "opentelemetry-exporter-otlp>=1.20.0", "llama-index-core>=0.11.0", "ag2>=0.4"]
 dev         = ["pytest", "httpx", "pytest-asyncio", "anthropic>=0.28.0", "openai>=1.0.0", "langchain-core>=0.1.0", "pydantic-ai-slim>=1.0.0", "opentelemetry-sdk>=1.20.0", "llama-index-core>=0.11.0"]
+# Everything the real-LLM integration tests (tests/test_*_integration.py) import,
+# so CI can run them. They still skip cleanly without OPENROUTER_API_KEY (and
+# ANTHROPIC_API_KEY for the Anthropic test).
+test        = ["pytest", "httpx", "pytest-asyncio", "openai>=1.0.0", "anthropic>=0.28.0", "langchain-openai>=0.1.0", "langgraph>=0.2.0", "crewai>=1.0.0", "pydantic-ai-slim>=1.0.0", "llama-index-core>=0.11.0", "llama-index-llms-openai>=0.2.0", "ag2>=0.4"]
 
 [project.scripts]
 vapviz = "vapviz.cli:main"
