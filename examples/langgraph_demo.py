@@ -38,11 +38,17 @@ def run_agent() -> None:
     try:
         from langchain_openai import ChatOpenAI
         from langchain_core.tools import tool
-        from langgraph.prebuilt import create_react_agent
+        # LangChain v1 renamed this to langchain.agents.create_agent;
+        # langgraph.prebuilt.create_react_agent is deprecated (removed in
+        # LangGraph V2). Prefer the new API, fall back to the old one.
+        try:
+            from langchain.agents import create_agent as build_agent
+        except ImportError:
+            from langgraph.prebuilt import create_react_agent as build_agent
     except ImportError:
         raise SystemExit(
             "LangGraph dependencies not installed.\n"
-            'Run: pip install "vapviz[langchain]" langgraph langchain-openai'
+            'Run: pip install "vapviz[langchain]" langchain langgraph langchain-openai'
         )
 
     from vapviz.integrations.langchain import VapCallbackHandler
@@ -77,7 +83,7 @@ def run_agent() -> None:
 
     llm   = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     tools = [search_web, calculate, summarize_findings]
-    agent = create_react_agent(llm, tools)
+    agent = build_agent(llm, tools)
 
     # ── Run with vapviz tracing ──────────────────────────────────────────────
 

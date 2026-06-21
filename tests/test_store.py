@@ -9,8 +9,8 @@ import time
 import pytest
 
 from vapviz.events import EventType, NodeKind, NodeStatus, VapEvent
-from vapviz.store import MemoryStore, _apply_event_to_graph
-from vapviz.events import RunGraph
+from vapviz.store import MemoryStore, _apply_event_to_graph, _total_cost
+from vapviz.events import GraphNode, RunGraph
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +115,22 @@ class TestMemoryStore:
 
     def test_get_events_empty_run(self, store):
         assert store.get_events("nonexistent") == []
+
+    def test_duplicate_event_id_ignored(self, store):
+        # Regression (U6): MemoryStore must dedupe by event.id like
+        # SqliteStore does — e.g. retried remote ingest or SSE replay.
+        e = _agent_start("r1")
+        store.add_event(e)
+        store.add_event(e)
+        assert len(store.get_events("r1")) == 1
+        assert store.get_run("r1").event_count == 1
+
+    def test_duplicate_id_cleared_on_delete(self, store):
+        e = _agent_start("r1")
+        store.add_event(e)
+        store.delete_run("r1")
+        store.add_event(e)
+        assert len(store.get_events("r1")) == 1
 
     def test_list_runs_empty(self, store):
         assert store.list_runs() == []
@@ -318,3 +334,46 @@ class TestSqliteStore:
         s.add_event(e)  # duplicate
         assert len(s.get_events("r1")) == 1
         s.close()
+
+
+# ---------------------------------------------------------------------------
+# _total_cost — sum only LLM-kind nodes (regression for PA1)
+# ---------------------------------------------------------------------------
+
+class TestTotalCost:
+    """`_total_cost` must sum cost_usd over LLM nodes only.
+
+    Some integrations (e.g. Pydantic AI) attach an aggregate cost_usd to the
+    parent agent node *as well as* each llm node; counting both double-counts
+    the run total (~2x). See SESSION-FINDINGS PA1.
+    """
+
+    def _graph(self, *nodes) -> RunGraph:
+        return RunGraph(run_id="r", label="run", status=NodeStatus.SUCCESS,
+                        nodes=list(nodes), edges=[], started_at=0.0)
+
+    def _node(self, node_id, kind, cost) -> GraphNode:
+        data = {"output": {"cost_usd": cost}} if cost is not None else {}
+        return GraphNode(id=node_id, kind=kind, label=node_id, data=data)
+
+    def test_ignores_cost_on_non_llm_nodes(self):
+        # Agent aggregate ($0.00004) + one llm node ($0.00002): total must be
+        # the llm cost only, NOT the sum of both.
+        g = self._graph(
+            self._node("agent", NodeKind.AGENT, 0.00004),
+            self._node("llm", NodeKind.LLM, 0.00002),
+        )
+        assert _total_cost(g) == 0.00002
+
+    def test_sums_multiple_llm_nodes(self):
+        g = self._graph(
+            self._node("agent", NodeKind.AGENT, 0.00004),
+            self._node("llm1", NodeKind.LLM, 0.00002),
+            self._node("llm2", NodeKind.LLM, 0.00003),
+        )
+        assert _total_cost(g) == 0.00005
+
+    def test_none_when_no_llm_cost(self):
+        # An aggregate on a non-llm node alone yields no run cost.
+        g = self._graph(self._node("agent", NodeKind.AGENT, 0.00004))
+        assert _total_cost(g) is None

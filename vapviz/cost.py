@@ -66,10 +66,13 @@ def calculate_cost(
     model is not in the pricing table.
 
     Matching is attempted in order:
-    1. Exact model name
+    1. Exact model name (after stripping any ``provider/`` prefix, e.g.
+       ``"openrouter/openai/gpt-4o-mini"`` → ``"gpt-4o-mini"``)
     2. The pricing-table key is a prefix of *model* (e.g. ``"gpt-4o"``
        matches ``"gpt-4o-2024-11-20"``)
     3. *model* is a prefix of the pricing-table key (handles short aliases)
+    Among prefix matches the **longest** key wins, so ``"gpt-4o-mini-…"``
+    prices as ``gpt-4o-mini``, not ``gpt-4o``.
 
     Args:
         model:         Model identifier as returned by the API (e.g. ``"gpt-4o"``).
@@ -79,14 +82,17 @@ def calculate_cost(
     Returns:
         Cost in USD as a ``float``, or ``None`` if the model is unknown.
     """
+    # LiteLLM / OpenRouter prefix the provider(s) onto the model id; the
+    # pricing table keys never contain "/", so price by the bare name.
+    model = model.rsplit("/", 1)[-1]
+
     pricing = PRICING.get(model)
 
     if pricing is None:
-        # Prefix matching
-        for key, value in PRICING.items():
-            if model.startswith(key) or key.startswith(model):
-                pricing = value
-                break
+        # Prefix matching — the longest key is the most specific match.
+        matches = [k for k in PRICING if model.startswith(k) or k.startswith(model)]
+        if matches:
+            pricing = PRICING[max(matches, key=len)]
 
     if pricing is None:
         return None
