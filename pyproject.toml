@@ -65,13 +65,12 @@ vapviz = "vapviz.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["vapviz"]
 
-# Bundle the built React UI into the wheel so `pip install vapviz && vapviz serve`
-# serves the full UI with no Node build. Requires `ui/dist` to exist at build
-# time (CI/release build the UI first). force-include bypasses .gitignore.
-[tool.hatch.build.targets.wheel.force-include]
-"ui/dist" = "vapviz/_static"
+# The built React UI is bundled as package data under `vapviz/_static` (so
+# `pip install vapviz && vapviz serve` serves it with no Node build). CI/release
+# build the UI and copy it into `vapviz/_static` before packaging. These globs
+# include it when present and are simply empty otherwise — so a plain editable
+# install (e.g. CI's test job) does NOT require the UI to be built.
+artifacts = ["vapviz/_static/**/*"]
 
-# Carry the built UI in the sdist too, so a wheel built from the sdist
-# (the default `python -m build` flow) still bundles it.
 [tool.hatch.build.targets.sdist]
-artifacts = ["ui/dist/**/*"]
+artifacts = ["vapviz/_static/**/*"]

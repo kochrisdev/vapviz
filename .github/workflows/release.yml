@@ -28,9 +28,11 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      - name: Build the UI (bundled into the wheel)
-        working-directory: ui
-        run: npm ci && npm run build
+      - name: Build the UI and stage it into the package
+        run: |
+          cd ui && npm ci && npm run build && cd ..
+          rm -rf vapviz/_static
+          cp -r ui/dist vapviz/_static
 
       - name: Set up Python
         uses: actions/setup-python@v5
