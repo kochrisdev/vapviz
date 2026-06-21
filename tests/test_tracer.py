@@ -325,11 +325,11 @@ class TestMultipleRuns:
 
 class TestPublicApi:
     def test_run_context_exported(self):
-        # Regression (U2): three bundled demos annotate with vap.RunContext;
+        # Regression (U2): three bundled demos annotate with vapviz.RunContext;
         # it must be importable from the top-level package.
-        import vap
-        assert vap.RunContext is RunContext
-        assert "RunContext" in vap.__all__
+        import vapviz
+        assert vapviz.RunContext is RunContext
+        assert "RunContext" in vapviz.__all__
 
 
 class TestCrossThreadClose:

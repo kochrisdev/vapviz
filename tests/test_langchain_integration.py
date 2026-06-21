@@ -3,7 +3,7 @@ REAL-LLM integration tests for the LangChain/LangGraph integration.
 
 Unlike test_langchain.py (which feeds the handler stub/mock inputs), these run
 actual LangGraph agents against a real LLM (OpenRouter) and assert on the graph
-VaP records. They use a real SqliteStore so persistence-only bugs (events must
+vapviz records. They use a real SqliteStore so persistence-only bugs (events must
 be JSON-serializable to be written) are exercised too.
 
 They SKIP automatically when OPENROUTER_API_KEY is absent or langchain/langgraph
@@ -61,9 +61,9 @@ from langgraph.graph import StateGraph, START, END, MessagesState  # noqa: E402
 from langgraph.prebuilt import create_react_agent  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 
-from vap import Tracer  # noqa: E402
-from vap.backends.sqlite import SqliteStore  # noqa: E402
-from vap.integrations.langchain import VapCallbackHandler  # noqa: E402
+from vapviz import Tracer  # noqa: E402
+from vapviz.backends.sqlite import SqliteStore  # noqa: E402
+from vapviz.integrations.langchain import VapCallbackHandler  # noqa: E402
 
 
 # Defined at module level: a function-local TypedDict breaks
@@ -287,7 +287,7 @@ def test_failing_tool_is_localized(tmp_path):
 def test_mixed_handler_and_patch_openai_no_double_count(tmp_path):
     from openai import OpenAI
 
-    from vap.integrations.openai_sdk import patch_openai
+    from vapviz.integrations.openai_sdk import patch_openai
 
     store = SqliteStore(str(tmp_path / "mixed.db"))
     tracer = Tracer(store=store)
