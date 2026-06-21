@@ -7,7 +7,15 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from vapviz.budgets import Budget, check_budget, enable_budget_alerts
+import vapviz.budgets as budgets_mod
+from vapviz.budgets import (
+    Budget,
+    check_budget,
+    enable_budget_alerts,
+    otel_alert,
+    slack_alert,
+    webhook_alert,
+)
 from vapviz.events import (
     EventType,
     GraphNode,
@@ -154,6 +162,97 @@ class TestAlerts:
         _seed_run(store, "over", cost=0.05)
         assert alerts == []
         assert "add_event" not in vars(store)
+
+
+# ---------------------------------------------------------------------------
+# Alert channels
+# ---------------------------------------------------------------------------
+
+class TestChannels:
+    def test_multiple_channels_all_fire(self):
+        store = MemoryStore()
+        a, b = [], []
+        handle = enable_budget_alerts(Budget(max_cost_usd=0.01), store=store,
+                                      on_alert=[a.append, b.append])
+        try:
+            _seed_run(store, "over", cost=0.05)
+        finally:
+            handle.disable()
+        assert len(a) == 1 and len(b) == 1
+
+    def test_one_failing_channel_does_not_break_others(self):
+        store = MemoryStore()
+        good = []
+
+        def boom(report):
+            raise RuntimeError("channel down")
+
+        handle = enable_budget_alerts(Budget(max_cost_usd=0.01), store=store,
+                                      on_alert=[boom, good.append])
+        try:
+            _seed_run(store, "over", cost=0.05)
+        finally:
+            handle.disable()
+        assert len(good) == 1          # the good channel still ran
+
+    def test_webhook_alert_posts_report(self, monkeypatch):
+        sent = []
+        monkeypatch.setattr(budgets_mod, "_deliver",
+                            lambda url, payload, headers, timeout: sent.append((url, payload)))
+        store = MemoryStore()
+        handle = enable_budget_alerts(Budget(max_cost_usd=0.01), store=store,
+                                      on_alert=webhook_alert("https://example.com/hook"))
+        try:
+            _seed_run(store, "over", cost=0.05)
+        finally:
+            handle.disable()
+        assert len(sent) == 1
+        url, payload = sent[0]
+        assert url == "https://example.com/hook"
+        assert payload["run_id"] == "over" and payload["status"] == "exceeded"
+        assert payload["violations"][0]["metric"] == "cost_usd"
+
+    def test_slack_alert_formats_message(self, monkeypatch):
+        sent = []
+        monkeypatch.setattr(budgets_mod, "_deliver",
+                            lambda url, payload, headers, timeout: sent.append((url, payload)))
+        store = MemoryStore()
+        handle = enable_budget_alerts(Budget(max_cost_usd=0.01), store=store,
+                                      on_alert=slack_alert("https://hooks.slack.com/x"))
+        try:
+            _seed_run(store, "over", cost=0.05)
+        finally:
+            handle.disable()
+        assert len(sent) == 1
+        url, payload = sent[0]
+        assert "hooks.slack.com" in url
+        assert "text" in payload and "over" in payload["text"] and "budget exceeded" in payload["text"]
+
+    def test_otel_alert_emits_span(self):
+        pytest.importorskip("opentelemetry.sdk")
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+        from opentelemetry.trace import StatusCode
+
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+        store = MemoryStore()
+        handle = enable_budget_alerts(Budget(max_cost_usd=0.01), store=store,
+                                      on_alert=otel_alert(tracer_provider=provider))
+        try:
+            _seed_run(store, "over", cost=0.05)
+        finally:
+            handle.disable()
+        provider.force_flush()
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.name == "vapviz.budget_exceeded"
+        assert span.attributes["vapviz.run_id"] == "over"
+        assert span.status.status_code == StatusCode.ERROR
 
 
 # ---------------------------------------------------------------------------

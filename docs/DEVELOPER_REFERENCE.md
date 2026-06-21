@@ -349,8 +349,10 @@ and token totals and compare against the limits. Returns a `BudgetReport`:
 A limit left as `None` is ignored; a missing duration (a still-running run) skips the duration check.
 
 **`enable_budget_alerts(budget, *, store=None, on_alert=None) -> BudgetAlertHandle`** — wraps the
-store so every completed run (`agent_end`) is checked; on a violation it calls `on_alert(report)`
-(default: logs a warning on the `vapviz.budgets` logger). `handle.disable()` restores the store.
+store so every completed run (`agent_end`) is checked; on a violation it calls each alert channel
+with the `BudgetReport`. `on_alert` accepts a **single channel or a list** (fan-out); default logs a
+warning on the `vapviz.budgets` logger. Channels are best-effort — an exception in one is logged and
+never breaks the run or the other channels. `handle.disable()` restores the store.
 
 ```python
 import vapviz
@@ -360,6 +362,32 @@ vapviz.configure(db="vapviz.db")
 handle = enable_budget_alerts(
     Budget(max_cost_usd=0.05, max_duration_ms=5000),
     on_alert=lambda r: print("OVER BUDGET", r.run_id, r.violations),
+)
+```
+
+**Built-in alert channels** *(v1.1.0)* — import from `vapviz` or `vapviz.budgets`:
+
+- **`webhook_alert(url, *, headers=None, timeout=5.0)`** — POSTs the `BudgetReport` (as
+  `model_dump()` JSON) to `url`.
+- **`slack_alert(webhook_url, *, timeout=5.0)`** — posts a formatted `{"text": …}` message to a
+  Slack incoming webhook.
+- **`otel_alert(*, tracer_provider=None, service_name="vapviz")`** — emits a
+  `vapviz.budget_exceeded` span (ERROR status) with `vapviz.run_id` / `cost_usd` / `duration_ms` /
+  `total_tokens` / `violations` attributes. Requires `pip install "vapviz[otel]"`.
+
+HTTP channels deliver on a background daemon thread, so a slow or failing endpoint never blocks the
+traced run. Pass a list to fan out to several at once:
+
+```python
+from vapviz.budgets import Budget, enable_budget_alerts, slack_alert, webhook_alert, otel_alert
+
+enable_budget_alerts(
+    Budget(max_cost_usd=0.05),
+    on_alert=[
+        slack_alert("https://hooks.slack.com/services/…"),
+        webhook_alert("https://my-svc/alerts", headers={"X-Api-Key": "…"}),
+        otel_alert(),
+    ],
 )
 ```
 
@@ -1734,6 +1762,10 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v1.1.0
+
+- **Budget alert channels** — `enable_budget_alerts` gains built-in sinks: `webhook_alert(url)`, `slack_alert(webhook_url)`, and `otel_alert()` (emits a `vapviz.budget_exceeded` span). `on_alert` now accepts a **list** of channels (fan-out), not just one callback. HTTP delivery runs on a background daemon thread and is best-effort — a failing channel is logged and never breaks the run or the other channels. Exported as `vapviz.webhook_alert` / `slack_alert` / `otel_alert`.
 
 ### v1.0.1
 

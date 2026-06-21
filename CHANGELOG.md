@@ -11,6 +11,15 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 _Nothing yet._
 
+## [1.1.0]
+
+### Added
+- **Budget alert channels** — built-in sinks for `enable_budget_alerts`: `webhook_alert(url)`,
+  `slack_alert(webhook_url)`, and `otel_alert()` (emits a `vapviz.budget_exceeded` span).
+- `on_alert` now accepts a **list** of channels (fan-out), not just one callback. HTTP delivery is
+  non-blocking (background thread) and best-effort — one failing channel never breaks the run or the
+  others. Exported as `vapviz.webhook_alert` / `slack_alert` / `otel_alert`.
+
 ## [1.0.1]
 
 ### Changed
@@ -96,7 +105,8 @@ This release adds no new tracing/integration features beyond 0.15.0 — it marks
 ### Added
 - Initial release: sync tracer, in-memory store, FastAPI + SSE server, ReactFlow UI, Anthropic SDK integration.
 
-[Unreleased]: https://github.com/kochrisdev/vapviz/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/kochrisdev/vapviz/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.1.0
 [1.0.1]: https://github.com/kochrisdev/vapviz/releases/tag/v1.0.1
 [1.0.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.0.0
 [0.15.0]: https://github.com/kochrisdev/vapviz/releases/tag/v0.15.0

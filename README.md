@@ -452,8 +452,24 @@ enable_budget_alerts(Budget(max_cost_usd=0.05, max_duration_ms=5000))
 # over-budget runs now log a warning when they finish
 ```
 
-Pass an `on_alert` callback to do something other than log — page someone, post to Slack, emit an
-OpenTelemetry event, etc.:
+Route alerts to **built-in channels** — a webhook, a Slack incoming webhook, or an OpenTelemetry
+span — and fan out to several at once (pass a list). Channels are best-effort and non-blocking (HTTP
+posts run on a background thread), so a flaky endpoint never slows or breaks the traced run:
+
+```python
+from vapviz.budgets import webhook_alert, slack_alert, otel_alert
+
+enable_budget_alerts(
+    Budget(max_cost_usd=0.05, max_duration_ms=5000),
+    on_alert=[
+        slack_alert("https://hooks.slack.com/services/…"),
+        webhook_alert("https://my-svc/alerts"),
+        otel_alert(),                       # emits a vapviz.budget_exceeded span
+    ],
+)
+```
+
+Or pass your own callback for anything else:
 
 ```python
 enable_budget_alerts(
@@ -836,6 +852,9 @@ with tracer.trace("isolated run") as run:
 ---
 
 ## Roadmap
+
+**What's next:** see **[ROADMAP.md](ROADMAP.md)** for the post-1.0 plan. The release history below
+records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 
 ### v0.2.0 — Phase 1 (complete)
 - [x] **Persistent storage** — SQLite backend with WAL mode, replay on startup
