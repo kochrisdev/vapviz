@@ -28,14 +28,20 @@ Automatic alerting on every run::
 """
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Callable, Optional
+import threading
+import urllib.request
+from typing import Any, Callable, Optional, Union
 
 from pydantic import BaseModel, Field
 
 from .events import EventType, NodeKind, RunGraph
 
 logger = logging.getLogger("vapviz.budgets")
+
+# An alert sink: called with a BudgetReport when a run exceeds its budget.
+AlertChannel = Callable[["BudgetReport"], None]
 
 
 # ---------------------------------------------------------------------------
@@ -159,13 +165,13 @@ def enable_budget_alerts(
     budget: Budget,
     *,
     store=None,
-    on_alert: Optional[Callable[[BudgetReport], None]] = None,
+    on_alert: Optional[Union[AlertChannel, list[AlertChannel]]] = None,
 ) -> BudgetAlertHandle:
     """Check every completed run against *budget* and alert on violations.
 
     Wraps the store's ``add_event`` so that when a run's ``agent_end`` event is
-    recorded, the run is checked. On a violation, *on_alert* is called (or a
-    warning is logged by default). Returns a handle with ``disable()``.
+    recorded, the run is checked. On a violation, each alert channel is called.
+    Returns a handle with ``disable()``.
 
     Parameters
     ----------
@@ -174,26 +180,112 @@ def enable_budget_alerts(
     store:
         Store to watch. Defaults to ``vapviz.store.default_store``.
     on_alert:
-        Callback invoked with the :class:`BudgetReport` when a run exceeds the
-        budget. Defaults to logging a warning on the ``vapviz.budgets`` logger.
+        A single channel or a list of channels — each a callable invoked with the
+        :class:`BudgetReport` when a run exceeds the budget. Use the built-in
+        :func:`webhook_alert`, :func:`slack_alert`, :func:`otel_alert`, or your
+        own callback. Defaults to logging a warning on the ``vapviz.budgets``
+        logger. Channels are best-effort: an exception in one never breaks the
+        run or the other channels.
     """
     import vapviz.store as _sm
 
     target = store if store is not None else _sm.default_store
     original = target.add_event
-    alert = on_alert or _default_alert
+
+    if on_alert is None:
+        channels: list[AlertChannel] = [_default_alert]
+    elif callable(on_alert):
+        channels = [on_alert]
+    else:
+        channels = list(on_alert)
 
     def wrapped(event) -> None:
         original(event)
         if event.type == EventType.AGENT_END:
             try:
                 graph = target.get_graph(event.run_id)
-                if graph is not None:
-                    report = check_budget(graph, budget)
-                    if report.status == "exceeded":
-                        alert(report)
+                if graph is None:
+                    return
+                report = check_budget(graph, budget)
+                if report.status != "exceeded":
+                    return
+                for channel in channels:
+                    try:
+                        channel(report)
+                    except Exception:  # noqa: BLE001 - one channel must not break others
+                        logger.warning("vapviz budget alert channel failed", exc_info=True)
             except Exception:  # noqa: BLE001 - alerting is best-effort
                 pass
 
     target.add_event = wrapped
     return BudgetAlertHandle(target, original)
+
+
+# ---------------------------------------------------------------------------
+# Built-in alert channels
+# ---------------------------------------------------------------------------
+
+def _summary(report: BudgetReport) -> str:
+    return ", ".join(
+        f"{v.metric} {v.actual} > {v.limit} (+{v.pct_over:.0f}%)" for v in report.violations
+    )
+
+
+def _deliver(url: str, payload: dict, headers: Optional[dict], timeout: float) -> None:
+    """POST *payload* as JSON to *url* in a daemon thread (never blocks the run)."""
+    def _post() -> None:
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                url, data=data, method="POST",
+                headers={"Content-Type": "application/json", **(headers or {})},
+            )
+            urllib.request.urlopen(req, timeout=timeout)  # noqa: S310 - user-supplied URL
+        except Exception:  # noqa: BLE001 - alerting is best-effort
+            logger.warning("vapviz budget alert POST to %s failed", url, exc_info=True)
+
+    threading.Thread(target=_post, daemon=True).start()
+
+
+def webhook_alert(url: str, *, headers: Optional[dict] = None, timeout: float = 5.0) -> AlertChannel:
+    """Alert channel that POSTs the :class:`BudgetReport` as JSON to *url*."""
+    def _send(report: BudgetReport) -> None:
+        _deliver(url, report.model_dump(), headers, timeout)
+    return _send
+
+
+def slack_alert(webhook_url: str, *, timeout: float = 5.0) -> AlertChannel:
+    """Alert channel that posts a formatted message to a Slack incoming webhook."""
+    def _send(report: BudgetReport) -> None:
+        text = f":warning: *vapviz budget exceeded* for run `{report.run_id}`\n{_summary(report)}"
+        _deliver(webhook_url, {"text": text}, None, timeout)
+    return _send
+
+
+def otel_alert(*, tracer_provider=None, service_name: str = "vapviz") -> AlertChannel:
+    """Alert channel that emits an OpenTelemetry span (``vapviz.budget_exceeded``).
+
+    Requires ``pip install "vapviz[otel]"``.
+    """
+    try:
+        from opentelemetry import trace as _otel_trace
+        from opentelemetry.trace import Status, StatusCode
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            'otel_alert requires opentelemetry. Install it with: pip install "vapviz[otel]"'
+        ) from exc
+
+    provider = tracer_provider if tracer_provider is not None else _otel_trace.get_tracer_provider()
+    tracer = provider.get_tracer(service_name)
+
+    def _send(report: BudgetReport) -> None:
+        span = tracer.start_span("vapviz.budget_exceeded")
+        span.set_attribute("vapviz.run_id", report.run_id)
+        span.set_attribute("vapviz.cost_usd", report.cost_usd)
+        if report.duration_ms is not None:
+            span.set_attribute("vapviz.duration_ms", report.duration_ms)
+        span.set_attribute("vapviz.total_tokens", report.total_tokens)
+        span.set_attribute("vapviz.violations", [v.metric for v in report.violations])
+        span.set_status(Status(StatusCode.ERROR, _summary(report)))
+        span.end()
+    return _send

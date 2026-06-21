@@ -14,9 +14,9 @@ rather than starting fresh.
 
 High value, mostly small, leverages existing features.
 
-- **Budget alert channels** *(small)* — `enable_budget_alerts` currently logs or calls a callback;
-  add built-in **webhook / Slack / OpenTelemetry-event** sinks so an overrun actually notifies
-  someone.
+- ✅ **Budget alert channels** *(shipped in v1.1.0)* — `enable_budget_alerts` now has built-in
+  **`webhook_alert` / `slack_alert` / `otel_alert`** sinks and `on_alert` accepts a list (fan-out),
+  so an overrun actually notifies someone.
 - **Evals as a CI gate** *(medium, differentiating)* — an `eval-suite` concept (checks + expected
   runs) plus a **`vapviz-eval` GitHub Action** that runs evals and fails the build on regressions —
   turning agent evals into real CI quality-gating.

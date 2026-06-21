@@ -1187,6 +1187,23 @@ def on_over_budget(report):
 enable_budget_alerts(Budget(max_cost_usd=0.05), on_alert=on_over_budget)
 ```
 
+Or use a **built-in channel** — a webhook, a Slack incoming webhook, or an OpenTelemetry span — and
+fan out to several at once by passing a list. HTTP delivery runs on a background thread and is
+best-effort, so a flaky endpoint never slows or breaks the traced run:
+
+```python
+from vapviz.budgets import enable_budget_alerts, webhook_alert, slack_alert, otel_alert
+
+enable_budget_alerts(
+    Budget(max_cost_usd=0.05, max_duration_ms=5000),
+    on_alert=[
+        slack_alert("https://hooks.slack.com/services/…"),  # formatted Slack message
+        webhook_alert("https://my-svc/alerts"),             # POSTs the BudgetReport as JSON
+        otel_alert(),                                       # emits a vapviz.budget_exceeded span
+    ],
+)
+```
+
 Check a single run on demand (no alerting), or from any language via the REST API:
 
 ```python

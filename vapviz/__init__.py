@@ -6,7 +6,15 @@ from .integrations.openai_sdk import patch_openai
 from .backends.sqlite import SqliteStore
 from .cost import calculate_cost, format_cost
 from .metrics import compute_metrics, Metrics
-from .budgets import Budget, BudgetReport, check_budget, enable_budget_alerts
+from .budgets import (
+    Budget,
+    BudgetReport,
+    check_budget,
+    enable_budget_alerts,
+    webhook_alert,
+    slack_alert,
+    otel_alert,
+)
 from .evals import (
     Check,
     CheckResult,
@@ -78,6 +86,9 @@ __all__ = [
     "BudgetReport",
     "check_budget",
     "enable_budget_alerts",
+    "webhook_alert",
+    "slack_alert",
+    "otel_alert",
     # Evals
     "Check",
     "CheckResult",

@@ -41,6 +41,21 @@ def main() -> None:
     # Auto-alert on every completed run (logs a warning when a limit is exceeded).
     handle = enable_budget_alerts(budget, store=store)
 
+    # In production you'd route alerts to a real channel — or several at once.
+    # HTTP delivery is non-blocking and best-effort, so a flaky endpoint never
+    # slows or breaks the traced run:
+    #
+    #     from vapviz.budgets import webhook_alert, slack_alert, otel_alert
+    #     enable_budget_alerts(
+    #         budget,
+    #         store=store,
+    #         on_alert=[
+    #             slack_alert("https://hooks.slack.com/services/…"),
+    #             webhook_alert("https://my-svc/alerts"),
+    #             otel_alert(),  # emits a vapviz.budget_exceeded span
+    #         ],
+    #     )
+
     print("Run A — cheap & fast (within budget):")
     a = run_agent(tracer, "Cheap agent", cost=0.004, work_s=0.05)
 
