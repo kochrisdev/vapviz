@@ -172,3 +172,61 @@ class TestLifecycle:
         with tracer.trace("R") as run:
             h = VapLlamaIndex(run, register=False)
         assert h not in get_dispatcher().span_handlers
+
+
+# ---------------------------------------------------------------------------
+# _extract_usage_and_cost — price an LLM response (regression for LI1)
+# ---------------------------------------------------------------------------
+
+class _Usage:
+    """Mimics the OpenAI ChatCompletion.usage object on a LlamaIndex response."""
+    def __init__(self, prompt, completion):
+        self.prompt_tokens = prompt
+        self.completion_tokens = completion
+
+
+class _Raw:
+    def __init__(self, usage):
+        self.usage = usage
+
+
+class _Resp:
+    """Mimics a LlamaIndex ChatResponse carrying the raw provider payload."""
+    def __init__(self, usage=None, additional_kwargs=None):
+        self.raw = _Raw(usage) if usage is not None else None
+        self.additional_kwargs = additional_kwargs or {}
+
+
+class TestExtractUsageAndCost:
+    """LlamaIndex llm spans must be priced from their response token usage.
+
+    Before LI1 the integration never called calculate_cost(), so llm nodes had
+    no cost_usd and total_cost_usd was None. See SESSION-FINDINGS LI1.
+    """
+
+    def test_prices_from_raw_usage(self):
+        from vapviz.integrations.llamaindex import _extract_usage_and_cost
+
+        out = _extract_usage_and_cost(_Resp(usage=_Usage(100, 50)), "gpt-4o-mini")
+        assert out["usage"] == {"input_tokens": 100, "output_tokens": 50}
+        assert out["cost_usd"] > 0
+
+    def test_falls_back_to_additional_kwargs(self):
+        from vapviz.integrations.llamaindex import _extract_usage_and_cost
+
+        resp = _Resp(additional_kwargs={"prompt_tokens": 80, "completion_tokens": 20})
+        out = _extract_usage_and_cost(resp, "gpt-4o-mini")
+        assert out["usage"] == {"input_tokens": 80, "output_tokens": 20}
+        assert out["cost_usd"] > 0
+
+    def test_no_usage_returns_empty(self):
+        from vapviz.integrations.llamaindex import _extract_usage_and_cost
+
+        assert _extract_usage_and_cost(_Resp(), "gpt-4o-mini") == {}
+
+    def test_unknown_model_has_usage_but_no_cost(self):
+        from vapviz.integrations.llamaindex import _extract_usage_and_cost
+
+        out = _extract_usage_and_cost(_Resp(usage=_Usage(10, 5)), "totally-unknown-model")
+        assert out["usage"] == {"input_tokens": 10, "output_tokens": 5}
+        assert "cost_usd" not in out

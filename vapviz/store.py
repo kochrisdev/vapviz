@@ -10,6 +10,7 @@ from .events import (
     EventType,
     GraphEdge,
     GraphNode,
+    NodeKind,
     NodeStatus,
     RunGraph,
     RunSummary,
@@ -22,10 +23,17 @@ from .events import (
 # ---------------------------------------------------------------------------
 
 def _total_cost(graph: RunGraph) -> Optional[float]:
-    """Sum cost_usd from all LLM nodes in the graph; return None if none have cost."""
+    """Sum cost_usd from all LLM nodes in the graph; return None if none have cost.
+
+    Only ``llm``-kind nodes are summed: some integrations (e.g. Pydantic AI)
+    also attach an aggregate ``cost_usd`` to the parent agent node, which would
+    otherwise be double-counted.
+    """
     total = 0.0
     found = False
     for node in graph.nodes:
+        if node.kind != NodeKind.LLM:
+            continue
         cost = node.data.get("output", {}).get("cost_usd") if isinstance(node.data.get("output"), dict) else None
         if cost is not None:
             total += cost

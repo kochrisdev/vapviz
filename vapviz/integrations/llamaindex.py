@@ -197,6 +197,7 @@ class VapLlamaIndex(BaseSpanHandler):  # type: ignore[misc]
                 "label": label,
                 "parent_id": parent_node_id,
                 "is_run_root": is_run_root,
+                "model": _model_name(instance) if kind == NodeKind.LLM else None,
             }
 
         data: dict[str, Any] = {}
@@ -227,6 +228,8 @@ class VapLlamaIndex(BaseSpanHandler):  # type: ignore[misc]
             return
 
         out = {"result": _truncate(_safe_str(result))} if result is not None else {}
+        if kind == NodeKind.LLM and result is not None:
+            out.update(_extract_usage_and_cost(result, rec.get("model")))
         _emit(rec["store"], rec["run_id"], _END_EVENT[kind], rec["node_id"], kind,
               rec["label"], rec["parent_id"], ts, {"output": out} if out else {})
 
@@ -250,6 +253,52 @@ def _emit(store, run_id, ev_type, node_id, kind, label, parent_id, ts, data) -> 
             data=data or {},
         )
     )
+
+
+def _model_name(instance: Any) -> str:
+    """Best-effort model id from a LlamaIndex LLM instance (e.g. ``gpt-4o-mini``)."""
+    return _safe_str(getattr(instance, "model", None) or getattr(instance, "model_name", None))
+
+
+def _extract_usage_and_cost(result: Any, model: Optional[str]) -> dict[str, Any]:
+    """Read token usage from a LlamaIndex LLM response and price it.
+
+    Mirrors ``langchain.py::_extract_llm_result``. LlamaIndex Chat/Completion
+    responses expose the raw provider payload on ``.raw`` (an OpenAI
+    ``ChatCompletion`` with ``.usage``, or a dict) and sometimes echo token
+    counts in ``.additional_kwargs``.
+    """
+    from ..cost import calculate_cost
+
+    in_tok = out_tok = 0
+
+    raw = getattr(result, "raw", None)
+    usage = None
+    if raw is not None:
+        usage = getattr(raw, "usage", None)
+        if usage is None and isinstance(raw, dict):
+            usage = raw.get("usage")
+    if usage is not None:
+        get = usage.get if isinstance(usage, dict) else (lambda k: getattr(usage, k, None))
+        in_tok = get("prompt_tokens") or get("input_tokens") or 0
+        out_tok = get("completion_tokens") or get("output_tokens") or 0
+
+    if not (in_tok or out_tok):
+        ak = getattr(result, "additional_kwargs", None)
+        if isinstance(ak, dict):
+            in_tok = ak.get("prompt_tokens") or ak.get("input_tokens") or 0
+            out_tok = ak.get("completion_tokens") or ak.get("output_tokens") or 0
+
+    in_tok = int(in_tok or 0)
+    out_tok = int(out_tok or 0)
+    if not (in_tok or out_tok):
+        return {}
+
+    out: dict[str, Any] = {"usage": {"input_tokens": in_tok, "output_tokens": out_tok}}
+    cost = calculate_cost(model or "", in_tok, out_tok)
+    if cost is not None:
+        out["cost_usd"] = round(cost, 8)
+    return out
 
 
 def _label(id_: str) -> str:

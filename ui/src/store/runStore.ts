@@ -127,8 +127,10 @@ export const useRunStore = create<Store>((set) => ({
           [event.run_id]: { ...prev, nodes, edges, status, ended_at, events: [...prev.events, event] },
         },
         runs: (() => {
-          // Recompute total cost from all nodes in this run
+          // Recompute total cost from llm nodes only — some integrations also
+          // attach an aggregate cost_usd to the parent agent node (would double-count).
           const totalCostUsd = nodes.reduce((sum, n) => {
+            if (n.kind !== "llm") return sum;
             const cost = (n.data?.output as Record<string, unknown> | undefined)?.cost_usd as number | undefined;
             return cost != null ? sum + cost : sum;
           }, 0);
