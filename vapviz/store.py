@@ -16,6 +16,7 @@ from .events import (
     RunSummary,
     VapEvent,
 )
+from .summary import summarize_run
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +253,7 @@ class MemoryStore(RunStore):
                         event_count=len(self._events.get(run_id, [])),
                         total_cost_usd=_total_cost(g),
                         tags=list(self._tags.get(run_id, [])),
+                        summary=summarize_run(g),
                     )
                     for run_id, g in self._graphs.items()
                 ],
@@ -274,6 +276,7 @@ class MemoryStore(RunStore):
                 event_count=len(self._events.get(run_id, [])),
                 total_cost_usd=_total_cost(g),
                 tags=list(self._tags.get(run_id, [])),
+                summary=summarize_run(g),
             )
 
     def get_graph(self, run_id: str) -> Optional[RunGraph]:

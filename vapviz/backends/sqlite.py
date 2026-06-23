@@ -15,6 +15,7 @@ from ..events import (
     VapEvent,
 )
 from ..store import RunStore, _apply_event_to_graph, _total_cost
+from ..summary import summarize_run
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS events (
@@ -219,6 +220,7 @@ class SqliteStore(RunStore):
                 event_count=len(self._events.get(run_id, [])),
                 total_cost_usd=_total_cost(g),
                 tags=list(self._tags.get(run_id, [])),
+                summary=summarize_run(g),
             )
 
     def list_runs(self) -> list[RunSummary]:
@@ -235,6 +237,7 @@ class SqliteStore(RunStore):
                         event_count=len(self._events.get(run_id, [])),
                         total_cost_usd=_total_cost(g),
                         tags=list(self._tags.get(run_id, [])),
+                        summary=summarize_run(g),
                     )
                     for run_id, g in self._graphs.items()
                 ],

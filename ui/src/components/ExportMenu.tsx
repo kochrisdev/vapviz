@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { Download, ChevronDown, FileJson, Image } from "lucide-react";
+import { cssColor } from "../lib/cssColor";
 
 interface Props {
   runId: string;
@@ -35,7 +36,7 @@ export function ExportMenu({ runId, label, graphContainerRef }: Props) {
       // Dynamic import so html2canvas is only loaded on demand
       const { default: html2canvas } = await import("html2canvas");
       const canvas = await html2canvas(el, {
-        backgroundColor: "#020617",
+        backgroundColor: cssColor("--bg"),
         logging: false,
         useCORS: true,
       });
@@ -60,7 +61,7 @@ export function ExportMenu({ runId, label, graphContainerRef }: Props) {
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={busy}
-        className="flex items-center gap-1 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-2 py-1 rounded border border-slate-700 transition-colors"
+        className="flex items-center gap-1 text-xs text-content-faint hover:text-content bg-surface-inset hover:bg-surface-hover disabled:opacity-50 px-2 py-1 rounded border border-border transition-colors"
       >
         <Download size={12} />
         {busy ? "Exporting…" : "Export"}
@@ -71,17 +72,17 @@ export function ExportMenu({ runId, label, graphContainerRef }: Props) {
         <>
           {/* Click-away overlay */}
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-20 bg-slate-800 border border-slate-700 rounded shadow-xl py-1 min-w-[140px]">
+          <div className="absolute right-0 top-full mt-1 z-20 bg-surface border border-border rounded shadow-xl py-1 min-w-[140px]">
             <button
               onClick={handleJson}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-content-muted hover:bg-surface-hover hover:text-content transition-colors"
             >
               <FileJson size={12} />
               Download JSON
             </button>
             <button
               onClick={handlePng}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-content-muted hover:bg-surface-hover hover:text-content transition-colors"
             >
               <Image size={12} />
               Download PNG

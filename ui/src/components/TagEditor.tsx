@@ -37,17 +37,17 @@ export function TagEditor({ runId, tags }: Props) {
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      <Tag size={11} className="text-slate-500 shrink-0" />
+      <Tag size={11} className="text-content-faint shrink-0" />
       {tags.map((t) => (
         <span
           key={t}
-          className="group/tag flex items-center gap-1 text-[10px] bg-slate-700/60 text-slate-300 border border-slate-600/60 px-1.5 py-0.5 rounded-full"
+          className="group/tag flex items-center gap-1 text-[10px] bg-surface-hover text-content-muted border border-border px-1.5 py-0.5 rounded-full"
         >
           {t}
           <button
             onClick={() => save(tags.filter((x) => x !== t))}
             title="Remove tag"
-            className="text-slate-500 hover:text-red-400"
+            className="text-content-faint hover:text-status-error"
           >
             <X size={9} />
           </button>
@@ -64,13 +64,13 @@ export function TagEditor({ runId, tags }: Props) {
             if (e.key === "Escape") { setDraft(""); setAdding(false); }
           }}
           placeholder="tag…"
-          className="bg-slate-800 text-[10px] text-slate-200 placeholder-slate-600 outline-none border border-slate-600 rounded-full px-2 py-0.5 w-20"
+          className="bg-surface-inset text-[10px] text-content placeholder-content-faint outline-none border border-border rounded-full px-2 py-0.5 w-20"
         />
       ) : (
         <button
           onClick={() => setAdding(true)}
           title="Add tag"
-          className="flex items-center gap-0.5 text-[10px] text-slate-500 hover:text-indigo-300 border border-dashed border-slate-600/60 hover:border-indigo-500/40 px-1.5 py-0.5 rounded-full"
+          className="flex items-center gap-0.5 text-[10px] text-content-faint hover:text-accent border border-dashed border-border hover:border-accent/40 px-1.5 py-0.5 rounded-full"
         >
           <Plus size={9} /> tag
         </button>

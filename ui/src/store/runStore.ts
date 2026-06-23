@@ -13,6 +13,16 @@ export interface RunState {
 
 export type View = "runs" | "dashboard";
 
+// Audience mode: Simple = plain-language narrative only; Technical = graph,
+// logs, and raw JSON unlocked. Persisted across sessions.
+export type AppMode = "simple" | "technical";
+
+const MODE_KEY = "vapviz-mode";
+function initialMode(): AppMode {
+  if (typeof window === "undefined") return "simple";
+  return window.localStorage.getItem(MODE_KEY) === "technical" ? "technical" : "simple";
+}
+
 interface Store {
   runs: RunSummary[];
   selectedRunId: string | null;
@@ -20,8 +30,10 @@ interface Store {
   selectedNodeId: string | null;
   compareRunId: string | null;
   view: View;
+  mode: AppMode;
 
   setRuns: (runs: RunSummary[]) => void;
+  setMode: (mode: AppMode) => void;
   selectRun: (runId: string | null) => void;
   selectNode: (nodeId: string | null) => void;
   applyEvent: (event: VapEvent) => void;
@@ -40,9 +52,18 @@ export const useRunStore = create<Store>((set) => ({
   runStates: {},
   selectedNodeId: null,
   compareRunId: null,
-  view: "runs",
+  // The global analytics Dashboard is the default landing view — the first
+  // thing users see. Selecting a run switches to the per-run view.
+  view: "dashboard",
+  mode: initialMode(),
 
   setRuns: (runs) => set({ runs }),
+
+  setMode: (mode) =>
+    set(() => {
+      if (typeof window !== "undefined") window.localStorage.setItem(MODE_KEY, mode);
+      return { mode };
+    }),
 
   // Selecting a run always returns to the run (graph) view
   selectRun: (runId) => set({ selectedRunId: runId, selectedNodeId: null, compareRunId: null, view: "runs" }),

@@ -63,6 +63,7 @@ export interface RunSummary {
   event_count: number;
   total_cost_usd: number | null;
   tags: string[];
+  summary?: string | null; // plain-language one-liner from vapviz/summary.py
 }
 
 // ── Cross-run analytics (GET /metrics) ──────────────────────────────────────
