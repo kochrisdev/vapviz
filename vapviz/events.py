@@ -73,6 +73,7 @@ class RunSummary(BaseModel):
     event_count: int = 0
     total_cost_usd: Optional[float] = None
     tags: list[str] = Field(default_factory=list)
+    summary: Optional[str] = None  # plain-language one-liner (see summary.py)
 
 
 class RunGraph(BaseModel):

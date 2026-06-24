@@ -2,6 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Design tokens — semantic, theme-aware.
+ * Values are space-separated RGB channels so Tailwind's `rgb(var(--x) / <alpha>)`
+ * mapping (see tailwind.config.ts) supports opacity modifiers, and inline styles
+ * (ReactFlow) can build `rgb(var(--token) / 0.16)` strings directly.
+ *
+ * :root holds the DARK theme (default). `.light` on <html> overrides to light.
+ * Toggling that class re-themes the entire app, including the graph.
+ */
+:root {
+  /* surfaces / elevation */
+  --bg:             9 11 17;
+  --surface:        17 20 28;
+  --surface-hover:  26 31 43;
+  --surface-inset:  13 16 23;
+
+  /* borders */
+  --border:         38 44 58;
+  --border-strong:  55 63 82;
+
+  /* text */
+  --content:           233 237 245;
+  --content-muted:     160 170 190;
+  --content-faint:     107 117 137;
+  --content-on-accent: 255 255 255;
+
+  /* accent (primary action + selection) */
+  --accent:        99 102 241;
+  --accent-hover:  129 140 248;
+
+  /* node kinds */
+  --kind-agent:  129 140 248;
+  --kind-step:    56 189 248;
+  --kind-tool:    52 211 153;
+  --kind-llm:    192 132 252;
+
+  /* status */
+  --status-pending:  148 163 184;
+  --status-running:  245 158  11;
+  --status-success:   34 197  94;
+  --status-error:    239  68  68;
+}
+
+.light {
+  --bg:             246 247 250;
+  --surface:        255 255 255;
+  --surface-hover:  240 242 246;
+  --surface-inset:  240 242 246;
+
+  --border:         224 228 236;
+  --border-strong:  198 206 219;
+
+  --content:           24 30 44;
+  --content-muted:     82 92 110;
+  --content-faint:    130 140 158;
+  --content-on-accent: 255 255 255;
+
+  --accent:        79 70 229;
+  --accent-hover:  67 56 202;
+
+  --kind-agent:  79 70 229;
+  --kind-step:    2 132 199;
+  --kind-tool:    5 150 105;
+  --kind-llm:   147 51 234;
+
+  --status-pending:  100 116 139;
+  --status-running:  217 119   6;
+  --status-success:   22 163  74;
+  --status-error:    220  38  38;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -9,5 +80,6 @@
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, sans-serif;
-  background: #020617;
+  background: rgb(var(--bg));
+  color: rgb(var(--content));
 }

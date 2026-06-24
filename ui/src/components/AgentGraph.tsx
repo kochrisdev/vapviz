@@ -14,78 +14,89 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Bot, Layers, Sparkles, Wrench, type LucideIcon } from "lucide-react";
-import type { GraphEdge, GraphNode, NodeKind, NodeStatus } from "../types/events";
+import { AlertTriangle, Bot, Layers, Sparkles, Wrench, type LucideIcon } from "lucide-react";
+import type { GraphEdge, GraphNode, NodeKind } from "../types/events";
 import { useRunStore } from "../store/runStore";
+import { cssColor, KIND_TOKEN, STATUS_TOKEN } from "../lib/cssColor";
+import { formatCost, formatLabel } from "../lib/format";
+import { nodeCost } from "../lib/summary";
+import { simplifyGraph } from "../lib/simplify";
+import { useTheme } from "../lib/theme";
 
-// ── colour maps ────────────────────────────────────────────────────────────────
-
-const KIND_BG: Record<NodeKind, string> = {
-  agent: "#6366f1",
-  step:  "#0ea5e9",
-  tool:  "#10b981",
-  llm:   "#a855f7",
-};
-
-const STATUS_RING: Record<NodeStatus, string> = {
-  pending: "#94a3b8",
-  running: "#f59e0b",
-  success: "#22c55e",
-  error:   "#ef4444",
-};
+/** First line of any error message attached to a node, if present. */
+function errorSnippet(node: GraphNode): string | null {
+  const raw =
+    (node.data?.error as unknown) ??
+    ((node.data?.output as Record<string, unknown> | undefined)?.error as unknown);
+  if (raw == null) return null;
+  const text = String(raw).split("\n")[0].trim();
+  return text.length > 48 ? text.slice(0, 47) + "…" : text;
+}
 
 const KIND_ICON: Record<NodeKind, LucideIcon> = {
   agent: Bot,
-  step:  Layers,
-  tool:  Wrench,
-  llm:   Sparkles,
+  step: Layers,
+  tool: Wrench,
+  llm: Sparkles,
 };
 
 // ── custom node ────────────────────────────────────────────────────────────────
 
 function VapNode({ data, selected }: NodeProps) {
   const { node } = data as { node: GraphNode };
-  const bg        = KIND_BG[node.kind];
-  const ring      = STATUS_RING[node.status];
   const isRunning = node.status === "running";
-  const Icon      = KIND_ICON[node.kind];
+  const isError = node.status === "error";
+  const Icon = KIND_ICON[node.kind];
+  const kindVar = KIND_TOKEN[node.kind];
+  const statusVar = STATUS_TOKEN[node.status];
 
-  const costUsd = (node.data?.output as Record<string, unknown> | undefined)
-    ?.cost_usd as number | undefined;
-  const costLabel = costUsd == null
-    ? null
-    : costUsd < 0.0001
-    ? "<$0.0001"
-    : costUsd < 0.01
-    ? `$${costUsd.toFixed(6)}`
-    : `$${costUsd.toFixed(4)}`;
+  const costLabel = formatCost(nodeCost(node));
+  const errMsg = isError ? errorSnippet(node) : null;
 
   return (
     <div
       title={node.label}
-      className="relative rounded-lg px-3 py-2 text-white text-xs font-medium shadow-lg cursor-pointer select-none"
+      className="relative rounded-lg px-3 py-2 text-xs font-medium shadow-md cursor-pointer select-none text-content"
       style={{
-        background:  bg,
-        outline:     selected ? `3px solid ${ring}` : `2px solid ${ring}`,
-        minWidth:    110,
-        maxWidth:    190,
+        // Error nodes get a loud red fill; others a subtle kind tint.
+        background: isError ? `rgb(var(--status-error) / 0.22)` : `rgb(var(${kindVar}) / 0.16)`,
+        border: `2px solid rgb(var(${statusVar}) / ${selected ? 1 : isError ? 1 : 0.85})`,
+        boxShadow: selected
+          ? `0 0 0 2px rgb(var(--accent))`
+          : isError
+          ? `0 0 0 1px rgb(var(--status-error) / 0.4)`
+          : undefined,
+        minWidth: 110,
+        maxWidth: 190,
       }}
     >
-      {/* Pulsing dot for running state */}
       {isRunning && (
-        <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-amber-400 animate-ping" />
+        <span
+          className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full animate-ping"
+          style={{ background: `rgb(var(--status-running))` }}
+        />
       )}
 
-      <Handle type="target" position={Position.Top}    style={{ background: ring, border: "none" }} />
+      <Handle type="target" position={Position.Top} style={{ background: `rgb(var(${statusVar}))`, border: "none" }} />
 
-      {/* Kind badge with icon */}
-      <div className="flex items-center gap-1 opacity-70 text-[10px] uppercase tracking-wider mb-1">
-        <Icon size={9} />
+      {/* Kind badge with icon (error icon takes over on failure) */}
+      <div
+        className="flex items-center gap-1 text-[10px] uppercase tracking-wider mb-1"
+        style={{ color: `rgb(var(${isError ? "--status-error" : kindVar}))` }}
+      >
+        {isError ? <AlertTriangle size={10} /> : <Icon size={9} />}
         {node.kind}
       </div>
 
-      {/* Label */}
-      <div className="truncate leading-tight">{node.label}</div>
+      {/* Humanized label */}
+      <div className="truncate leading-tight">{formatLabel(node)}</div>
+
+      {/* Error snippet */}
+      {errMsg && (
+        <div className="mt-0.5 text-[10px] leading-tight" style={{ color: `rgb(var(--status-error))` }}>
+          {errMsg}
+        </div>
+      )}
 
       {/* Duration */}
       {node.started_at && node.ended_at && (
@@ -96,10 +107,12 @@ function VapNode({ data, selected }: NodeProps) {
 
       {/* Cost (LLM nodes only) */}
       {costLabel && (
-        <div className="opacity-80 text-[10px] mt-0.5 text-purple-200">{costLabel}</div>
+        <div className="text-[10px] mt-0.5" style={{ color: `rgb(var(--kind-llm))` }}>
+          {costLabel}
+        </div>
       )}
 
-      <Handle type="source" position={Position.Bottom} style={{ background: ring, border: "none" }} />
+      <Handle type="source" position={Position.Bottom} style={{ background: `rgb(var(${statusVar}))`, border: "none" }} />
     </div>
   );
 }
@@ -129,46 +142,62 @@ const nodeTypes = { vapviz: VapNode };
 interface Props {
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
+  /** Hide framework-internal nodes and re-parent their children (default true). */
+  simplified?: boolean;
 }
 
-export function AgentGraph({ graphNodes, graphEdges }: Props) {
-  const selectNode     = useRunStore((s) => s.selectNode);
+export function AgentGraph({ graphNodes, graphEdges, simplified = true }: Props) {
+  const selectNode = useRunStore((s) => s.selectNode);
   const selectedNodeId = useRunStore((s) => s.selectedNodeId);
+  const { theme } = useTheme();
 
   const { nodes, edges } = useMemo(() => {
-    const nodeMap = new Map(graphNodes.map((n) => [n.id, n]));
+    const view = simplified ? simplifyGraph(graphNodes, graphEdges) : { nodes: graphNodes, edges: graphEdges };
+    const viewNodes = view.nodes;
+    const viewEdges = view.edges;
+    const nodeMap = new Map(viewNodes.map((n) => [n.id, n]));
 
-    const rawNodes: Node[] = graphNodes.map((n) => ({
-      id:       n.id,
-      type:     "vapviz",
+    const rawNodes: Node[] = viewNodes.map((n) => ({
+      id: n.id,
+      type: "vapviz",
       position: { x: 0, y: 0 },
-      data:     { node: n },
+      data: { node: n },
       selected: n.id === selectedNodeId,
     }));
 
-    const rawEdges: Edge[] = graphEdges.map((e) => {
-      const src        = nodeMap.get(e.source);
-      const tgt        = nodeMap.get(e.target);
-      const color      = src ? KIND_BG[src.kind] : "#64748b";
-      const isRunning  = src?.status === "running" || tgt?.status === "running";
+    const rawEdges: Edge[] = viewEdges.map((e) => {
+      const src = nodeMap.get(e.source);
+      const tgt = nodeMap.get(e.target);
+      const color = src ? cssColor(KIND_TOKEN[src.kind], 0.7) : cssColor("--border-strong");
+      const isRunning = src?.status === "running" || tgt?.status === "running";
       return {
-        id:        e.id,
-        source:    e.source,
-        target:    e.target,
-        type:      "smoothstep",
-        animated:  isRunning,
-        style:     { stroke: color + "bb", strokeWidth: 1.5 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: color + "bb", width: 14, height: 14 },
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: "smoothstep",
+        animated: isRunning,
+        style: { stroke: color, strokeWidth: 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
       };
     });
 
     const laid = applyDagreLayout(rawNodes, rawEdges);
     return { nodes: laid, edges: rawEdges };
-  }, [graphNodes, graphEdges, selectedNodeId]);
+    // `theme` participates so concrete edge/marker colours re-resolve on toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphNodes, graphEdges, selectedNodeId, theme, simplified]);
 
-  const onNodeClick = useCallback(
-    (_: unknown, node: Node) => selectNode(node.id),
-    [selectNode]
+  const onNodeClick = useCallback((_: unknown, node: Node) => selectNode(node.id), [selectNode]);
+
+  // Concrete colours for ReactFlow chrome; re-resolved when the theme flips.
+  const chrome = useMemo(
+    () => ({
+      dots: cssColor("--border", 0.9),
+      mask: cssColor("--bg", 0.6),
+      miniBg: cssColor("--surface"),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [theme]
   );
 
   return (
@@ -182,12 +211,12 @@ export function AgentGraph({ graphNodes, graphEdges }: Props) {
       minZoom={0.15}
       proOptions={{ hideAttribution: true }}
     >
-      <Background variant={BackgroundVariant.Dots} color="#1e293b" gap={20} size={1.5} />
+      <Background variant={BackgroundVariant.Dots} color={chrome.dots} gap={20} size={1.5} />
       <Controls showInteractive={false} />
       <MiniMap
-        nodeColor={(n) => KIND_BG[(n.data as { node: GraphNode }).node.kind] ?? "#6366f1"}
-        maskColor="rgba(2,6,23,0.6)"
-        style={{ background: "#0f172a" }}
+        nodeColor={(n) => cssColor(KIND_TOKEN[(n.data as { node: GraphNode }).node.kind], 0.8)}
+        maskColor={chrome.mask}
+        style={{ background: chrome.miniBg }}
       />
     </ReactFlow>
   );

@@ -39,50 +39,50 @@ export function ReplayBar({ events, startedAt, index, setIndex, playing, setPlay
   };
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-t border-slate-700 bg-slate-900 shrink-0">
-      <span className="text-[10px] uppercase tracking-wider text-indigo-400 font-semibold shrink-0">
+    <div className="flex items-center gap-3 px-4 py-2 border-t border-border bg-surface shrink-0">
+      <span className="text-[10px] uppercase tracking-wider text-accent font-semibold shrink-0">
         Replay
       </span>
 
       <button onClick={() => setIndex(Math.max(0, index - 1))} disabled={index === 0}
         title="Step back"
-        className="p-1 rounded text-slate-400 hover:text-white disabled:opacity-30">
+        className="p-1 rounded text-content-faint hover:text-content disabled:opacity-30">
         <ChevronLeft size={15} />
       </button>
 
       <button onClick={togglePlay} title={playing ? "Pause" : "Play"}
-        className="p-1 rounded bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30">
+        className="p-1 rounded bg-accent/15 text-accent hover:bg-accent/25">
         {playing ? <Pause size={15} /> : <Play size={15} />}
       </button>
 
       <button onClick={() => setIndex(Math.min(total, index + 1))} disabled={atEnd}
         title="Step forward"
-        className="p-1 rounded text-slate-400 hover:text-white disabled:opacity-30">
+        className="p-1 rounded text-content-faint hover:text-content disabled:opacity-30">
         <ChevronRight size={15} />
       </button>
 
       <input
         type="range" min={0} max={total} value={index}
         onChange={(e) => { setPlaying(false); setIndex(Number(e.target.value)); }}
-        className="flex-1 accent-indigo-500 cursor-pointer"
+        className="flex-1 accent-accent cursor-pointer"
       />
 
-      <span className="text-xs text-slate-400 font-mono tabular-nums shrink-0 w-16 text-right">
+      <span className="text-xs text-content-muted font-mono tabular-nums shrink-0 w-16 text-right">
         {index} / {total}
       </span>
 
       {current && (
-        <span className="text-xs text-slate-300 shrink-0 w-52 truncate">
-          <span className="text-slate-500 font-mono tabular-nums mr-2">
+        <span className="text-xs text-content shrink-0 w-52 truncate">
+          <span className="text-content-faint font-mono tabular-nums mr-2">
             +{((current.timestamp - startedAt) * 1000).toFixed(0)}ms
           </span>
           {EVENT_LABEL[current.type] ?? current.type}
-          <span className="text-slate-600"> · {current.node_label}</span>
+          <span className="text-content-faint"> · {current.node_label}</span>
         </span>
       )}
 
       <button onClick={onExit} title="Exit replay"
-        className="p-1 rounded text-slate-500 hover:text-white shrink-0">
+        className="p-1 rounded text-content-faint hover:text-content shrink-0">
         <X size={15} />
       </button>
     </div>
