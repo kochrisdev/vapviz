@@ -81,9 +81,38 @@ Press **Esc** to close the detail panel.
 
 ---
 
+## Theater — watch your agents work
+
+The **Theater** tab turns a run into a little pixel "office". It's available in **both Simple and
+Technical** modes (it's meant for everyone), as a tab at the top of a run.
+
+- **Each agent is a character** with its **name floating above its head**. The same agent always
+  gets the same character, so you learn to recognise your cast. Robots, people, the occasional
+  alien — it's just for personality; the nametag is what identifies who's who.
+- **They walk to a desk to work.** When an agent is talking to the AI model it walks to the **LLM
+  desk** (a thought bubble pops up); when it runs a tool it goes to the **tool bench**. The desk
+  lights up while it's in use. When it's done it rests; if it failed, it turns **red**.
+- **Watch it live or replay it.** For a run that's still going, the characters move in real time. For
+  a finished run it opens calm (everyone resting); press **▶** in the bar at the bottom to replay
+  from the start, or drag the slider to step through any moment.
+
+> Multi-agent runs (a CrewAI crew, a LangGraph supervisor + workers) are where this shines — you can
+> literally see which agent is doing what.
+
+## The Live Floor — monitor everything at once
+
+Click the **🎭 masks icon** at the top of the sidebar for the **Live floor**: one open office floor
+showing **every active and recent run at once**, each as its own softly-labelled area with its own
+desks and walking characters. It's the control-room view — glance at it to see all your agents working
+across all your runs simultaneously, who's busy, and which run (if any) has gone red. **Click any run's
+area** to drop into that run's full Theater.
+
+---
+
 ## Technical mode extras
 
-Switching to **Technical** keeps everything above and adds three tabs at the top of a run:
+Switching to **Technical** keeps everything above and adds the **Graph** and **Logs** tabs (on top of
+Story and Theater):
 
 ### Story
 The same narrative as Simple mode.
@@ -137,6 +166,8 @@ AI-model calls. `$0` means no billable model calls were recorded.
 | See the visual graph or raw data | Switch to **Technical** mode |
 | Understand one step | Click its box → read the detail panel |
 | See the raw JSON for a step | Click **"Show technical details"** |
+| Watch a run as a pixel "office" | Open the **Theater** tab (any mode) |
+| Monitor all runs working at once | Open the **Live floor** (🎭 masks icon, sidebar) |
 | Compare all runs at a glance | Open the **Dashboard** (chart icon, sidebar) |
 | Hide framework plumbing in the graph | Use the **Simplified** toggle (Graph tab) |
 | Watch a run play out | Use **Replay** (Graph tab) |

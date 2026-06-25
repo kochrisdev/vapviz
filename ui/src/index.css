@@ -83,3 +83,78 @@ body {
   background: rgb(var(--bg));
   color: rgb(var(--content));
 }
+
+/* ── Theater view (Phase 3, §4-F) — pixel room + walking cast ──────────────
+ * Custom CSS (keyframes, absolute positioning, station glow) that Tailwind
+ * utilities can't express. Pixel sprites come from lib/avatar.ts (.sprite). */
+.sprite { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+
+.vt-stage {
+  position: relative; height: 100%; overflow: hidden;
+  background:
+    repeating-conic-gradient(rgb(var(--surface-hover)) 0% 25%, rgb(var(--surface-inset)) 0% 50%) 0 40% / 48px 48px,
+    linear-gradient(rgb(var(--surface)) 0 38%, transparent 38%);
+}
+.vt-stage::before {
+  content: ""; position: absolute; inset: 0 0 62% 0;
+  background: linear-gradient(rgb(var(--surface-inset)), rgb(var(--surface)));
+  border-bottom: 2px solid rgb(var(--border)); opacity: .6;
+}
+
+.vt-station { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; z-index: 2; }
+.vt-pad { padding: 7px 9px; border-radius: 8px; border: 1px solid rgb(var(--border-strong)); background: rgb(var(--surface)); display: grid; place-items: center; transition: box-shadow .3s, border-color .3s; }
+.vt-station.vt-hot[data-kind="llm"] .vt-pad { border-color: rgb(var(--kind-llm)); box-shadow: 0 0 0 3px rgb(var(--kind-llm) / .3); }
+.vt-station.vt-hot[data-kind="tool"] .vt-pad { border-color: rgb(var(--kind-tool)); box-shadow: 0 0 0 3px rgb(var(--kind-tool) / .3); }
+.vt-lbl { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: rgb(var(--content-faint)); }
+
+.vt-char {
+  position: absolute; transform: translate(-50%, -100%);
+  display: flex; flex-direction: column; align-items: center; z-index: 5;
+  transition: left .55s cubic-bezier(.4,0,.3,1), top .55s cubic-bezier(.4,0,.3,1);
+}
+.vt-tag { font-size: 11px; font-weight: 650; padding: 2px 8px; border-radius: 999px; white-space: nowrap; margin-bottom: 4px; background: rgb(var(--surface) / .94); border: 1px solid rgb(var(--border)); color: rgb(var(--content)); box-shadow: 0 2px 6px rgb(0 0 0 / .2); }
+.vt-facing { transition: transform .15s ease; transform-origin: center bottom; }
+.vt-char .sprite { width: 54px; height: 78px; }
+.vt-bubble { position: absolute; top: -6px; right: -12px; }
+.vt-empty { position: absolute; inset: 0; display: grid; place-items: center; color: rgb(var(--content-faint)); font-size: 14px; }
+
+@keyframes vt-flA { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes vt-flB { 0%, 49.9% { opacity: 0; } 50%, 100% { opacity: 1; } }
+@keyframes vt-hop { 0%, 49.9% { transform: translateY(0); } 50%, 100% { transform: translateY(-2px); } }
+.vt-char .legB { opacity: 0; }
+.vt-char.vt-walking .legA { animation: vt-flA .32s steps(1) infinite; }
+.vt-char.vt-walking .legB { animation: vt-flB .32s steps(1) infinite; }
+.vt-char.vt-walking .vt-facing { animation: vt-hop .32s steps(1) infinite; }
+@keyframes vt-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.vt-bubble .bubble { animation: vt-float 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vt-char { transition: none; }
+  .vt-char.vt-walking .legA, .vt-char.vt-walking .legB, .vt-char.vt-walking .vt-facing, .vt-bubble .bubble { animation: none !important; }
+}
+
+/* ── Global Floor view — one open office floor of soft run-zones ── */
+.vt-floor {
+  background:
+    repeating-conic-gradient(rgb(var(--surface-hover)) 0% 25%, rgb(var(--surface-inset)) 0% 50%) 0 0 / 44px 44px,
+    rgb(var(--bg));
+  padding: 20px;
+}
+.vt-zone {
+  background: rgb(var(--surface) / .35);
+  border: 1px solid rgb(var(--border) / .5);
+  border-radius: 16px;
+  padding: 8px 8px 6px;
+  transition: border-color .2s, background .2s;
+}
+.vt-zone:hover { border-color: rgb(var(--border-strong)); background: rgb(var(--surface) / .55); }
+.vt-zone-stage { position: relative; width: 300px; height: 190px; border-radius: 12px; overflow: hidden; }
+
+/* Compact stage (Floor zones): no inner room background (it sits on the office
+   floor) + smaller desks / sprites / tags. */
+.vt-stage.vt-compact { background: none; }
+.vt-stage.vt-compact::before { display: none; }
+.vt-stage.vt-compact .vt-char .sprite { width: 36px; height: 52px; }
+.vt-stage.vt-compact .vt-pad { padding: 4px 6px; }
+.vt-stage.vt-compact .vt-tag { font-size: 9px; padding: 1px 5px; margin-bottom: 2px; }
+.vt-stage.vt-compact .vt-bubble { top: -4px; right: -8px; }

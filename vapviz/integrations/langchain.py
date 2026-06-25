@@ -108,11 +108,18 @@ class VapCallbackHandler(_BaseCallbackHandler):  # type: ignore[misc]
         # Prefer the LangGraph node name (e.g. "supervisor", "math_expert") so
         # multi-agent graphs are readable; LangChain only exposes it via metadata.
         # Without it every chain falls back to the anonymous label "chain" (U4/LG3).
-        name = (metadata or {}).get("langgraph_node") or _extract_name(serialized) or "chain"
+        langgraph_node = (metadata or {}).get("langgraph_node")
+        name = langgraph_node or _extract_name(serialized) or "chain"
         ctx = self._make_ctx(name, "step", parent_run_id)
         ctx.set_input(_safe_dict(inputs))
         if tags:
             ctx.set_meta(tags=tags)
+        # Carry the LangGraph node name through to the node data so consumers (the
+        # Theater view's cast detection) can reliably tell a real graph node/agent
+        # apart from an anonymous sub-step. Purely additive metadata — no change to
+        # the event→graph reduction.
+        if langgraph_node:
+            ctx.set_meta(langgraph_node=langgraph_node)
         ctx._emit(EventType.STEP_START)
         self._contexts[run_id] = ctx
 

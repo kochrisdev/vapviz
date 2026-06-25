@@ -1763,6 +1763,12 @@ interface RunGraph {
 
 ## Changelog
 
+### Unreleased
+
+- **Theater view (UI)** — a watchable per-run view: each agent is a deterministic pixel character (from `ui/src/lib/avatar.ts`) that walks to an LLM/tool desk while working, name overhead; driven by the existing live/replay pipeline via a shared `AgentStage`. Scene logic in `ui/src/lib/theater.ts`. A 4th run tab, shown in both Simple and Technical modes.
+- **Live floor (UI)** — a centralized monitor (`ui/src/components/FloorView.tsx`, sidebar 🎭) tiling every active/recent run as a soft zone on one office floor, each a live `AgentStage`. Polls `/runs` + `/runs/{id}/graph`; no backend change.
+- **LangChain integration** — `on_chain_start` now carries `langgraph_node` into node `data` (additive metadata; no graph-reduction change), so multi-agent LangGraph runs surface their real cast in Theater.
+
 ### v1.1.0
 
 - **Budget alert channels** — `enable_budget_alerts` gains built-in sinks: `webhook_alert(url)`, `slack_alert(webhook_url)`, and `otel_alert()` (emits a `vapviz.budget_exceeded` span). `on_alert` now accepts a **list** of channels (fan-out), not just one callback. HTTP delivery runs on a background daemon thread and is best-effort — a failing channel is logged and never breaks the run or the other channels. Exported as `vapviz.webhook_alert` / `slack_alert` / `otel_alert`.

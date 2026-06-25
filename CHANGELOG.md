@@ -9,7 +9,18 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **Theater view** — a watchable, game-like per-run view (UI). Each agent is a deterministic
+  pixel character (built from its name) that walks to an LLM/tool desk while it's working, with
+  its name overhead; available in both Simple and Technical modes and driven by the existing
+  replay/live pipeline. New: `ui/src/lib/avatar.ts`, `ui/src/lib/theater.ts`,
+  `ui/src/components/{AgentStage,TheaterView}.tsx`.
+- **Live floor** — a centralized monitor (`ui/src/components/FloorView.tsx`, sidebar 🎭 icon)
+  showing every active/recent run as a soft labeled zone on one office floor, each a live
+  `AgentStage`, so you can watch many runs' agents work at once. Polls existing endpoints; no
+  backend change.
+- LangChain integration now carries the `langgraph_node` name through to node data (additive
+  metadata), so multi-agent LangGraph runs show their real cast (supervisor / workers) in Theater.
 
 ## [1.1.0]
 

@@ -63,7 +63,7 @@ This document describes the internal design of the Visualization Agentic Process
 │  useRunStream(runId)           SSE hook -> applyEvent() in Zustand  │
 │  runStore.ts                   Builds nodes/edges from event stream  │
 │  AgentGraph.tsx                ReactFlow DAG with dagre layout       │
-│  EventTimeline.tsx             Chronological event log               │
+│  LogsView.tsx                  Full-width filterable event log       │
 │  NodeDetail.tsx                Selected-node inspector               │
 │  Dashboard.tsx                 Cross-run analytics (GET /metrics)    │
 └──────────────────────────────────────────────────────────────────────┘
@@ -486,7 +486,7 @@ applyEvent(event)
        ▼
 Zustand subscribers re-render
   ├── AgentGraph  (nodes + edges -> ReactFlow; LLM nodes show cost_usd)
-  ├── EventTimeline (events list)
+  ├── LogsView (filterable events list)
   └── RunList (run summary; total_cost_usd shown in purple when non-null)
 ```
 
@@ -599,6 +599,40 @@ useEffect(() => {
 
 Named SSE events (`event: tool_call\ndata: {...}`) are used instead of the default `message` event so each handler only receives the events it cares about.
 
+### Theater & Floor (`AgentStage.tsx`, `TheaterView.tsx`, `FloorView.tsx`, `lib/avatar.ts`, `lib/theater.ts`)
+
+The Theater is a watchable renderer over the *same* derived graph the other views use — **UI-only, no
+backend change** (the one Python touch is an additive `langgraph_node` metadata marker, below).
+
+- **`lib/avatar.ts` — the pixel-character engine.** `agentSprite(name, state)` returns an SVG string for
+  a full-body pixel character assembled *deterministically* from a hash of the agent's name (skin, hair,
+  outfit, accessory, and human/robot/alien "kind"), so an agent keeps the same costume across runs.
+  Identity is carried by the on-screen nametag, so the costume only needs to be distinct, not unique.
+  Token-derived colours (eyes, status ring) are read at call time, so sprites re-theme on light/dark
+  toggle. Pure, offline, zero-dependency. This is the only place that knows how a face is made — swap it
+  and nothing else changes.
+- **`lib/theater.ts` — the scene model.** `buildScene(nodes)` is a pure reduction: pick the cast, then
+  decide each agent's `state` (idle/thinking/working/done/error) and which desk it's `at` (`llm`/`tool`/
+  `home`). Cast detection, by signal strength: `agent/` label prefix (CrewAI/Pydantic AI) → `langgraph_node`
+  marker minus generic wrappers (LangGraph workers) → agent-kind root → first node. Re-entered nodes
+  (LangGraph revisits `supervisor`/`math_expert`) are **grouped by name** into one character. "Linger":
+  while an agent is still active it stays at the desk of its most recently started call instead of bouncing
+  home between back-to-back calls; desks only glow for a *running* call.
+- **`AgentStage.tsx` — the room.** Renders desks + walking avatars. Each character is absolutely
+  positioned by `left/top` %, and movement is just a CSS transition on those — when a render changes an
+  agent's slot, an effect adds a `.vt-walking` class (leg shuffle) and faces the travel direction; CSS
+  glides it. Because it's driven purely by the `nodes` prop, it animates identically for **live** SSE
+  updates and **replay** (the partial graph from `buildGraphAt`). Shared by both views; `compact` mode
+  shrinks it for the Floor's tiled zones.
+- **`TheaterView.tsx`** — the per-run view: a thin wrapper that hands the run's `shownNodes` (live or
+  replayed) to a full-size `AgentStage`. Added as a 4th run tab in `App` (Story/Theater/Graph/Logs);
+  shown in **both** Simple and Technical modes; the existing `ReplayBar` drives playback.
+- **`FloorView.tsx`** — the global monitor (`view: "floor"`, sidebar 🎭). One office floor tiled with a
+  soft labeled **zone** per active/recent run, each a live `compact` `AgentStage`. It **polls** `/runs`
+  (+ `/runs/{id}/graph` per active run, finished graphs cached) every ~1.5 s rather than opening many SSE
+  streams — frontend-only, fine for local-scale concurrency. Clicking a zone selects that run (drills into
+  its Theater).
+
 ---
 
 ## Anthropic SDK Integration (`integrations/anthropic_sdk.py`)
@@ -664,6 +698,15 @@ LangChain passes a UUID `run_id` and an optional `parent_run_id` into every call
 **LLM response extraction:**
 
 `on_llm_end` receives a LangChain `LLMResult`. The handler extracts the first generation text and, if present, token usage from `LLMResult.llm_output`.
+
+**LangGraph node marker (Theater):**
+
+`on_chain_start` already labels a node from `metadata["langgraph_node"]` when present (so multi-agent
+graphs read as `supervisor` / `math_expert` rather than anonymous `chain`s — U4/LG3). It now also carries
+that name through to the node's `data` via `set_meta(langgraph_node=...)`. This is purely additive metadata
+(it rides into `node.data` through the normal `_emit` → event `data` path, so **no change to the
+event→graph reduction or its dual TS mirror**), and it lets the Theater's cast detection
+(`lib/theater.ts`) reliably distinguish a real graph agent from an anonymous sub-step.
 
 Raises `ImportError` at instantiation time if `langchain-core` is not installed.
 

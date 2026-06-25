@@ -17,6 +17,10 @@ High value, mostly small, leverages existing features.
 - ✅ **Budget alert channels** *(shipped in v1.1.0)* — `enable_budget_alerts` now has built-in
   **`webhook_alert` / `slack_alert` / `otel_alert`** sinks and `on_alert` accepts a list (fan-out),
   so an overrun actually notifies someone.
+- ✅ **Watchable Theater + Live Floor UI** *(shipped)* — a legible/watchable UI redesign: a per-run
+  **Theater** (each agent a pixel character that walks to a model/tool desk, name overhead) and a
+  centralized **Live Floor** that monitors every active run's cast at once. Pure UI over the existing
+  event stream — no backend change.
 - **Evals as a CI gate** *(medium, differentiating)* — an `eval-suite` concept (checks + expected
   runs) plus a **`vapviz-eval` GitHub Action** that runs evals and fails the build on regressions —
   turning agent evals into real CI quality-gating.

@@ -30,12 +30,14 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Agent evals & scoring** — `eval_run(run, [checks...])` asserts cost/latency/output/custom/LLM-judge checks — regression testing for agents
 - **Search & tagging** — full-text search across run contents (`GET /search`) plus persistent per-run tags, surfaced in the UI
 - **Trace replay** — scrub a run event-by-event in the UI; the graph fills in node by node as it happened
+- **Theater view** — watch a run as a little pixel "office": each agent is a character that walks to a desk when it calls a model or runs a tool, name overhead — live or replayed
+- **Live floor** — a centralized monitor where every active run's cast works at once, grouped by run, so you can watch many agents across all your runs on one screen
 - **Persistent storage** — `vapviz.configure(db="vapviz.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vapviz serve --db vapviz.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
 - **Interactive graph** — ReactFlow DAG with dagre auto-layout, zoom/pan, minimap
 - **Node detail panel** — click any node to inspect its inputs, outputs, token usage, duration, and errors
-- **Event timeline** — chronological log of all 10 event types with millisecond timestamps
+- **Logs view** — a clean, full-width, filterable event log of all event types with millisecond timestamps
 - **Remote ingest** — push events via HTTP from any process or language (`POST /runs/{id}/events`)
 - **Run comparison** — diff any two runs side by side: node diff (only A / only B / common), duration Δ, and cost Δ
 - **Export** — download any run as JSON (`GET /runs/{id}/export`) or PNG (html2canvas capture)
@@ -628,17 +630,22 @@ ui/src/                       Vite + React + TypeScript
 ├── components/
 │   ├── AgentGraph.tsx        ReactFlow DAG with dagre auto-layout
 │   ├── Dashboard.tsx         Cross-run analytics view (GET /metrics)
-│   ├── EventTimeline.tsx     Chronological event log
+│   ├── LogsView.tsx          Full-width, filterable event log
 │   ├── ExportMenu.tsx        Export dropdown (JSON download + PNG capture)
 │   ├── NodeDetail.tsx        Selected-node inspector
 │   ├── RunComparison.tsx     Side-by-side diff of two runs
 │   ├── RunList.tsx           Sidebar run list with search, tags, compare + dashboard toggle
 │   ├── TagEditor.tsx         Inline per-run tag editor
-│   └── ReplayBar.tsx         Time-travel scrubber (play/step over a run's events)
+│   ├── ReplayBar.tsx         Time-travel scrubber (play/step over a run's events)
+│   ├── AgentStage.tsx        Theater room — desks + walking pixel avatars (shared)
+│   ├── TheaterView.tsx       Per-run Theater tab (wraps AgentStage)
+│   └── FloorView.tsx         Live Floor — every run's cast on one office floor
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
 ├── lib/
-│   └── replay.ts             buildGraphAt() — rebuild the graph as of event N
+│   ├── replay.ts             buildGraphAt() — rebuild the graph as of event N
+│   ├── avatar.ts             Deterministic pixel-character SVG engine (Theater)
+│   └── theater.ts            buildScene() — graph → who's where / doing what
 ├── store/
 │   └── runStore.ts           Zustand store — builds graph state from events
 └── types/
@@ -936,6 +943,12 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **Trace replay / time-travel** — a UI scrubber that replays a run event-by-event; the graph fills in node by node, with play/pause and step controls
 - [x] **`buildGraphAt(events, n)`** — pure client-side reducer that rebuilds the graph as of event *n* (mirrors the store's event→graph logic)
 - [x] **`ReplayBar.tsx`** + a Replay toggle in the run header; resets when the selected run changes
+
+### Phase 15 — Theater & Live Floor (complete)
+- [x] **Theater view** — a watchable per-run view: each agent is a deterministic pixel character (built from its name) that walks to an LLM/tool desk while working, name overhead; live or replayed. A 4th run tab, in both Simple and Technical modes
+- [x] **Pixel-character engine** (`lib/avatar.ts`) + **scene model** (`lib/theater.ts`) + shared **`AgentStage.tsx`** room/walking renderer
+- [x] **Live Floor** (`FloorView.tsx`, sidebar 🎭) — every active/recent run as a soft zone on one office floor, each a live `AgentStage`; polls existing endpoints, no backend change
+- [x] **LangGraph cast** — additive `langgraph_node` marker in the LangChain integration so multi-agent graphs show their real agents (supervisor / workers)
 
 ---
 

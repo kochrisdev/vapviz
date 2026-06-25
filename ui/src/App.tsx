@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
-import { Activity, BookOpen, History, Network, ScrollText } from "lucide-react";
+import { Activity, BookOpen, Drama, History, Network, ScrollText } from "lucide-react";
 import { AgentGraph } from "./components/AgentGraph";
+import { TheaterView } from "./components/TheaterView";
+import { FloorView } from "./components/FloorView";
 import { Dashboard } from "./components/Dashboard";
 import { LogsView } from "./components/LogsView";
 import { ExportMenu } from "./components/ExportMenu";
@@ -17,7 +19,7 @@ import { buildGraphAt } from "./lib/replay";
 import { useRunStream } from "./hooks/useRunStream";
 import { useRunStore } from "./store/runStore";
 
-type RunTab = "story" | "graph" | "logs";
+type RunTab = "story" | "theater" | "graph" | "logs";
 
 function RunViewer() {
   const selectedRunId = useRunStore((s) => s.selectedRunId);
@@ -87,7 +89,9 @@ function RunViewer() {
       </div>
 
       {/* Main area */}
-      {view === "dashboard" ? (
+      {view === "floor" ? (
+        <FloorView />
+      ) : view === "dashboard" ? (
         <Dashboard />
       ) : compareRunId && selectedRunId ? (
         <RunComparison
@@ -111,21 +115,29 @@ function RunViewer() {
                 </span>
               )}
 
-              {/* Tabs + technical controls — Technical mode only */}
-              {technical && (
-                <>
-                  <div className="flex items-center gap-1 bg-surface-inset rounded-lg p-1">
-                    <TabButton active={tab === "story"} onClick={() => setTab("story")} icon={BookOpen}>
-                      Story
-                    </TabButton>
+              {/* Tabs — Story + Theater in both modes; Graph + Logs are Technical-only */}
+              <div className="flex items-center gap-1 bg-surface-inset rounded-lg p-1">
+                <TabButton active={tab === "story"} onClick={() => setTab("story")} icon={BookOpen}>
+                  Story
+                </TabButton>
+                <TabButton active={tab === "theater"} onClick={() => setTab("theater")} icon={Drama}>
+                  Theater
+                </TabButton>
+                {technical && (
+                  <>
                     <TabButton active={tab === "graph"} onClick={() => setTab("graph")} icon={Network}>
                       Graph
                     </TabButton>
                     <TabButton active={tab === "logs"} onClick={() => setTab("logs")} icon={ScrollText}>
                       Logs
                     </TabButton>
-                  </div>
+                  </>
+                )}
+              </div>
 
+              {/* Technical-only controls */}
+              {technical && (
+                <>
                   <div className="border-l border-border pl-3">
                     <TagEditor
                       runId={selectedRunId!}
@@ -175,8 +187,27 @@ function RunViewer() {
               )}
             </div>
 
-            {/* Body — Simple mode is narrative-only; Technical unlocks tabs */}
-            {!technical || tab === "story" ? (
+            {/* Body — Story + Theater in both modes; Graph + Logs Technical-only */}
+            {tab === "theater" ? (
+              <div className="flex-1 min-w-0 flex flex-col min-h-0">
+                <div className="flex-1 min-h-0">
+                  <TheaterView nodes={shownNodes} />
+                </div>
+                {/* Playback is core to Theater: bar always shown (live runs sit at the end). */}
+                <ReplayBar
+                  events={state.events}
+                  startedAt={state.started_at ?? 0}
+                  index={replayIndex ?? state.events.length}
+                  setIndex={setReplayIndex}
+                  playing={replayPlaying}
+                  setPlaying={setReplayPlaying}
+                  onExit={() => {
+                    setReplayIndex(null);
+                    setReplayPlaying(false);
+                  }}
+                />
+              </div>
+            ) : !technical || tab === "story" ? (
               <StoryView state={state} />
             ) : tab === "logs" ? (
               <LogsView events={state.events} startedAt={state.started_at ?? 0} />

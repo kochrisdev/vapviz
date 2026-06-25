@@ -11,7 +11,7 @@ export interface RunState {
   events: VapEvent[];
 }
 
-export type View = "runs" | "dashboard";
+export type View = "runs" | "dashboard" | "floor";
 
 // Audience mode: Simple = plain-language narrative only; Technical = graph,
 // logs, and raw JSON unlocked. Persisted across sessions.

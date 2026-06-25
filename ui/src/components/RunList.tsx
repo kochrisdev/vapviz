@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BarChart3, GitCompare, Moon, Search, Sun, Tag, Trash2, X } from "lucide-react";
+import { BarChart3, Drama, GitCompare, Moon, Search, Sun, Tag, Trash2, X } from "lucide-react";
 import type { NodeStatus, RunSummary } from "../types/events";
 import { useRunStore } from "../store/runStore";
 import { runSubtitle } from "../lib/summary";
@@ -94,6 +94,15 @@ export function RunList({ onSelect }: Props) {
             className="p-1 rounded text-content-faint hover:text-content transition-colors"
           >
             {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+          <button
+            onClick={() => setView(view === "floor" ? "runs" : "floor")}
+            title="Live floor — all agents working"
+            className={`p-1 rounded transition-colors ${
+              view === "floor" ? "text-accent bg-accent/10" : "text-content-faint hover:text-content"
+            }`}
+          >
+            <Drama size={14} />
           </button>
           <button
             onClick={() => setView(view === "dashboard" ? "runs" : "dashboard")}
