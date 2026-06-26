@@ -8,7 +8,13 @@ A lightweight Python + React framework for **tracing and visualizing AI agent pi
 
 Instrument your agent with a single context manager. Every step, tool call, and LLM invocation appears instantly as a live interactive graph in the browser — with inputs, outputs, durations, and error states.
 
-![vapviz demo screenshot](docs/screenshot.png)
+![vapviz — live interactive graph of an agent run](docs/screenshot.png)
+
+*The graph view — every step, tool call, and LLM invocation as a live, interactive DAG.*
+
+![vapviz — Theater view](docs/screenshot-theater.png)
+
+*Theater view — watch each agent as a pixel character working in a shared office, live or replayed.*
 
 ---
 
