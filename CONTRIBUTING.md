@@ -53,7 +53,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs these on every
 push and pull request to `main`. Run them locally before pushing:
 
 ```bash
-# Python test suite — 269 tests; integration tests skip automatically
+# Python test suite — 303 tests; integration tests skip automatically
 # when their framework (crewai, pydantic-ai, langchain, …) isn't installed
 pytest -q
 
