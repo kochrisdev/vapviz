@@ -1,0 +1,25 @@
+{
+  "name": "error_path",
+  "description": "tool raises (error event) and the agent ends in error; the open step stays running, no cost",
+  "events": [
+    {"id": "e1", "run_id": "r2", "timestamp": 2000, "type": "agent_start", "node_id": "a1", "node_kind": "agent", "node_label": "Flaky Agent", "parent_id": null, "data": {}},
+    {"id": "e2", "run_id": "r2", "timestamp": 2001, "type": "step_start", "node_id": "s1", "node_kind": "step", "node_label": "do work", "parent_id": "a1", "data": {}},
+    {"id": "e3", "run_id": "r2", "timestamp": 2002, "type": "tool_call", "node_id": "t1", "node_kind": "tool", "node_label": "risky_call", "parent_id": "s1", "data": {}},
+    {"id": "e4", "run_id": "r2", "timestamp": 2003, "type": "error", "node_id": "t1", "node_kind": "tool", "node_label": "risky_call", "parent_id": "s1", "data": {"error": "boom"}},
+    {"id": "e5", "run_id": "r2", "timestamp": 2004, "type": "agent_end", "node_id": "a1", "node_kind": "agent", "node_label": "Flaky Agent", "parent_id": null, "data": {"error": "boom"}}
+  ],
+  "expected": {
+    "status": "error",
+    "ended_at": 2004,
+    "nodes": [
+      {"id": "a1", "kind": "agent", "label": "Flaky Agent", "status": "error", "parent_id": null, "started_at": 2000, "ended_at": 2004},
+      {"id": "s1", "kind": "step", "label": "do work", "status": "running", "parent_id": "a1", "started_at": 2001, "ended_at": null},
+      {"id": "t1", "kind": "tool", "label": "risky_call", "status": "error", "parent_id": "s1", "started_at": 2002, "ended_at": 2003}
+    ],
+    "edges": [
+      {"id": "a1→s1", "source": "a1", "target": "s1"},
+      {"id": "s1→t1", "source": "s1", "target": "t1"}
+    ],
+    "total_cost_usd": null
+  }
+}

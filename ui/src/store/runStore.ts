@@ -46,6 +46,76 @@ interface Store {
 const START_TYPES = new Set(["agent_start", "step_start", "tool_call", "llm_call"]);
 const END_TYPES = new Set(["agent_end", "step_end", "tool_result", "llm_response"]);
 
+// ── DUAL LOGIC ──────────────────────────────────────────────────────────────
+// `applyEventToGraph` + `totalLlmCost` are the events→graph reduction. They MUST
+// stay byte-for-byte equivalent to Python `_apply_event_to_graph` / `_total_cost`
+// in vapviz/store.py. The cross-impl parity test (tests/fixtures/reducer_parity/,
+// tests/test_reducer_parity.py, runStore.parity.test.ts) fails the gate on drift.
+// See ui/src/CLAUDE.md.
+
+export interface GraphState {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  status: NodeStatus;
+  ended_at: number | null;
+}
+
+/** Pure: fold one event into the graph state, returning fresh arrays. */
+export function applyEventToGraph(prev: GraphState, event: VapEvent): GraphState {
+  let nodes = [...prev.nodes];
+  let edges = [...prev.edges];
+  let status = prev.status;
+  let ended_at = prev.ended_at;
+
+  if (START_TYPES.has(event.type)) {
+    const exists = nodes.find((n) => n.id === event.node_id);
+    if (!exists) {
+      nodes.push({
+        id: event.node_id,
+        kind: event.node_kind,
+        label: event.node_label,
+        status: "running",
+        parent_id: event.parent_id,
+        started_at: event.timestamp,
+        ended_at: null,
+        data: event.data,
+      });
+    }
+    if (event.parent_id) {
+      const edgeId = `${event.parent_id}→${event.node_id}`;
+      if (!edges.find((e) => e.id === edgeId)) {
+        edges.push({ id: edgeId, source: event.parent_id, target: event.node_id, kind: "execution" });
+      }
+    }
+  } else if (END_TYPES.has(event.type)) {
+    nodes = nodes.map((n) =>
+      n.id === event.node_id
+        ? { ...n, status: event.data.error ? "error" : "success", ended_at: event.timestamp, data: { ...n.data, ...event.data } }
+        : n
+    );
+    if (event.type === "agent_end") {
+      status = event.data.error ? "error" : "success";
+      ended_at = event.timestamp;
+    }
+  } else if (event.type === "error") {
+    nodes = nodes.map((n) =>
+      n.id === event.node_id ? { ...n, status: "error", ended_at: event.timestamp, data: { ...n.data, ...event.data } } : n
+    );
+  }
+
+  return { nodes, edges, status, ended_at };
+}
+
+/** Pure: run total = sum of cost_usd over LLM-kind nodes only (null if none priced). */
+export function totalLlmCost(nodes: GraphNode[]): number | null {
+  const total = nodes.reduce((sum, n) => {
+    if (n.kind !== "llm") return sum;
+    const cost = (n.data?.output as Record<string, unknown> | undefined)?.cost_usd as number | undefined;
+    return cost != null ? sum + cost : sum;
+  }, 0);
+  return total > 0 ? Number(total.toFixed(8)) : null;
+}
+
 export const useRunStore = create<Store>((set) => ({
   runs: [],
   selectedRunId: null,
@@ -101,46 +171,10 @@ export const useRunStore = create<Store>((set) => ({
       // (re)connect, so a reconnect would otherwise double the timeline.
       if (prev.events.some((e) => e.id === event.id)) return s;
 
-      let nodes = [...prev.nodes];
-      let edges = [...prev.edges];
-      let status = prev.status;
-      let ended_at = prev.ended_at;
-
-      if (START_TYPES.has(event.type)) {
-        const exists = nodes.find((n) => n.id === event.node_id);
-        if (!exists) {
-          nodes.push({
-            id: event.node_id,
-            kind: event.node_kind,
-            label: event.node_label,
-            status: "running",
-            parent_id: event.parent_id,
-            started_at: event.timestamp,
-            ended_at: null,
-            data: event.data,
-          });
-        }
-        if (event.parent_id) {
-          const edgeId = `${event.parent_id}→${event.node_id}`;
-          if (!edges.find((e) => e.id === edgeId)) {
-            edges.push({ id: edgeId, source: event.parent_id, target: event.node_id, kind: "execution" });
-          }
-        }
-      } else if (END_TYPES.has(event.type)) {
-        nodes = nodes.map((n) =>
-          n.id === event.node_id
-            ? { ...n, status: event.data.error ? "error" : "success", ended_at: event.timestamp, data: { ...n.data, ...event.data } }
-            : n
-        );
-        if (event.type === "agent_end") {
-          status = event.data.error ? "error" : "success";
-          ended_at = event.timestamp;
-        }
-      } else if (event.type === "error") {
-        nodes = nodes.map((n) =>
-          n.id === event.node_id ? { ...n, status: "error", ended_at: event.timestamp, data: { ...n.data, ...event.data } } : n
-        );
-      }
+      const { nodes, edges, status, ended_at } = applyEventToGraph(
+        { nodes: prev.nodes, edges: prev.edges, status: prev.status, ended_at: prev.ended_at },
+        event
+      );
 
       return {
         runStates: {
@@ -150,12 +184,7 @@ export const useRunStore = create<Store>((set) => ({
         runs: (() => {
           // Recompute total cost from llm nodes only — some integrations also
           // attach an aggregate cost_usd to the parent agent node (would double-count).
-          const totalCostUsd = nodes.reduce((sum, n) => {
-            if (n.kind !== "llm") return sum;
-            const cost = (n.data?.output as Record<string, unknown> | undefined)?.cost_usd as number | undefined;
-            return cost != null ? sum + cost : sum;
-          }, 0);
-          const costForRun = totalCostUsd > 0 ? totalCostUsd : null;
+          const costForRun = totalLlmCost(nodes);
 
           return s.runs.some((r) => r.run_id === event.run_id)
             ? s.runs.map((r) =>

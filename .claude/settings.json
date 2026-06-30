@@ -1,0 +1,17 @@
+{
+  "$comment": "Shared, committed Claude Code settings for vapviz. Personal overrides go in .claude/settings.local.json (gitignored).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/commit-gate.sh",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

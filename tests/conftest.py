@@ -8,6 +8,22 @@ from vapviz.store import MemoryStore
 from vapviz.tracer import Tracer, _current_step
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "integration: real-LLM test that hits OpenRouter (paid, slow). Auto-applied "
+        "to every tests/*_integration.py file. The fast/free gate runs "
+        "`-m 'not integration'`; a plain `pytest` still runs everything.",
+    )
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Auto-mark every test in a *_integration.py file as `integration`."""
+    for item in items:
+        if item.path.name.endswith("_integration.py"):
+            item.add_marker(pytest.mark.integration)
+
+
 @pytest.fixture
 def store() -> MemoryStore:
     """Fresh in-memory store for each test."""
