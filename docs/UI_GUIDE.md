@@ -83,18 +83,21 @@ Press **Esc** to close the detail panel.
 
 ## Theater — watch your agents work
 
-The **Theater** tab turns a run into a little pixel "office". It's available in **both Simple and
+The **Theater** tab turns a run into a cozy pixel office. It's available in **both Simple and
 Technical** modes (it's meant for everyone), as a tab at the top of a run.
 
-- **Each agent is a character** with its **name floating above its head**. The same agent always
-  gets the same character, so you learn to recognise your cast. Robots, people, the occasional
-  alien — it's just for personality; the nametag is what identifies who's who.
-- **They walk to a desk to work.** When an agent is talking to the AI model it walks to the **LLM
-  desk** (a thought bubble pops up); when it runs a tool it goes to the **tool bench**. The desk
-  lights up while it's in use. When it's done it rests; if it failed, it turns **red**.
+- **Each agent is a little pixel worker** with its **name floating above its head**. The same
+  agent always gets the same hair, shirt and skin colours, so you learn to recognise your cast —
+  the nametag is what identifies who's who. Every agent also has its **own home desk** along the
+  bottom of the room.
+- **They walk to a station to work.** When an agent is talking to the AI model it walks to the
+  **LLM desk**; when it runs a tool it heads for the station that matches the tool — the **SEARCH**
+  bookshelves, the **FETCH** server racks, the **DATA** filing cabinet or the **PRINT** table. The
+  active station glows, and a speech bubble says what the agent is up to ("phoning the API",
+  "querying the DB", …). If something failed, the agent sits at its desk saying it **hit a snag**.
 - **Watch it live or replay it.** For a run that's still going, the characters move in real time. For
-  a finished run it opens calm (everyone resting); press **▶** in the bar at the bottom to replay
-  from the start, or drag the slider to step through any moment.
+  a finished run it opens calm (everyone at their desk); press **▶** in the bar at the bottom to
+  replay from the start, or drag the slider to step through any moment.
 
 > Multi-agent runs (a CrewAI crew, a LangGraph supervisor + workers) are where this shines — you can
 > literally see which agent is doing what.

@@ -30,8 +30,13 @@ RGB channels; Tailwind maps them via `rgb(var(--x) / <alpha>)` (see
 
 Rules:
 - Add a token (with BOTH light + dark values) rather than a one-off literal.
-- Anything that renders color — including the ReactFlow graph and the canvas
-  Theater — must read tokens so it re-themes. Never commit a raw hex in a component.
+- Anything that renders color — including the ReactFlow graph — must read tokens so it
+  re-themes. Never commit a raw hex in a component.
+- **One deliberate exemption (Nick, locked 2026-07-01):** the Theater's sprite-office
+  diorama is a fixed warm palette that does NOT re-theme. Those hexes live as art data in
+  `ui/src/lib/sprites.ts` / `ui/src/lib/officeArt.ts` (incl. the canvas-chrome `CHROME`
+  set), governed by the **pixel-art-set** skill — components themselves still hold no raw
+  hexes, and the UI chrome around the canvas themes normally.
 
 ## Identity & where personality goes
 

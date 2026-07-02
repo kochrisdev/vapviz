@@ -89,6 +89,11 @@ body {
  * utilities can't express. Pixel sprites come from lib/avatar.ts (.sprite). */
 .sprite { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
 
+/* Sprite office (OfficeStage, Theater tab) — the canvas diorama is its own
+ * fixed warm palette (owned art, deliberately not re-themed); the chrome
+ * around it themes normally. */
+.office-stage { position: relative; height: 100%; overflow: hidden; display: grid; place-items: center; background: rgb(var(--surface-inset)); }
+
 .vt-stage {
   position: relative; height: 100%; overflow: hidden;
   background:

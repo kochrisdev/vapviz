@@ -9,6 +9,19 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 ## [Unreleased]
 
+### Changed
+- **Theater: the cozy sprite office** — the Theater tab's stage is rebuilt on hand-authored
+  12×16 "art-as-data" pixel sprites (palette + char-grid data rasterized to canvas and
+  recolored per agent — owned art, zero AI, zero third-party packs). One shared office with
+  five stations — the LLM desk plus SEARCH shelves, FETCH server racks, DATA cabinet and a
+  PRINT table — where tool calls are routed to a station by keyword-matching the tool's
+  name (unknown tools spread deterministically). Agents walk between their own home desk
+  and stations (walk speed adapts so they arrive before the call finishes), the active
+  station glows, and a playful speech bubble says what each agent is doing ("phoning the
+  API", "querying the DB", …). New: `ui/src/lib/{sprites,officeArt,officeScene}.ts` and
+  `ui/src/components/OfficeStage.tsx`; the Live Floor still uses the previous SVG
+  `AgentStage` for its compact zones.
+
 ### Added
 - **Theater view** — a watchable, game-like per-run view (UI). Each agent is a deterministic
   pixel character (built from its name) that walks to an LLM/tool desk while it's working, with

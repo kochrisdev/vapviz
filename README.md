@@ -36,7 +36,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Agent evals & scoring** — `eval_run(run, [checks...])` asserts cost/latency/output/custom/LLM-judge checks — regression testing for agents
 - **Search & tagging** — full-text search across run contents (`GET /search`) plus persistent per-run tags, surfaced in the UI
 - **Trace replay** — scrub a run event-by-event in the UI; the graph fills in node by node as it happened
-- **Theater view** — watch a run as a little pixel "office": each agent is a character that walks to a desk when it calls a model or runs a tool, name overhead — live or replayed
+- **Theater view** — watch a run as a cozy pixel office: each agent is a hand-drawn sprite that walks from its home desk to the LLM desk or a tool station (SEARCH / FETCH / DATA / PRINT, picked from the tool's name), speech bubble overhead — live or replayed
 - **Live floor** — a centralized monitor where every active run's cast works at once, grouped by run, so you can watch many agents across all your runs on one screen
 - **Persistent storage** — `vapviz.configure(db="vapviz.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vapviz serve --db vapviz.db` starts the server from the command line
@@ -643,14 +643,18 @@ ui/src/                       Vite + React + TypeScript
 │   ├── RunList.tsx           Sidebar run list with search, tags, compare + dashboard toggle
 │   ├── TagEditor.tsx         Inline per-run tag editor
 │   ├── ReplayBar.tsx         Time-travel scrubber (play/step over a run's events)
-│   ├── AgentStage.tsx        Theater room — desks + walking pixel avatars (shared)
-│   ├── TheaterView.tsx       Per-run Theater tab (wraps AgentStage)
+│   ├── OfficeStage.tsx       Theater room — canvas sprite office + walking cast
+│   ├── TheaterView.tsx       Per-run Theater tab (wraps OfficeStage)
+│   ├── AgentStage.tsx        Compact SVG stage (used by the Live Floor's zones)
 │   └── FloorView.tsx         Live Floor — every run's cast on one office floor
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
 ├── lib/
 │   ├── replay.ts             buildGraphAt() — rebuild the graph as of event N
-│   ├── avatar.ts             Deterministic pixel-character SVG engine (Theater)
+│   ├── sprites.ts            Art-as-data sprite engine (12×16 worker, per-agent recolor)
+│   ├── officeArt.ts          Room furniture + the locked office layout (owned pixel art)
+│   ├── officeScene.ts        Tool→station routing + per-agent call lookup + dialogue
+│   ├── avatar.ts             Pixel-character SVG engine (Live Floor's compact stage)
 │   └── theater.ts            buildScene() — graph → who's where / doing what
 ├── store/
 │   └── runStore.ts           Zustand store — builds graph state from events
@@ -955,6 +959,11 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **Pixel-character engine** (`lib/avatar.ts`) + **scene model** (`lib/theater.ts`) + shared **`AgentStage.tsx`** room/walking renderer
 - [x] **Live Floor** (`FloorView.tsx`, sidebar 🎭) — every active/recent run as a soft zone on one office floor, each a live `AgentStage`; polls existing endpoints, no backend change
 - [x] **LangGraph cast** — additive `langgraph_node` marker in the LangChain integration so multi-agent graphs show their real agents (supervisor / workers)
+
+### Phase 16 — Theater sprite office (complete)
+- [x] **Art-as-data sprites** — the Theater stage rebuilt on hand-authored 12×16 pixel sprites (palette + char-grid data, rasterized to canvas, recolored deterministically per agent; owned art, zero AI, zero third-party packs): `lib/sprites.ts` + the locked room layout in `lib/officeArt.ts`
+- [x] **Tool→station routing** — five stations (LLM desk, SEARCH shelves, FETCH racks, DATA cabinet, PRINT table); a running tool call keyword-matches to its station (`lib/officeScene.ts`), agents walk with duration-adaptive speed and say what they're doing in a speech bubble
+- [x] **`OfficeStage.tsx`** — the canvas renderer behind the Theater tab; the Live Floor keeps the compact SVG `AgentStage` for its zones
 
 ---
 

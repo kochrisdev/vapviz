@@ -16,7 +16,7 @@ import type { AvatarState } from "./avatar";
 import { isInternalNode } from "./simplify";
 
 /** Strip a leading `kind/` segment from a node label (`agent/Researcher` → `Researcher`). */
-function stripKind(label: string): string {
+export function stripKind(label: string): string {
   const i = label.indexOf("/");
   return i >= 0 ? label.slice(i + 1) : label;
 }
@@ -55,7 +55,7 @@ function langgraphNode(n: GraphNode): string | null {
   return typeof v === "string" ? v : null;
 }
 
-function actorNodes(nodes: GraphNode[]): GraphNode[] {
+export function actorNodes(nodes: GraphNode[]): GraphNode[] {
   const named = nodes.filter((n) => (n.label ?? "").startsWith("agent/"));
   if (named.length) return named;
   const lg = nodes.filter((n) => langgraphNode(n) && !isInternalNode(n));

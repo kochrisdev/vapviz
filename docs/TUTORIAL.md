@@ -1340,11 +1340,14 @@ Where the graph is the analytical view, the **Theater** is the *watchable* one �
 little pixel "office". Select a run and open the **Theater** tab (it's available in both Simple and
 Technical modes).
 
-- Each agent is a **pixel character** built deterministically from its name (same name → same
-  character, every run), with its **name floating overhead** — that's what identifies who's who.
-- A character **walks to the LLM desk** when one of its model calls is running (a thought bubble
-  appears) and to the **tool bench** when a tool runs; the desk lights up. It rests when idle, shows a
-  green tick when done, and turns **red** if it errored.
+- Each agent is a **hand-drawn pixel worker**, recolored deterministically from its name (same
+  name → same hair/shirt/skin, every run), with its **name floating overhead** — that's what
+  identifies who's who. Every agent has its own **home desk**.
+- A character **walks to the LLM desk** when one of its model calls is running, and to the tool
+  station that matches the tool's name — **SEARCH** shelves, **FETCH** racks, **DATA** cabinet or
+  **PRINT** table. The active station glows and a speech bubble says what the agent is doing
+  ("phoning the API", "querying the DB"). Idle or finished agents sit at their desk; an errored
+  agent says it **hit a snag**.
 - It's driven by the same events as everything else, so it animates **live** as a run executes, and a
   finished run can be **replayed** with the bar at the bottom (open static, press play, or scrub).
 

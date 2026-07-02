@@ -599,18 +599,40 @@ useEffect(() => {
 
 Named SSE events (`event: tool_call\ndata: {...}`) are used instead of the default `message` event so each handler only receives the events it cares about.
 
-### Theater & Floor (`AgentStage.tsx`, `TheaterView.tsx`, `FloorView.tsx`, `lib/avatar.ts`, `lib/theater.ts`)
+### Theater & Floor (`OfficeStage.tsx`, `TheaterView.tsx`, `FloorView.tsx`, `AgentStage.tsx`, `lib/{sprites,officeArt,officeScene,avatar,theater}.ts`)
 
 The Theater is a watchable renderer over the *same* derived graph the other views use — **UI-only, no
 backend change** (the one Python touch is an additive `langgraph_node` metadata marker, below).
 
-- **`lib/avatar.ts` — the pixel-character engine.** `agentSprite(name, state)` returns an SVG string for
-  a full-body pixel character assembled *deterministically* from a hash of the agent's name (skin, hair,
-  outfit, accessory, and human/robot/alien "kind"), so an agent keeps the same costume across runs.
-  Identity is carried by the on-screen nametag, so the costume only needs to be distinct, not unique.
-  Token-derived colours (eyes, status ring) are read at call time, so sprites re-theme on light/dark
-  toggle. Pure, offline, zero-dependency. This is the only place that knows how a face is made — swap it
-  and nothing else changes.
+- **`lib/sprites.ts` — the art-as-data sprite engine.** A sprite is hand-authored TEXT: a palette
+  (char key → color, some keys flagged recolorable) plus a char-grid (one key per pixel). The 12×16
+  worker (4-frame walk cycle) is rasterized to an offscreen canvas via `ImageData` and blitted with
+  integer-scale nearest-neighbor. An FNV-1a hash of the agent's name picks a deterministic **colorway**
+  (skin/hair/shirt/pants), so one authored sprite becomes many distinct coworkers who keep their look
+  across runs. Owned art: hand-authored, zero AI, zero third-party packs (provenance in
+  `ui/src/lib/ASSETS.md`).
+- **`lib/officeArt.ts` — the room.** Furniture (LLM desk, SEARCH shelves, FETCH racks, DATA cabinet,
+  PRINT table, home desks, plus lounge/dinner-nook decor), floor/wall tiles, and the **locked room
+  layout** (station geometry + stand-points, decor placements, the home-desk row). `bakeGround()`
+  renders the static room once per scale/cast into an offscreen canvas; `drawDecorAnim()` overlays
+  the two live props (flickering TV, bubbling water cooler) each frame. The diorama's warm palette is
+  fixed sprite data — deliberately not theme tokens.
+- **`lib/officeScene.ts` — graph → office wiring** (pure, tested). `stationForCall` routes a running
+  call to its station: LLM-kind → the LLM desk; tool calls keyword-match their label (normalized
+  snake_case → words) to SEARCH / FETCH / PRINT / DATA, with a deterministic hash fallback so unknown
+  tools still spread out. `callsByAgent` attributes every llm/tool call to the nearest cast actor up
+  the parent chain (same ownership rule as `buildScene`'s subtree walk), yielding each agent's
+  running + most-recent call. Also owns the playful per-station dialogue lines.
+- **`OfficeStage.tsx` — the canvas renderer** behind the Theater tab. Picks an integer device-pixel
+  scale from the container (ResizeObserver), bakes the ground, and runs a rAF loop: workers glide
+  toward their target (home desk ↔ station) at **duration-adaptive speed** (each trip takes ~0.55 s
+  regardless of distance, so arrival beats any real call), legs cycle while moving, the active
+  station glows, and name tags + speech bubbles draw in canvas. Driven purely by the `nodes` prop →
+  identical for live SSE and replay. Honors `prefers-reduced-motion` (no walk/decor animation).
+- **`lib/avatar.ts` — the SVG pixel-character engine (Live Floor).** `agentSprite(name, state)` returns
+  an SVG string for a full-body pixel character assembled *deterministically* from a hash of the agent's
+  name; token-derived colours re-theme on light/dark toggle. Pure, offline, zero-dependency. Still the
+  art behind the Floor's compact zones (`AgentStage`).
 - **`lib/theater.ts` — the scene model.** `buildScene(nodes)` is a pure reduction: pick the cast, then
   decide each agent's `state` (idle/thinking/working/done/error) and which desk it's `at` (`llm`/`tool`/
   `home`). Cast detection, by signal strength: `agent/` label prefix (CrewAI/Pydantic AI) → `langgraph_node`
@@ -618,14 +640,12 @@ backend change** (the one Python touch is an additive `langgraph_node` metadata 
   (LangGraph revisits `supervisor`/`math_expert`) are **grouped by name** into one character. "Linger":
   while an agent is still active it stays at the desk of its most recently started call instead of bouncing
   home between back-to-back calls; desks only glow for a *running* call.
-- **`AgentStage.tsx` — the room.** Renders desks + walking avatars. Each character is absolutely
-  positioned by `left/top` %, and movement is just a CSS transition on those — when a render changes an
-  agent's slot, an effect adds a `.vt-walking` class (leg shuffle) and faces the travel direction; CSS
-  glides it. Because it's driven purely by the `nodes` prop, it animates identically for **live** SSE
-  updates and **replay** (the partial graph from `buildGraphAt`). Shared by both views; `compact` mode
-  shrinks it for the Floor's tiled zones.
+- **`AgentStage.tsx` — the Floor's compact stage.** The previous DOM/SVG room: characters absolutely
+  positioned by `left/top` %, movement a CSS transition, `.vt-walking` for the leg shuffle. Driven
+  purely by the `nodes` prop like `OfficeStage`. Today it renders only the Floor's tiled `compact`
+  zones (the Theater tab moved to `OfficeStage`).
 - **`TheaterView.tsx`** — the per-run view: a thin wrapper that hands the run's `shownNodes` (live or
-  replayed) to a full-size `AgentStage`. Added as a 4th run tab in `App` (Story/Theater/Graph/Logs);
+  replayed) to a full-size `OfficeStage`. Added as a 4th run tab in `App` (Story/Theater/Graph/Logs);
   shown in **both** Simple and Technical modes; the existing `ReplayBar` drives playback.
 - **`FloorView.tsx`** — the global monitor (`view: "floor"`, sidebar 🎭). One office floor tiled with a
   soft labeled **zone** per active/recent run, each a live `compact` `AgentStage`. It **polls** `/runs`
