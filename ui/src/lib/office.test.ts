@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GraphNode } from "../types/events";
 import { PALETTE, WALK, colorway } from "./sprites";
 import { callsByAgent, lineFor, stationForCall, type OfficeCall } from "./officeScene";
+import { HOME_BACK_TOP, HOME_CX, HOME_TOP, homeSpots } from "./officeArt";
 
 /* ── sprite data integrity — a ragged row or unknown key corrupts the raster ── */
 describe("worker sprite grids", () => {
@@ -133,5 +134,35 @@ describe("callsByAgent", () => {
     expect(solo.runningLlm).toBeNull();
     expect(solo.runningTool).toBeNull();
     expect(solo.recent?.kind).toBe("llm");
+  });
+});
+
+/* ── home-desk placement — locked front row + overflow back row ── */
+describe("homeSpots", () => {
+  it("keeps the locked layout for small casts (all in the front row)", () => {
+    expect(homeSpots(3)).toEqual(HOME_CX.map((x) => ({ x, y: HOME_TOP })));
+    for (const spot of homeSpots(6)) expect(spot.y).toBe(HOME_TOP);
+  });
+
+  it("wraps casts >6 into the back row so desks never overlap", () => {
+    const spots = homeSpots(9);
+    expect(spots).toHaveLength(9);
+    const front = spots.filter((s) => s.y === HOME_TOP);
+    const back = spots.filter((s) => s.y === HOME_BACK_TOP);
+    expect(front).toHaveLength(6);
+    expect(back).toHaveLength(3);
+    // desks are 26px wide — neighbours in a row must not collide (>=25 allows
+    // the front row's rounded 25.6px pitch at exactly 6 desks)
+    for (const row of [front, back]) {
+      const xs = row.map((s) => s.x).sort((a, b) => a - b);
+      for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(25);
+    }
+    // back row stays on the open floor: clear of the dinner table (x<=58),
+    // the PRINT table (x>=170) and below the sofa (y>66)
+    for (const s of back) {
+      expect(s.x - 13).toBeGreaterThan(58);
+      expect(s.x + 13).toBeLessThan(170);
+      expect(s.y).toBeGreaterThan(66);
+    }
   });
 });

@@ -4,8 +4,8 @@ import { buildScene, type AvatarState } from "../lib/theater";
 import { callsByAgent, stationForCall, fallbackStation, lineFor, errorLineFor } from "../lib/officeScene";
 import { WALK, WALK_BOB, colorway, rasterize, blit } from "../lib/sprites";
 import {
-  RW, RH, STATION_DEFS, HOME_TOP, homeCx, bakeGround, drawDecorAnim, CHROME,
-  type StationName,
+  RW, RH, STATION_DEFS, homeSpots, bakeGround, drawDecorAnim, CHROME,
+  type HomeSpot, type StationName,
 } from "../lib/officeArt";
 
 /**
@@ -48,7 +48,7 @@ interface Goals {
   agents: Goal[];
   byName: Map<string, Goal>;
   hot: Set<StationName>;
-  homes: number[];
+  homes: HomeSpot[];
   /** Screen-reader description of the whole scene (the canvas is opaque to AT). */
   label: string;
 }
@@ -70,7 +70,7 @@ function stationDef(name: StationName) {
 function computeGoals(nodes: GraphNode[]): Goals {
   const scene = buildScene(nodes);
   const calls = callsByAgent(nodes);
-  const homes = homeCx(scene.agents.length);
+  const homes = homeSpots(scene.agents.length);
   const hot = new Set<StationName>();
 
   // First pass: resolve each agent's station (or home).
@@ -94,7 +94,8 @@ function computeGoals(nodes: GraphNode[]): Goals {
         : a.state === "error"
           ? errorLineFor(a.name)
           : null;
-    const home = { x: homes[Math.min(i, homes.length - 1)], y: HOME_TOP - 6 };
+    const spot = homes[Math.min(i, homes.length - 1)];
+    const home = { x: spot.x, y: spot.y - 6 };
     return { a, station, say, home };
   });
 
@@ -121,11 +122,28 @@ function computeGoals(nodes: GraphNode[]): Goals {
 }
 
 /* ── canvas text/fx helpers (all sized off `scale` so every zoom is crisp) ── */
+
+// measureText runs per worker per frame across every stage instance — cache
+// widths by font+text (both come from a small, stable set per session).
+const textW = new Map<string, number>();
+function measure(ctx: CanvasRenderingContext2D, text: string, font: string): number {
+  const key = font + "|" + text;
+  let w = textW.get(key);
+  if (w === undefined) {
+    if (textW.size > 512) textW.clear();
+    ctx.font = font;
+    w = ctx.measureText(text).width;
+    textW.set(key, w);
+  }
+  return w;
+}
+
 function labelChip(ctx: CanvasRenderingContext2D, text: string, cx: number, yTop: number, hot: boolean, scale: number) {
-  ctx.font = `600 ${2.5 * scale}px ${FONT}`;
+  const f = `600 ${2.5 * scale}px ${FONT}`;
+  ctx.font = f;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  const tw = ctx.measureText(text).width, x = cx * scale, y = yTop * scale;
+  const tw = measure(ctx, text, f), x = cx * scale, y = yTop * scale;
   ctx.fillStyle = hot ? CHROME.chipHotBg : CHROME.chipBg;
   ctx.fillRect(x - tw / 2 - 1.25 * scale, y, tw + 2.5 * scale, 4 * scale);
   ctx.fillStyle = hot ? CHROME.chipHotText : CHROME.chipText;
@@ -167,10 +185,11 @@ function drawWorker(
   // name tag — anchored just above the head; state carried as a text mark
   // (✓ done / ! error), never by color alone
   const tag = goal?.state === "done" ? `${name} ✓` : goal?.state === "error" ? `${name} !` : name;
-  ctx.font = `600 ${2.75 * u}px ${FONT}`;
+  const tagFont = `600 ${2.75 * u}px ${FONT}`;
+  ctx.font = tagFont;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  const tw = ctx.measureText(tag).width, cx = dx + 6 * scale, tagY = top - 4.25 * u;
+  const tw = measure(ctx, tag, tagFont), cx = dx + 6 * scale, tagY = top - 4.25 * u;
   ctx.fillStyle = CHROME.tagBg;
   ctx.fillRect(cx - tw / 2 - u, tagY, tw + 2 * u, 3.75 * u);
   ctx.fillStyle = CHROME.tagText;
@@ -179,8 +198,9 @@ function drawWorker(
   const arrived = w.x === w.target.x && w.y === w.target.y;
   const say = arrived && showSay ? goal?.say : null;
   if (say) {
-    ctx.font = `600 ${2.5 * u}px ${FONT}`;
-    const sw = ctx.measureText(say).width + 3 * u, by = tagY - 5.25 * u, bx = cx - sw / 2;
+    const sayFont = `600 ${2.5 * u}px ${FONT}`;
+    ctx.font = sayFont;
+    const sw = measure(ctx, say, sayFont) + 3 * u, by = tagY - 5.25 * u, bx = cx - sw / 2;
     ctx.fillStyle = CHROME.bubbleBg;
     ctx.fillRect(bx, by, sw, 4.25 * u);
     ctx.beginPath();
@@ -205,6 +225,8 @@ interface StageState {
   spriteCache: Map<string, HTMLCanvasElement[]>;
   reduced: boolean;
   compact: boolean;
+  /** False while the stage is scrolled out of view — the rAF loop pauses. */
+  onscreen: boolean;
 }
 
 /** Full frame paint at time `t` (seconds) / `ts` (ms, drives the leg cycle). */
@@ -234,9 +256,9 @@ function paintStage(s: StageState, canvas: HTMLCanvasElement | null, ts: number,
   }
 }
 
-/** Rebake the static ground if scale or the home-desk row changed. */
+/** Rebake the static ground if scale or the home-desk layout changed. */
 function rebake(s: StageState) {
-  const key = `${s.scale}|${s.goals.homes.join(",")}`;
+  const key = `${s.scale}|${s.goals.homes.map((h) => `${h.x},${h.y}`).join(";")}`;
   if (key !== s.groundKey && s.scale > 0) {
     s.ground = bakeGround(s.scale, s.goals.homes);
     s.groundKey = key;
@@ -292,6 +314,7 @@ export function OfficeStage({ nodes, compact = false }: OfficeStageProps) {
     spriteCache: new Map(),
     reduced: false,
     compact,
+    onscreen: true,
   });
 
   // Mount: reduced-motion tracking, integer device-pixel sizing, the rAF loop.
@@ -328,18 +351,31 @@ export function OfficeStage({ nodes, compact = false }: OfficeStageProps) {
       if (!raf) raf = requestAnimationFrame(tick);
     };
 
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const applyMotion = () => {
-      s.reduced = mq.matches;
-      if (s.reduced) {
+    // The loop runs only when motion is allowed AND the stage is on screen
+    // (offscreen Floor zones would otherwise keep repainting — browsers only
+    // pause rAF for hidden *tabs*, not scrolled-out elements).
+    const updateLoop = () => {
+      if (s.reduced || !s.onscreen) {
         stopLoop();
-        syncWorkers(s); // teleport everyone to their targets
-        paintStage(s, canvas, 0, 0);
+        if (s.reduced) {
+          syncWorkers(s); // teleport everyone to their targets
+          paintStage(s, canvas, 0, 0);
+        }
       } else {
         startLoop();
       }
     };
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const applyMotion = () => {
+      s.reduced = mq.matches;
+      updateLoop();
+    };
     mq.addEventListener("change", applyMotion);
+    const io = new IntersectionObserver(([entry]) => {
+      s.onscreen = entry.isIntersecting;
+      updateLoop();
+    });
+    io.observe(wrap);
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -364,6 +400,7 @@ export function OfficeStage({ nodes, compact = false }: OfficeStageProps) {
     return () => {
       stopLoop();
       ro.disconnect();
+      io.disconnect();
       mq.removeEventListener("change", applyMotion);
     };
   }, []);

@@ -613,7 +613,9 @@ backend change** (the one Python touch is an additive `langgraph_node` metadata 
   `ui/src/lib/ASSETS.md`).
 - **`lib/officeArt.ts` — the room.** Furniture (LLM desk, SEARCH shelves, FETCH racks, DATA cabinet,
   PRINT table, home desks, plus lounge/dinner-nook decor), floor/wall tiles, and the **locked room
-  layout** (station geometry + stand-points, decor placements, the home-desk row). `bakeGround()`
+  layout** (station geometry + stand-points, decor placements, the home-desk row). `homeSpots(n)`
+  places the cast's home desks: up to 6 in the locked front row, larger casts wrap into an additive
+  overflow back row on the open floor so desks never overlap (unit-tested). `bakeGround()`
   renders the static room once per scale/cast into an offscreen canvas; `drawDecorAnim()` overlays
   the two live props (flickering TV, bubbling water cooler) each frame. The diorama's warm palette is
   fixed sprite data — deliberately not theme tokens.
@@ -632,6 +634,9 @@ backend change** (the one Python touch is an additive `langgraph_node` metadata 
   animation). A `compact` prop renders the same room for the Floor's small tiled run-zones: station
   label chips and speech bubbles are dropped (unreadable at zone scale), name-tag chrome keeps a
   legible minimum size via a floored chrome unit, and the glow / walk / ✓ ! cues carry the signal.
+  Tiling-friendly by construction: canvas text widths are cached across frames/instances, and an
+  IntersectionObserver pauses the rAF loop for any stage scrolled out of view (browsers only pause
+  rAF for hidden tabs, not offscreen elements).
 - **`lib/theater.ts` — the scene model.** `buildScene(nodes)` is a pure reduction: pick the cast, then
   decide each agent's `state` (idle/thinking/working/done/error) and which desk it's `at` (`llm`/`tool`/
   `home`). Cast detection, by signal strength: `agent/` label prefix (CrewAI/Pydantic AI) → `langgraph_node`

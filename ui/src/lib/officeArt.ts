@@ -339,6 +339,17 @@ export const STATION_DEFS: StationDef[] = [
 /** Locked home-desk row: 3 desks at [64,104,146], top 108 (name tags clear the couch). */
 export const HOME_CX = [64, 104, 146];
 export const HOME_TOP = 108;
+/**
+ * Overflow back row (additive, 2026-07-03 — the locked furniture is untouched):
+ * open floor between the sofa (ends y66) and the front row, x-range clears the
+ * dinner table (ends x58) and the PRINT table (starts x170).
+ */
+export const HOME_BACK_TOP = 84;
+
+export interface HomeSpot {
+  x: number;
+  y: number;
+}
 
 /**
  * Home-desk centre-x positions for a cast of `n`. n≤3 uses the locked layout
@@ -352,6 +363,23 @@ export function homeCx(n: number): number[] {
   if (n === 3) return [...HOME_CX];
   const left = 40, right = 168;
   return Array.from({ length: n }, (_, i) => Math.round(left + (i * (right - left)) / (n - 1)));
+}
+
+/**
+ * Home-desk positions for a cast of `n`: up to 6 sit in the locked front row;
+ * beyond that the overflow wraps into the back row so desks stop overlapping
+ * (the front row physically fits ~6 26px desks).
+ */
+export function homeSpots(n: number): HomeSpot[] {
+  if (n <= 6) return homeCx(n).map((x) => ({ x, y: HOME_TOP }));
+  const back = n - 6, left = 72, right = 151;
+  const backXs = back === 1
+    ? [Math.round((left + right) / 2)]
+    : Array.from({ length: back }, (_, i) => Math.round(left + (i * (right - left)) / (back - 1)));
+  return [
+    ...homeCx(6).map((x) => ({ x, y: HOME_TOP })),
+    ...backXs.map((x) => ({ x, y: HOME_BACK_TOP })),
+  ];
 }
 
 // decor placements. `tv` + `cooler` are re-addressed in drawDecorAnim.
@@ -424,7 +452,7 @@ function artCache(): ArtCache {
  * Bake the static room (tiles + walls + all furniture + `homes` home desks)
  * into an offscreen canvas at `scale`. Rebake only when scale or cast changes.
  */
-export function bakeGround(scale: number, homes: number[]): HTMLCanvasElement {
+export function bakeGround(scale: number, homes: HomeSpot[]): HTMLCanvasElement {
   const a = artCache();
   const ground = document.createElement("canvas");
   ground.width = RW * scale;
@@ -449,7 +477,7 @@ export function bakeGround(scale: number, homes: number[]): HTMLCanvasElement {
   blitC(g, a.fridge, DECOR.fridge.cx, DECOR.fridge.top, scale);
   blitC(g, a.cooler, DECOR.cooler.cx, DECOR.cooler.top, scale);
   blitC(g, a.plant, DECOR.plant.cx, DECOR.plant.top, scale);
-  for (const cx of homes) blitC(g, a.home, cx, HOME_TOP, scale);
+  for (const h of homes) blitC(g, a.home, h.x, h.y, scale);
   return ground;
 }
 

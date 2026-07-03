@@ -23,7 +23,11 @@ For the detailed per-release notes (APIs, fixes, internals), see the
   a `compact` mode** (station chips + speech bubbles dropped at zone scale, name tags keep a
   legible minimum size; glow / walk / ✓ ! cues carry the signal), so both views share one
   renderer, one art set, and one per-agent colorway — the interim SVG stage
-  (`AgentStage.tsx`, `lib/avatar.ts`) is retired.
+  (`AgentStage.tsx`, `lib/avatar.ts`) is retired. Stage polish for the tiled Floor: canvas
+  text widths are cached, a stage scrolled out of view pauses its animation loop entirely
+  (browsers only pause hidden *tabs*), and casts larger than 6 wrap their home desks into
+  an overflow back row instead of overlapping (additive — the locked furniture layout is
+  untouched).
 
 ### Added
 - **Theater view** — a watchable, game-like per-run view (UI). Each agent is a deterministic
