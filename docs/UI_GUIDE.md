@@ -105,10 +105,12 @@ Technical** modes (it's meant for everyone), as a tab at the top of a run.
 ## The Live Floor — monitor everything at once
 
 Click the **🎭 masks icon** at the top of the sidebar for the **Live floor**: one open office floor
-showing **every active and recent run at once**, each as its own softly-labelled area with its own
-desks and walking characters. It's the control-room view — glance at it to see all your agents working
-across all your runs simultaneously, who's busy, and which run (if any) has gone red. **Click any run's
-area** to drop into that run's full Theater.
+showing **every active and recent run at once**, each as **the same pixel office in miniature** —
+its own desks, stations and walking workers (the tiny rooms skip the station labels and speech
+bubbles, but the glow, the walking and the ✓ / ! name-tag marks still tell you what's happening).
+It's the control-room view — glance at it to see all your agents working across all your runs
+simultaneously, who's busy, and which run (if any) has gone red. **Click any run's area** to drop
+into that run's full Theater.
 
 ---
 

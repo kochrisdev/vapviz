@@ -12,8 +12,10 @@
  * `home`. Coordinates are the view's job, kept out of here so this stays testable.
  */
 import type { GraphNode } from "../types/events";
-import type { AvatarState } from "./avatar";
 import { isInternalNode } from "./simplify";
+
+/** What a cast member is doing right now (drawn as pose/cue by the stage). */
+export type AvatarState = "idle" | "thinking" | "working" | "done" | "error";
 
 /** Strip a leading `kind/` segment from a node label (`agent/Researcher` → `Researcher`). */
 export function stripKind(label: string): string {

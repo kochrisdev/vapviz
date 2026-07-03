@@ -75,7 +75,7 @@ stay comparable). Active voice; errors say what happened + how to fix.
 Event→graph reduction and the event schema are implemented twice (Python
 `store.py` ↔ TS `runStore.ts`; `events.py` ↔ `types/events.ts`) and cost-reduce is
 dual too. Changing an event type / node kind / cost logic means editing BOTH sides.
-The Theater art (avatar/theater/AgentStage) is UI-only and NOT part of that rule.
+The Theater/Floor art (theater/sprites/officeArt/officeScene/OfficeStage) is UI-only and NOT part of that rule.
 
 ## Related
 Pixel-art asset creation → the **pixel-art-set** skill. General visual craft →

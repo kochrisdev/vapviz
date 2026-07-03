@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { GraphNode } from "../types/events";
-import type { AvatarState } from "../lib/avatar";
-import { buildScene } from "../lib/theater";
+import { buildScene, type AvatarState } from "../lib/theater";
 import { callsByAgent, stationForCall, fallbackStation, lineFor, errorLineFor } from "../lib/officeScene";
 import { WALK, WALK_BOB, colorway, rasterize, blit } from "../lib/sprites";
 import {
@@ -23,11 +22,17 @@ import {
  * completes. `prefers-reduced-motion` is tracked live: when set, the animation
  * loop stops entirely — agents appear at their targets and the room repaints
  * only when the data or size changes.
+ *
+ * `compact` renders the same room for the Floor's small tiled run-zones:
+ * station label chips and speech bubbles are dropped (unreadable at zone
+ * scale), name tags keep a legible floor via the chrome unit `u`, and the
+ * glow / walk / ✓ ! cues carry the activity signal.
  */
 
 const WALK_S = 0.55; // seconds per trip → adaptive speed
 const FONT = "ui-monospace,SFMono-Regular,Menlo,monospace";
 const MAX_SCALE = 8;
+const COMPACT_TAG_UNIT = 3.2; // compact chrome-unit floor (× dpr → ~9 CSS-px name tags)
 
 interface Goal {
   name: string;
@@ -144,6 +149,8 @@ function drawWorker(
   name: string,
   frameIdx: number,
   scale: number,
+  u: number, // chrome unit: = scale full-size, floored in compact so text stays legible
+  showSay: boolean,
 ) {
   const cv = w.frames[frameIdx];
   const bob = WALK_BOB[frameIdx] || 0;
@@ -160,30 +167,30 @@ function drawWorker(
   // name tag — anchored just above the head; state carried as a text mark
   // (✓ done / ! error), never by color alone
   const tag = goal?.state === "done" ? `${name} ✓` : goal?.state === "error" ? `${name} !` : name;
-  ctx.font = `600 ${2.75 * scale}px ${FONT}`;
+  ctx.font = `600 ${2.75 * u}px ${FONT}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  const tw = ctx.measureText(tag).width, cx = dx + 6 * scale, tagY = top - 4.25 * scale;
+  const tw = ctx.measureText(tag).width, cx = dx + 6 * scale, tagY = top - 4.25 * u;
   ctx.fillStyle = CHROME.tagBg;
-  ctx.fillRect(cx - tw / 2 - scale, tagY, tw + 2 * scale, 3.75 * scale);
+  ctx.fillRect(cx - tw / 2 - u, tagY, tw + 2 * u, 3.75 * u);
   ctx.fillStyle = CHROME.tagText;
-  ctx.fillText(tag, cx, tagY + 0.75 * scale);
+  ctx.fillText(tag, cx, tagY + 0.75 * u);
   // speech bubble once arrived — short, fun, informative
   const arrived = w.x === w.target.x && w.y === w.target.y;
-  const say = arrived ? goal?.say : null;
+  const say = arrived && showSay ? goal?.say : null;
   if (say) {
-    ctx.font = `600 ${2.5 * scale}px ${FONT}`;
-    const sw = ctx.measureText(say).width + 3 * scale, by = tagY - 5.25 * scale, bx = cx - sw / 2;
+    ctx.font = `600 ${2.5 * u}px ${FONT}`;
+    const sw = ctx.measureText(say).width + 3 * u, by = tagY - 5.25 * u, bx = cx - sw / 2;
     ctx.fillStyle = CHROME.bubbleBg;
-    ctx.fillRect(bx, by, sw, 4.25 * scale);
+    ctx.fillRect(bx, by, sw, 4.25 * u);
     ctx.beginPath();
-    ctx.moveTo(cx - 0.75 * scale, by + 4.25 * scale);
-    ctx.lineTo(cx + 0.75 * scale, by + 4.25 * scale);
-    ctx.lineTo(cx, by + 5.25 * scale);
+    ctx.moveTo(cx - 0.75 * u, by + 4.25 * u);
+    ctx.lineTo(cx + 0.75 * u, by + 4.25 * u);
+    ctx.lineTo(cx, by + 5.25 * u);
     ctx.closePath();
     ctx.fill();
     ctx.fillStyle = CHROME.bubbleText;
-    ctx.fillText(say, cx, by + scale);
+    ctx.fillText(say, cx, by + u);
   }
 }
 
@@ -197,6 +204,7 @@ interface StageState {
   workers: Map<string, Worker>;
   spriteCache: Map<string, HTMLCanvasElement[]>;
   reduced: boolean;
+  compact: boolean;
 }
 
 /** Full frame paint at time `t` (seconds) / `ts` (ms, drives the leg cycle). */
@@ -210,14 +218,19 @@ function paintStage(s: StageState, canvas: HTMLCanvasElement | null, ts: number,
     const def = stationDef(name);
     glow(ctx, def.sx, def.sy - 2, s.scale);
   }
-  // station labels (hot ones highlighted) on top of the glow
-  for (const def of STATION_DEFS) {
-    labelChip(ctx, def.label, def.fcx, def.lbl ?? Math.max(3, def.ftop - 13), s.goals.hot.has(def.label), s.scale);
+  // station labels (hot ones highlighted) on top of the glow — full size only;
+  // at zone scale they'd be noise, and the furniture already reads
+  if (!s.compact) {
+    for (const def of STATION_DEFS) {
+      labelChip(ctx, def.label, def.fcx, def.lbl ?? Math.max(3, def.ftop - 13), s.goals.hot.has(def.label), s.scale);
+    }
   }
+  // compact keeps name tags legible by flooring the chrome unit
+  const u = s.compact ? Math.max(s.scale, COMPACT_TAG_UNIT * s.dpr) : s.scale;
   const order = [...s.workers.entries()].sort((a, b) => a[1].y - b[1].y);
   for (const [name, w] of order) {
     const moving = w.x !== w.target.x || w.y !== w.target.y;
-    drawWorker(ctx, w, s.goals.byName.get(name), name, moving && !s.reduced ? Math.floor(ts / 120) % 4 : 0, s.scale);
+    drawWorker(ctx, w, s.goals.byName.get(name), name, moving && !s.reduced ? Math.floor(ts / 120) % 4 : 0, s.scale, u, !s.compact);
   }
 }
 
@@ -258,7 +271,13 @@ function syncWorkers(s: StageState) {
   for (const name of [...s.workers.keys()]) if (!names.has(name)) s.workers.delete(name);
 }
 
-export function OfficeStage({ nodes }: { nodes: GraphNode[] }) {
+interface OfficeStageProps {
+  nodes: GraphNode[];
+  /** Small tiled rendering for the Floor's run-zones (fewer/smaller labels). */
+  compact?: boolean;
+}
+
+export function OfficeStage({ nodes, compact = false }: OfficeStageProps) {
   const goals = useMemo(() => computeGoals(nodes), [nodes]);
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -272,6 +291,7 @@ export function OfficeStage({ nodes }: { nodes: GraphNode[] }) {
     workers: new Map(),
     spriteCache: new Map(),
     reduced: false,
+    compact,
   });
 
   // Mount: reduced-motion tracking, integer device-pixel sizing, the rAF loop.
@@ -353,13 +373,14 @@ export function OfficeStage({ nodes }: { nodes: GraphNode[] }) {
   useEffect(() => {
     const s = st.current;
     s.goals = goals;
+    s.compact = compact;
     rebake(s);
     syncWorkers(s);
     if (s.reduced) paintStage(s, canvasRef.current, 0, 0);
-  }, [goals]);
+  }, [goals, compact]);
 
   return (
-    <div ref={wrapRef} className="office-stage">
+    <div ref={wrapRef} className={`office-stage${compact ? " office-stage--compact" : ""}`}>
       <canvas ref={canvasRef} className="sprite" role="img" aria-label={goals.label} />
       {goals.agents.length === 0 && <div className="vt-empty">No agents yet…</div>}
     </div>

@@ -10,7 +10,9 @@ in this directory and is **owned outright**.
 |---|---|---|---|
 | 12×16 worker (4-frame walk) + recolor palette | `sprites.ts` | Nick + Claude, 2026-06-30 → 07-01 (prototype), ported 2026-07-02 | owned, hand-authored |
 | Room tiles, furniture set, locked office layout | `officeArt.ts` | Nick + Claude, 2026-06-30 → 07-01 (prototype), ported 2026-07-02 | owned, hand-authored |
-| SVG pixel characters (Live Floor stage) | `avatar.ts` | Claude, 2026-06 | owned, hand-authored |
+
+(The interim SVG pixel characters — `avatar.ts`, Claude 2026-06 — were retired 2026-07-03
+when the Live Floor moved to the sprite office; both views now use the art above.)
 
 Reference prototype (final approved renders `pose10.png` / `live10.png`):
 `scratch/sprite-proto/` (local, gitignored). Room layout **locked by Nick

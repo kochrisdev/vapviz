@@ -643,9 +643,8 @@ ui/src/                       Vite + React + TypeScript
 │   ├── RunList.tsx           Sidebar run list with search, tags, compare + dashboard toggle
 │   ├── TagEditor.tsx         Inline per-run tag editor
 │   ├── ReplayBar.tsx         Time-travel scrubber (play/step over a run's events)
-│   ├── OfficeStage.tsx       Theater room — canvas sprite office + walking cast
+│   ├── OfficeStage.tsx       Sprite office — canvas room + walking cast (Theater full-size, Floor compact)
 │   ├── TheaterView.tsx       Per-run Theater tab (wraps OfficeStage)
-│   ├── AgentStage.tsx        Compact SVG stage (used by the Live Floor's zones)
 │   └── FloorView.tsx         Live Floor — every run's cast on one office floor
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
@@ -654,7 +653,6 @@ ui/src/                       Vite + React + TypeScript
 │   ├── sprites.ts            Art-as-data sprite engine (12×16 worker, per-agent recolor)
 │   ├── officeArt.ts          Room furniture + the locked office layout (owned pixel art)
 │   ├── officeScene.ts        Tool→station routing + per-agent call lookup + dialogue
-│   ├── avatar.ts             Pixel-character SVG engine (Live Floor's compact stage)
 │   └── theater.ts            buildScene() — graph → who's where / doing what
 ├── store/
 │   └── runStore.ts           Zustand store — builds graph state from events
@@ -964,6 +962,10 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **Art-as-data sprites** — the Theater stage rebuilt on hand-authored 12×16 pixel sprites (palette + char-grid data, rasterized to canvas, recolored deterministically per agent; owned art, zero AI, zero third-party packs): `lib/sprites.ts` + the locked room layout in `lib/officeArt.ts`
 - [x] **Tool→station routing** — five stations (LLM desk, SEARCH shelves, FETCH racks, DATA cabinet, PRINT table); a running tool call keyword-matches to its station (`lib/officeScene.ts`), agents walk with duration-adaptive speed and say what they're doing in a speech bubble
 - [x] **`OfficeStage.tsx`** — the canvas renderer behind the Theater tab; the Live Floor keeps the compact SVG `AgentStage` for its zones
+
+### Phase 17 — One stage engine (complete)
+- [x] **Live Floor on the sprite office** — `FloorView`'s run-zones now tile `OfficeStage` in a new `compact` mode (station chips + speech bubbles dropped at zone scale, name tags keep a legible floor; glow / walk / ✓ ! cues carry the signal)
+- [x] **Interim SVG stage retired** — `AgentStage.tsx` + `lib/avatar.ts` (and their CSS) deleted; Theater and Floor share one renderer, one art set, one per-agent colorway
 
 ---
 

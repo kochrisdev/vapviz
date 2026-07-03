@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { Drama } from "lucide-react";
 import type { GraphNode, NodeStatus, RunSummary } from "../types/events";
-import { AgentStage } from "./AgentStage";
+import { OfficeStage } from "./OfficeStage";
 import { useRunStore } from "../store/runStore";
 
 /**
  * Global Floor view (UI-ROADMAP Phase 3) — the centralized monitor: one open
  * office floor where every active (and most-recent) run is a soft labeled
- * *zone*, each a live `AgentStage` with its own desks and walking avatars. You
- * watch all your agents working across the floor at once; click a zone to drill
- * into that run's full Theater.
+ * *zone*, each a compact sprite office (`OfficeStage`, the same engine as the
+ * Theater) with its own desks and walking workers. You watch all your agents
+ * working across the floor at once; click a zone to drill into that run's
+ * full Theater.
  *
  * Live by polling the existing endpoints (no backend change): `/runs` for the
  * roster + status, `/runs/{id}/graph` for each run's nodes.
@@ -112,12 +113,12 @@ export function FloorView() {
               >
                 <div className="flex items-center gap-2 px-1 pb-1">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${DOT[run.status]}`} />
-                  <span className="text-xs font-semibold text-content-muted truncate max-w-[260px]">
+                  <span className="text-xs font-semibold text-content-muted truncate max-w-[280px]">
                     {run.label}
                   </span>
                 </div>
                 <div className="vt-zone-stage">
-                  <AgentStage nodes={nodes} compact />
+                  <OfficeStage nodes={nodes} compact />
                 </div>
               </button>
             ))}

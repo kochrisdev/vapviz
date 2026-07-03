@@ -6,8 +6,8 @@ import { OfficeStage } from "./OfficeStage";
  * cozy sprite office. The room + walking choreography live in `OfficeStage`
  * (art-as-data sprites, layout locked 2026-07-01); here we just pass the run's
  * nodes (live, or the partial graph from `buildGraphAt` during replay). The
- * playback bar is wired up alongside this in App. The global Floor still tiles
- * the older compact `AgentStage`.
+ * playback bar is wired up alongside this in App. The global Floor tiles the
+ * same engine in `compact` mode.
  */
 export function TheaterView({ nodes }: { nodes: GraphNode[] }) {
   return <OfficeStage nodes={nodes} />;
