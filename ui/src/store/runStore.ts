@@ -196,6 +196,7 @@ export const useRunStore = create<Store>((set) => ({
                 {
                   run_id: event.run_id,
                   label: event.node_label,
+                  app_id: (event.data.app_id as string | undefined) ?? null,
                   status,
                   started_at: prev.started_at ?? event.timestamp,
                   ended_at,

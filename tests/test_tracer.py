@@ -358,3 +358,56 @@ class TestCrossThreadClose:
         assert not error, f"_end raised across threads: {error}"
         summary = store.get_run(run.run_id)
         assert summary.status == NodeStatus.SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# app_id — stable pipeline identity (additive; rides in start-event data)
+# ---------------------------------------------------------------------------
+
+class TestAppId:
+    def test_trace_app_id_rides_in_start_event_data(self, tracer, store):
+        with tracer.trace("My run", app_id="support-bot") as run:
+            pass
+
+        start = events_of(store, run.run_id)[0]
+        assert start.type == EventType.AGENT_START
+        assert start.data["app_id"] == "support-bot"
+        assert start.data["label"] == "My run"
+
+    def test_trace_without_app_id_omits_key(self, tracer, store):
+        with tracer.trace("My run") as run:
+            pass
+
+        start = events_of(store, run.run_id)[0]
+        assert "app_id" not in start.data
+
+    def test_empty_app_id_treated_as_absent(self, tracer, store):
+        # "" would otherwise group every such run into one "" app in the UI.
+        with tracer.trace("My run", app_id="") as run:
+            pass
+
+        start = events_of(store, run.run_id)[0]
+        assert "app_id" not in start.data
+        assert store.get_run(run.run_id).app_id is None
+
+    def test_app_id_surfaces_on_run_summary(self, tracer, store):
+        with tracer.trace("My run", app_id="support-bot") as run:
+            pass
+
+        assert store.get_run(run.run_id).app_id == "support-bot"
+        assert store.list_runs()[0].app_id == "support-bot"
+
+    def test_run_summary_app_id_none_when_absent(self, tracer, store):
+        with tracer.trace("My run") as run:
+            pass
+
+        assert store.get_run(run.run_id).app_id is None
+
+    def test_atrace_app_id(self, tracer, store):
+        async def main() -> str:
+            async with tracer.atrace("My async run", app_id="etl-pipe") as run:
+                pass
+            return run.run_id
+
+        run_id = asyncio.run(main())
+        assert store.get_run(run_id).app_id == "etl-pipe"

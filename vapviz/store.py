@@ -211,6 +211,7 @@ class MemoryStore(RunStore):
                 self._graphs[event.run_id] = RunGraph(
                     run_id=event.run_id,
                     label=event.data.get("label", event.run_id),
+                    app_id=event.data.get("app_id"),
                     status=NodeStatus.RUNNING,
                     started_at=event.timestamp,
                 )
@@ -246,6 +247,7 @@ class MemoryStore(RunStore):
                     RunSummary(
                         run_id=run_id,
                         label=g.label,
+                        app_id=g.app_id,
                         status=g.status,
                         started_at=g.started_at,
                         ended_at=g.ended_at,
@@ -269,6 +271,7 @@ class MemoryStore(RunStore):
             return RunSummary(
                 run_id=run_id,
                 label=g.label,
+                app_id=g.app_id,
                 status=g.status,
                 started_at=g.started_at,
                 ended_at=g.ended_at,

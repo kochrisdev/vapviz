@@ -126,13 +126,23 @@ def _end_event(node_kind: NodeKind) -> EventType:
 class RunContext:
     """Top-level context for a single agent run."""
 
-    def __init__(self, label: str, store: "RunStore", run_id: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        label: str,
+        store: "RunStore",
+        run_id: Optional[str] = None,
+        app_id: Optional[str] = None,
+    ) -> None:
         self.run_id = run_id or _uid()
         self.label = label
+        self.app_id = app_id
         self._store = store
         self._root_node_id = _uid()
 
     def _start(self) -> None:
+        data: dict[str, Any] = {"label": self.label}
+        if self.app_id:  # empty string counts as absent — the UI would group all "" apps together
+            data["app_id"] = self.app_id
         self._store.add_event(
             VapEvent(
                 id=_uid(),
@@ -143,7 +153,7 @@ class RunContext:
                 node_kind=NodeKind.AGENT,
                 node_label=self.label,
                 parent_id=None,
-                data={"label": self.label},
+                data=data,
             )
         )
         self._root_ctx = StepContext(
@@ -260,9 +270,16 @@ class Tracer:
     # ------------------------------------------------------------------
 
     @contextmanager
-    def trace(self, label: str, run_id: Optional[str] = None) -> Iterator[RunContext]:
-        """Start a synchronous agent run trace."""
-        run = RunContext(label=label, store=self._store, run_id=run_id)
+    def trace(
+        self, label: str, run_id: Optional[str] = None, app_id: Optional[str] = None
+    ) -> Iterator[RunContext]:
+        """Start a synchronous agent run trace.
+
+        ``app_id`` is a stable identifier for the pipeline ("app") this run
+        belongs to; runs sharing an ``app_id`` are grouped in the UI. Falls
+        back to exact-label grouping when omitted.
+        """
+        run = RunContext(label=label, store=self._store, run_id=run_id, app_id=app_id)
         run._start()
         error: Optional[Exception] = None
         try:
@@ -278,8 +295,12 @@ class Tracer:
     # ------------------------------------------------------------------
 
     @asynccontextmanager
-    async def atrace(self, label: str, run_id: Optional[str] = None) -> AsyncIterator[RunContext]:
+    async def atrace(
+        self, label: str, run_id: Optional[str] = None, app_id: Optional[str] = None
+    ) -> AsyncIterator[RunContext]:
         """Start an asynchronous agent run trace.
+
+        ``app_id`` groups runs of the same pipeline, as in :meth:`trace`.
 
         Example::
 
@@ -289,7 +310,7 @@ class Tracer:
                     data = await fetch(url)
                     step.set_output({"bytes": len(data)})
         """
-        run = RunContext(label=label, store=self._store, run_id=run_id)
+        run = RunContext(label=label, store=self._store, run_id=run_id, app_id=app_id)
         run._start()
         error: Optional[Exception] = None
         try:

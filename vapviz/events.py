@@ -66,6 +66,7 @@ class GraphEdge(BaseModel):
 class RunSummary(BaseModel):
     run_id: str
     label: str
+    app_id: Optional[str] = None  # stable pipeline id (trace(app_id=...)); UI groups runs by it
     status: NodeStatus
     started_at: float
     ended_at: Optional[float] = None
@@ -79,6 +80,7 @@ class RunSummary(BaseModel):
 class RunGraph(BaseModel):
     run_id: str
     label: str
+    app_id: Optional[str] = None  # set at run creation from agent_start data, not by the reducer
     status: NodeStatus
     nodes: list[GraphNode] = Field(default_factory=list)
     edges: list[GraphEdge] = Field(default_factory=list)

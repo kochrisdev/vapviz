@@ -2,7 +2,7 @@
 
 The tracer → store → server pipeline. **Everything is an event; the graph is derived, never stored directly.**
 
-- `tracer.py` — `trace`/`step` (sync) + `atrace`/`astep` (async) context managers; automatic parent/child nesting via the `_current_step` ContextVar. `_start_event`/`_end_event` maps live here.
+- `tracer.py` — `trace`/`step` (sync) + `atrace`/`astep` (async) context managers; automatic parent/child nesting via the `_current_step` ContextVar. `_start_event`/`_end_event` maps live here. `trace(label, run_id=None, app_id=None)` — `app_id` is a stable pipeline identity riding in `agent_start` data (additive; surfaces as `RunSummary.app_id`, set at run creation — NOT part of the dual reducers).
 - `store.py` — `RunStore` ABC + `MemoryStore` (default); the pure `_apply_event_to_graph` builds the derived graph; `_total_cost` sums **LLM-kind nodes only**.
 - `backends/sqlite.py` — `SqliteStore` (WAL; replays the DB into an in-memory graph cache on startup).
 - `server.py` — FastAPI REST + SSE façade. Route order: `/runs/compare` before `/runs/{id}`.

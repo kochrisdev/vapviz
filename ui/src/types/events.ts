@@ -46,6 +46,7 @@ export interface GraphEdge {
 export interface RunGraph {
   run_id: string;
   label: string;
+  app_id?: string | null; // set at run creation from agent_start data, not by the reducer
   status: NodeStatus;
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -56,6 +57,7 @@ export interface RunGraph {
 export interface RunSummary {
   run_id: string;
   label: string;
+  app_id?: string | null; // stable pipeline id (trace(app_id=...)); grouping key = app_id ?? label
   status: NodeStatus;
   started_at: number;
   ended_at: number | null;
