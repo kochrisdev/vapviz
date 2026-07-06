@@ -37,7 +37,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Search & tagging** — full-text search across run contents (`GET /search`) plus persistent per-run tags, surfaced in the UI
 - **Trace replay** — scrub a run event-by-event in the UI; the graph fills in node by node as it happened
 - **Theater view** — watch a run as a cozy pixel office: each agent is a hand-drawn sprite that walks from its home desk to the LLM desk or a tool station (SEARCH / FETCH / DATA / PRINT, picked from the tool's name), speech bubble overhead — live or replayed
-- **Live floor** — a centralized monitor where every active run's cast works at once, grouped by run, so you can watch many agents across all your runs on one screen
+- **Office building** — a centralized monitor keyed to **apps**: each app owns a room (a re-run lights the same room back up), floors hold six rooms with the earliest app descending when full, and a failing app is pulled into a red **incident hall** (inspect or dismiss) — watch all your agents work across every app on one screen
 - **Persistent storage** — `vapviz.configure(db="vapviz.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vapviz serve --db vapviz.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -640,16 +640,17 @@ ui/src/                       Vite + React + TypeScript
 │   ├── ExportMenu.tsx        Export dropdown (JSON download + PNG capture)
 │   ├── NodeDetail.tsx        Selected-node inspector
 │   ├── RunComparison.tsx     Side-by-side diff of two runs
-│   ├── RunList.tsx           Sidebar run list with search, tags, compare + dashboard toggle
+│   ├── RunList.tsx           App-grouped sidebar (expand → run history) with search, tags, compare + dashboard toggle
 │   ├── TagEditor.tsx         Inline per-run tag editor
 │   ├── ReplayBar.tsx         Time-travel scrubber (play/step over a run's events)
-│   ├── OfficeStage.tsx       Sprite office — canvas room + walking cast (Theater full-size, Floor compact)
+│   ├── OfficeStage.tsx       Sprite office — canvas room + walking cast (Theater full-size, Building compact)
 │   ├── TheaterView.tsx       Per-run Theater tab (wraps OfficeStage)
-│   └── FloorView.tsx         Live Floor — every run's cast on one office floor
+│   └── BuildingView.tsx      Office Building — every app's room across stacked floors + incident hall
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
 ├── lib/
 │   ├── replay.ts             buildGraphAt() — rebuild the graph as of event N
+│   ├── building.ts           buildBuilding() — apps → rooms/floors/incident-hall placement
 │   ├── sprites.ts            Art-as-data sprite engine (12×16 worker, per-agent recolor)
 │   ├── officeArt.ts          Room furniture + the locked office layout (owned pixel art)
 │   ├── officeScene.ts        Tool→station routing + per-agent call lookup + dialogue
@@ -966,6 +967,12 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 ### Phase 17 — One stage engine (complete)
 - [x] **Live Floor on the sprite office** — `FloorView`'s run-zones now tile `OfficeStage` in a new `compact` mode (station chips + speech bubbles dropped at zone scale, name tags keep a legible floor; glow / walk / ✓ ! cues carry the signal)
 - [x] **Interim SVG stage retired** — `AgentStage.tsx` + `lib/avatar.ts` (and their CSS) deleted; Theater and Floor share one renderer, one art set, one per-agent colorway
+
+### Phase 18 — Office Building & app identity (complete)
+- [x] **`app_id`** — optional `vapviz.trace(label, app_id=…)` / `atrace(…)` pipeline identity; rides in the run's start-event data (additive — no event→graph change) and surfaces as `RunSummary.app_id`
+- [x] **Office Building** (`BuildingView.tsx`, replaces `FloorView.tsx`) — the Floor re-keyed from run instances to **apps** (grouping key `app_id ?? label`): app = room reused across re-runs, agent = stable desk, **6 rooms per floor** with the earliest app descending when the top floor fills (finished preferred; floors grow downward only), and a top-floor **incident hall** for failing apps (inspect + **dismiss**; dismissals key on the failed run id, persist in `localStorage`, and are pruned against the live roster). Rooms glide to new positions (FLIP), disabled under reduced motion
+- [x] **`lib/building.ts`** — pure `buildBuilding(runs, prev, dismissed)` placement reducer (stay put → incidents → seat new → descend cascade), unit-tested like the other scene reducers
+- [x] **App-grouped sidebar** — `RunList` groups runs into apps (current-run status dot, ×N run count, plain-language subtitle); expand an app for its run history, click a run to inspect and replay it
 
 ---
 

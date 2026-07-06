@@ -102,15 +102,31 @@ Technical** modes (it's meant for everyone), as a tab at the top of a run.
 > Multi-agent runs (a CrewAI crew, a LangGraph supervisor + workers) are where this shines — you can
 > literally see which agent is doing what.
 
-## The Live Floor — monitor everything at once
+## The Office Building — monitor everything at once
 
-Click the **🎭 masks icon** at the top of the sidebar for the **Live floor**: one open office floor
-showing **every active and recent run at once**, each as **the same pixel office in miniature** —
-its own desks, stations and walking workers (the tiny rooms skip the station labels and speech
-bubbles, but the glow, the walking and the ✓ / ! name-tag marks still tell you what's happening).
-It's the control-room view — glance at it to see all your agents working across all your runs
-simultaneously, who's busy, and which run (if any) has gone red. **Click any run's area** to drop
-into that run's full Theater.
+Click the **🎭 masks icon** at the top of the sidebar for the **Office building**: every **app**
+(pipeline) gets its own room, shown as **the same pixel office in miniature** — its own desks,
+stations and walking workers (the tiny rooms skip the station labels and speech bubbles, but the
+glow, the walking and the ✓ / ! name-tag marks still tell you what's happening). It's the
+control-room view — glance at it to see all your agents working across all your apps.
+
+How the building works:
+
+- **A room belongs to an app, not a run.** Re-running an app lights the *same* room back up —
+  the ×N badge counts its runs. (Give your pipeline a stable identity with
+  `vapviz.trace("My app", app_id="my-app")`; without one, runs group by exact label.)
+- **Each agent keeps its desk** across re-runs, so the room always looks familiar.
+- **Floors hold six rooms.** When the top floor is full, the app that's been sitting there
+  longest moves down a floor (still fully live and animating) — the building grows downward,
+  new activity stays on top.
+- **Failures go to the incident hall** — the red hall at the very top. A failing app is pulled
+  out of its room so you can't miss it. **Click it to inspect** the failed run, or press
+  **Dismiss** to clear it until that app runs again (a *new* failure always re-flags, even
+  after a dismissal — dismissals survive page reloads).
+- **Click any room** to drop into that app's current run.
+
+The sidebar mirrors the building: it lists **apps**, not individual runs — expand one (▸) to see
+its full run history and click any past run to inspect and replay it.
 
 ---
 
@@ -172,7 +188,9 @@ AI-model calls. `$0` means no billable model calls were recorded.
 | Understand one step | Click its box → read the detail panel |
 | See the raw JSON for a step | Click **"Show technical details"** |
 | Watch a run as a pixel "office" | Open the **Theater** tab (any mode) |
-| Monitor all runs working at once | Open the **Live floor** (🎭 masks icon, sidebar) |
+| Monitor all apps working at once | Open the **Office building** (🎭 masks icon, sidebar) |
+| See an app's past runs | Expand the app in the sidebar (▸) → click a run |
+| Clear a failed app from the building | **Dismiss** it in the incident hall (returns on its next run) |
 | Compare all runs at a glance | Open the **Dashboard** (chart icon, sidebar) |
 | Hide framework plumbing in the graph | Use the **Simplified** toggle (Graph tab) |
 | Watch a run play out | Use **Replay** (Graph tab) |

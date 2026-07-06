@@ -33,7 +33,7 @@ the last, so work through them in order. No prior vapviz knowledge required.
 24. [Agent Evals & Scoring](#24-agent-evals--scoring)
 25. [Search & Tagging](#25-search--tagging)
 26. [Trace Replay](#26-trace-replay)
-27. [Theater & the Live Floor](#27-theater--the-live-floor)
+27. [Theater & the Office Building](#27-theater--the-office-building)
 28. [What's Next?](#28-whats-next)
 
 ---
@@ -140,6 +140,12 @@ python my_agent.py
 - The right panel shows the run ID, start time, duration, and status.
 
 That single indigo node is the **agent root node**, created automatically by `vapviz.trace()`.
+
+> **Tip — give your app one home.** If you'll run this script many times, pass a stable
+> `app_id`: `vapviz.trace("Hello vapviz", app_id="hello-vapviz")`. Every run of the same
+> `app_id` groups into **one sidebar entry** (expand it for the run history) and **one room**
+> in the Office building view, instead of piling up as separate entries. Without an
+> `app_id`, runs group by their exact label.
 
 ---
 
@@ -1334,7 +1340,7 @@ and reads the events already streamed for the run, so it works on live and histo
 
 ---
 
-## 27. Theater & the Live Floor
+## 27. Theater & the Office Building
 
 Where the graph is the analytical view, the **Theater** is the *watchable* one — it turns a run into a
 little pixel "office". Select a run and open the **Theater** tab (it's available in both Simple and
@@ -1354,15 +1360,20 @@ Technical modes).
 Multi-agent runs are where it shines — a CrewAI crew shows `Researcher` and `Writer`; a LangGraph
 supervisor shows `supervisor` + its workers — so you can see which agent is doing what.
 
-### The Live Floor
+### The Office Building
 
-Click the **🎭 masks icon** at the top of the sidebar for the **Live Floor**: one open office floor
-showing **every active and recent run at once**, each as its own softly-labelled zone with its own
-desks and walking characters. It's the control-room view for watching many runs work simultaneously;
-click any zone to drop into that run's full Theater.
+Click the **🎭 masks icon** at the top of the sidebar for the **Office building**: the control-room
+view where every **app** (grouping key: `app_id ?? label` — see the `app_id` tip in §3) owns a
+miniature office room. Re-running an app lights **the same room** back up (the ×N badge counts its
+runs) and each agent keeps its desk. Floors hold **six rooms**; when the top floor fills, the app
+that's been there longest moves down a floor — still live — so fresh activity stays on top. An app
+whose latest run **failed** is pulled into the red **incident hall** at the very top: click it to
+inspect the failed run, or **Dismiss** it until that app runs again. Click any room to drop into
+that app's current run; the sidebar lists the same apps, and expanding one shows its full run
+history for inspection and replay.
 
-Both views are pure UI over the event stream — no extra instrumentation, no backend change. See the
-[UI Guide](UI_GUIDE.md) for the non-technical walkthrough.
+Both views are pure UI over the event stream — the only instrumentation that helps is passing a
+stable `app_id` to `trace()`. See the [UI Guide](UI_GUIDE.md) for the non-technical walkthrough.
 
 ---
 

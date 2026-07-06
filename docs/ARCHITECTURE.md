@@ -599,10 +599,11 @@ useEffect(() => {
 
 Named SSE events (`event: tool_call\ndata: {...}`) are used instead of the default `message` event so each handler only receives the events it cares about.
 
-### Theater & Floor (`OfficeStage.tsx`, `TheaterView.tsx`, `FloorView.tsx`, `lib/{sprites,officeArt,officeScene,theater}.ts`)
+### Theater & Building (`OfficeStage.tsx`, `TheaterView.tsx`, `BuildingView.tsx`, `lib/{sprites,officeArt,officeScene,theater,building}.ts`)
 
 The Theater is a watchable renderer over the *same* derived graph the other views use — **UI-only, no
-backend change** (the one Python touch is an additive `langgraph_node` metadata marker, below).
+backend change** (the Python touches are additive metadata only: the `langgraph_node` marker below,
+and the `app_id` run identity the Building groups by).
 
 - **`lib/sprites.ts` — the art-as-data sprite engine.** A sprite is hand-authored TEXT: a palette
   (char key → color, some keys flagged recolorable) plus a char-grid (one key per pixel). The 12×16
@@ -647,12 +648,32 @@ backend change** (the one Python touch is an additive `langgraph_node` metadata 
 - **`TheaterView.tsx`** — the per-run view: a thin wrapper that hands the run's `shownNodes` (live or
   replayed) to a full-size `OfficeStage`. Added as a 4th run tab in `App` (Story/Theater/Graph/Logs);
   shown in **both** Simple and Technical modes; the existing `ReplayBar` drives playback.
-- **`FloorView.tsx`** — the global monitor (`view: "floor"`, sidebar 🎭). One office floor tiled with a
-  soft labeled **zone** per active/recent run, each a live `compact` `OfficeStage` — both views share
-  one engine. It **polls** `/runs` (+ `/runs/{id}/graph` per active run, finished graphs cached) every
-  ~1.5 s rather than opening many SSE streams — frontend-only, fine for local-scale concurrency.
-  Clicking a zone selects that run (drills into its Theater). *(The interim SVG stage —
-  `AgentStage.tsx` + `lib/avatar.ts` — was retired when the Floor moved to the sprite office.)*
+- **`lib/building.ts` — the Office Building reducer** (pure, tested — like `officeScene`/`buildScene`,
+  it re-presents derived data and is NOT part of the dual-logic parity rule). `appKey(run) =
+  run.app_id ?? run.label` is THE grouping key, shared by the building and the sidebar so they can
+  never disagree. `groupApps(runs)` folds the `/runs` roster into apps and picks each app's
+  **current run** (any running run wins, most-recently-started first; else newest).
+  `buildBuilding(runs, prev, dismissed)` then places apps deterministically, in order: **stay put**
+  (a surviving app keeps its exact `{floor, room}` from `prev`) → **errors → incident hall** (an app
+  whose current run failed is pulled out; a dismissed failed run — keyed by run id — removes the app
+  until its next run) → **seat new apps on the top floor** → **descend under pressure** (a full top
+  floor sends its earliest app down: oldest *finished* preferred, else the earliest-started running
+  app, which stays live below; the cascade appends floors at the bottom — never sideways; trailing
+  empty floors are trimmed). Floors are fixed at `ROOMS_PER_FLOOR = 6`.
+- **`BuildingView.tsx`** — the global monitor (`view: "floor"`, sidebar 🎭), replacing the retired
+  `FloorView.tsx`. It **polls** `/runs` (+ `/runs/{id}/graph` per visible room, finished graphs
+  cached) every ~1.5 s rather than opening many SSE streams — frontend-only, fine for local-scale
+  concurrency — and feeds each tick through `buildBuilding` (seeded with the previous tick for room
+  stickiness). Renders floors top-down as rows of `compact` `OfficeStage` rooms (empty slots keep
+  the grid stable) with the red **incident hall** strip at the very top (extra — never one of the 6
+  slots): click a hall room to inspect the failed run, or **Dismiss** it (persisted in
+  `localStorage["vapviz.dismissed"]` as failed run ids, pruned on load against the live roster).
+  Room moves animate with a FLIP transition (rects captured before each state update, deltas played
+  after render; skipped under `prefers-reduced-motion`). Clicking a room selects the app's current
+  run. Desks inside a room are assigned by **sorted agent name** (in `OfficeStage.computeGoals`), so
+  an agent keeps its seat across ticks and re-runs. *(The interim SVG stage — `AgentStage.tsx` +
+  `lib/avatar.ts` — was retired when the Floor moved to the sprite office; the run-keyed `FloorView`
+  was retired when the Building landed.)*
 
 ---
 

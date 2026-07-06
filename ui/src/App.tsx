@@ -3,7 +3,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { Activity, BookOpen, Drama, History, Network, ScrollText } from "lucide-react";
 import { AgentGraph } from "./components/AgentGraph";
 import { TheaterView } from "./components/TheaterView";
-import { FloorView } from "./components/FloorView";
+import { BuildingView } from "./components/BuildingView";
 import { Dashboard } from "./components/Dashboard";
 import { LogsView } from "./components/LogsView";
 import { ExportMenu } from "./components/ExportMenu";
@@ -90,7 +90,7 @@ function RunViewer() {
 
       {/* Main area */}
       {view === "floor" ? (
-        <FloorView />
+        <BuildingView />
       ) : view === "dashboard" ? (
         <Dashboard />
       ) : compareRunId && selectedRunId ? (

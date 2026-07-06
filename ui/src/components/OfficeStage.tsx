@@ -73,6 +73,16 @@ function computeGoals(nodes: GraphNode[]): Goals {
   const homes = homeSpots(scene.agents.length);
   const hot = new Set<StationName>();
 
+  // Stable desks (§4-I): seats are keyed by sorted agent name, not first-seen
+  // order, so an agent keeps the same desk across ticks and re-runs even when
+  // the run's nodes arrive in a different order.
+  const seatOf = new Map(
+    scene.agents
+      .map((a) => a.name)
+      .sort((x, y) => x.localeCompare(y))
+      .map((name, i) => [name, i] as const)
+  );
+
   // First pass: resolve each agent's station (or home).
   const raw = scene.agents.map((a, i) => {
     const c = calls.get(a.name) ?? { runningLlm: null, runningTool: null, recent: null };
@@ -94,7 +104,7 @@ function computeGoals(nodes: GraphNode[]): Goals {
         : a.state === "error"
           ? errorLineFor(a.name)
           : null;
-    const spot = homes[Math.min(i, homes.length - 1)];
+    const spot = homes[Math.min(seatOf.get(a.name) ?? i, homes.length - 1)];
     const home = { x: spot.x, y: spot.y - 6 };
     return { a, station, say, home };
   });

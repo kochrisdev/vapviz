@@ -71,18 +71,19 @@ vapviz.configure()
 
 ---
 
-#### `vapviz.trace(label, run_id=None)`
+#### `vapviz.trace(label, run_id=None, app_id=None)`
 
 Synchronous context manager. Starts an agent run trace, yields a `RunContext`, and closes the run on exit.
 
 ```python
-vapviz.trace(label: str, run_id: str | None = None) -> ContextManager[RunContext]
+vapviz.trace(label: str, run_id: str | None = None, app_id: str | None = None) -> ContextManager[RunContext]
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `label` | `str` | required | Human-readable name shown in the UI sidebar. |
 | `run_id` | `str \| None` | `None` | Custom run ID (12-char hex). Auto-generated if omitted. |
+| `app_id` | `str \| None` | `None` | Stable identity of the pipeline ("app") this run belongs to. Runs sharing an `app_id` group into one UI app (one sidebar entry, one Building room across re-runs); omitted → runs group by exact label. Rides in the `agent_start` event's `data` (additive) and surfaces as `RunSummary.app_id`. |
 
 ```python
 with vapviz.trace("My Agent") as run:
@@ -95,12 +96,12 @@ Exceptions raised inside the block are recorded as an error on the root agent no
 
 ---
 
-#### `vapviz.atrace(label, run_id=None)`
+#### `vapviz.atrace(label, run_id=None, app_id=None)`
 
 Async version of `trace`. Use inside `async def` functions with `async with`.
 
 ```python
-vapviz.atrace(label: str, run_id: str | None = None) -> AsyncContextManager[RunContext]
+vapviz.atrace(label: str, run_id: str | None = None, app_id: str | None = None) -> AsyncContextManager[RunContext]
 ```
 
 Parameters are identical to `trace`.
@@ -742,6 +743,7 @@ Lightweight summary of a run — used in the sidebar list.
 |---|---|---|
 | `run_id` | `str` | Unique run identifier. |
 | `label` | `str` | Display name. |
+| `app_id` | `str \| None` | Stable pipeline identity from `trace(app_id=…)`. The UI groups runs by `app_id ?? label`. |
 | `status` | `NodeStatus` | Current run status. |
 | `started_at` | `float` | Unix epoch seconds. |
 | `ended_at` | `float \| None` | `None` if still running. |
@@ -759,6 +761,7 @@ Full graph snapshot for a run.
 |---|---|---|
 | `run_id` | `str` | Unique run identifier. |
 | `label` | `str` | Display name. |
+| `app_id` | `str \| None` | Stable pipeline identity; set at run creation from the `agent_start` event's `data` (not by the event→graph reducer). |
 | `status` | `NodeStatus` | Current run status. |
 | `nodes` | `list[GraphNode]` | All graph nodes. |
 | `edges` | `list[GraphEdge]` | All graph edges. |
@@ -1736,6 +1739,7 @@ interface GraphEdge {
 interface RunSummary {
   run_id: string;
   label: string;
+  app_id?: string | null;  // stable pipeline id; the UI groups runs by app_id ?? label
   status: NodeStatus;
   started_at: number;
   ended_at: number | null;
@@ -1751,6 +1755,7 @@ interface RunSummary {
 interface RunGraph {
   run_id: string;
   label: string;
+  app_id?: string | null;  // set at run creation from agent_start data, not by the reducer
   status: NodeStatus;
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -1765,9 +1770,10 @@ interface RunGraph {
 
 ### Unreleased
 
-- **Theater sprite office (UI)** — the Theater tab's stage is rebuilt on hand-authored 12×16 art-as-data sprites (`ui/src/lib/sprites.ts`: palette + char-grid, rasterized to canvas, recolored per agent) walking a cozy office (`ui/src/lib/officeArt.ts`, rendered by `ui/src/components/OfficeStage.tsx`). Tool calls are keyword-routed to SEARCH/FETCH/DATA/PRINT stations and model calls to the LLM desk (`ui/src/lib/officeScene.ts`); walk speed adapts to arrive before a call completes. The Live Floor's run-zones tile the same engine via `OfficeStage`'s `compact` prop (no station chips / speech bubbles, name tags floored to a legible size); the interim SVG stage (`AgentStage.tsx`, `lib/avatar.ts`) is retired.
+- **`app_id` run identity** — `vapviz.trace()` / `atrace()` (and `RunContext`) accept an optional `app_id: str | None`, a stable pipeline identity carried in the `agent_start` event's `data` (additive — no event→graph reduction change) and surfaced as `RunSummary.app_id` (Pydantic + TS mirror; also on `RunGraph`, set at run creation). The UI groups runs into apps by `app_id ?? label`.
+- **Office Building (UI)** — the global monitor (`ui/src/components/BuildingView.tsx`, sidebar 🎭) is keyed to apps (app = room, agent = stable desk; grouping key `app_id ?? label`), 6 rooms per floor with a descent cascade when the top floor fills, and a top-floor incident hall with inspect + dismiss (dismissed failed run ids in `localStorage["vapviz.dismissed"]`, pruned against the live roster). Pure placement reducer in `ui/src/lib/building.ts` (`appKey` / `groupApps` / `buildBuilding`, unit-tested). The sidebar (`RunList.tsx`) lists apps with expandable per-run history rows (select → inspect/replay). *(Supersedes the interim run-keyed `FloorView.tsx`, added and retired within this unreleased window.)*
+- **Theater sprite office (UI)** — the Theater tab's stage is rebuilt on hand-authored 12×16 art-as-data sprites (`ui/src/lib/sprites.ts`: palette + char-grid, rasterized to canvas, recolored per agent) walking a cozy office (`ui/src/lib/officeArt.ts`, rendered by `ui/src/components/OfficeStage.tsx`). Tool calls are keyword-routed to SEARCH/FETCH/DATA/PRINT stations and model calls to the LLM desk (`ui/src/lib/officeScene.ts`); walk speed adapts to arrive before a call completes. The Office building's rooms tile the same engine via `OfficeStage`'s `compact` prop (no station chips / speech bubbles, name tags floored to a legible size); the interim SVG stage (`AgentStage.tsx`, `lib/avatar.ts`) is retired.
 - **Theater view (UI)** — a watchable per-run view: each agent is a deterministic pixel worker that walks to an LLM/tool desk while working, name overhead; driven by the existing live/replay pipeline. Scene logic in `ui/src/lib/theater.ts`. A 4th run tab, shown in both Simple and Technical modes.
-- **Live floor (UI)** — a centralized monitor (`ui/src/components/FloorView.tsx`, sidebar 🎭) tiling every active/recent run as a soft zone on one office floor, each a live compact sprite office. Polls `/runs` + `/runs/{id}/graph`; no backend change.
 - **LangChain integration** — `on_chain_start` now carries `langgraph_node` into node `data` (additive metadata; no graph-reduction change), so multi-agent LangGraph runs surface their real cast in Theater.
 
 ### v1.1.0

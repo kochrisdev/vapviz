@@ -9,7 +9,19 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 ## [Unreleased]
 
+### Added
+- **`app_id` — stable app identity for runs** — `vapviz.trace()` and `atrace()` accept an
+  optional `app_id`: a stable identifier for the pipeline ("app") a run belongs to, so every
+  invocation of the same app can be grouped. It rides in the run's `agent_start` data
+  (additive — the `langgraph_node` pattern, no event→graph change) and is surfaced as
+  `RunSummary.app_id` (+ the TS mirror). The UI groups runs by `app_id ?? label`, so
+  existing instrumentation groups sensibly with zero changes.
+
 ### Changed
+- **Sidebar grouped by app** — the run list becomes an **app list** (current-run status dot,
+  ×N run count, plain-language subtitle); expanding an app shows its run history (status,
+  start time, duration, cost) where each row selects that run for inspection and replay.
+  Search, tags, compare and per-run delete are unchanged.
 - **Theater: the cozy sprite office** — the Theater tab's stage is rebuilt on hand-authored
   12×16 "art-as-data" pixel sprites (palette + char-grid data rasterized to canvas and
   recolored per agent — owned art, zero AI, zero third-party packs). One shared office with
@@ -19,8 +31,8 @@ For the detailed per-release notes (APIs, fixes, internals), see the
   and stations (walk speed adapts so they arrive before the call finishes), the active
   station glows, and a playful speech bubble says what each agent is doing ("phoning the
   API", "querying the DB", …). New: `ui/src/lib/{sprites,officeArt,officeScene}.ts` and
-  `ui/src/components/OfficeStage.tsx`. The Live Floor's run-zones tile the **same engine in
-  a `compact` mode** (station chips + speech bubbles dropped at zone scale, name tags keep a
+  `ui/src/components/OfficeStage.tsx`. The Office building's rooms tile the **same engine in
+  a `compact` mode** (station chips + speech bubbles dropped at room scale, name tags keep a
   legible minimum size; glow / walk / ✓ ! cues carry the signal), so both views share one
   renderer, one art set, and one per-agent colorway — the interim SVG stage
   (`AgentStage.tsx`, `lib/avatar.ts`) is retired. Stage polish for the tiled Floor: canvas
@@ -34,10 +46,19 @@ For the detailed per-release notes (APIs, fixes, internals), see the
   pixel character (built from its name) that walks to an LLM/tool desk while it's working, with
   its name overhead; available in both Simple and Technical modes and driven by the existing
   replay/live pipeline. New: `ui/src/lib/theater.ts`, `ui/src/components/TheaterView.tsx`.
-- **Live floor** — a centralized monitor (`ui/src/components/FloorView.tsx`, sidebar 🎭 icon)
-  showing every active/recent run as a soft labeled zone on one office floor, each a live
-  compact sprite office, so you can watch many runs' agents work at once. Polls existing
-  endpoints; no backend change.
+- **Office building** — a centralized monitor (`ui/src/components/BuildingView.tsx`, sidebar 🎭
+  icon) keyed to **apps**, not runs: each app owns one room shown as a live compact sprite
+  office (a re-run lights the same room back up, with an ×N run count) and each agent keeps a
+  stable desk within its room. Floors hold **6 rooms**; when the top floor fills, the earliest
+  app descends a floor (oldest finished preferred; an all-running floor sends its
+  earliest-started app down still live; floors grow downward, never sideways). An app whose
+  current run **failed** is pulled into a red top-floor **incident hall**: click to inspect,
+  or **Dismiss** to clear it until the app's next run (dismissals key on the failed run id,
+  persist in `localStorage`, and are pruned against the live run roster). Rooms glide to new
+  positions with a FLIP transition (skipped under reduced motion). Placement lives in the pure,
+  unit-tested reducer `ui/src/lib/building.ts` (`buildBuilding`); polls existing endpoints —
+  the only backend touch is the additive `app_id`. *(Supersedes the interim run-keyed
+  `FloorView.tsx`, added and retired within this unreleased window.)*
 - LangChain integration now carries the `langgraph_node` name through to node data (additive
   metadata), so multi-agent LangGraph runs show their real cast (supervisor / workers) in Theater.
 
