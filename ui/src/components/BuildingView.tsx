@@ -1,8 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Drama, Siren, X } from "lucide-react";
+import { Coffee, Drama, Siren, X } from "lucide-react";
 import type { GraphNode, NodeStatus, RunSummary } from "../types/events";
 import { OfficeStage } from "./OfficeStage";
+import { LoungeStage } from "./LoungeStage";
 import { useRunStore } from "../store/runStore";
+import { formatCost } from "../lib/format";
+import { blit } from "../lib/sprites";
+import { doorCanvas, stairsCanvas } from "../lib/loungeArt";
+import { WalkEngine, type Pt } from "../lib/walkOverlay";
 import {
   buildBuilding,
   pruneDismissed,
@@ -11,18 +16,22 @@ import {
 } from "../lib/building";
 
 /**
- * Office Building view (UI-ROADMAP §4-I, Phase 4a) — the Floor re-keyed from
- * run instances to APPS: app = room, agent = desk. Floors hold 6 rooms; when
- * the top floor is full the earliest app descends a floor (lib/building.ts
- * owns the placement algorithm). Apps whose current run failed are pulled
- * into the red incident hall at the top — inspect (click) or dismiss.
+ * Office Building view (UI-ROADMAP §4-J, Phase 4b) — the *visual* building.
+ * The Floor is re-keyed from run instances to APPS: app = room, agent = desk.
+ *
+ * Each floor is a 2×3 room grid around a central Walk Way, with a Door
+ * (top-right) / Stairs (bottom-right) column and, on the top floor's right, a
+ * shared Lounge (solid east wall + windows below it). A failed app's home room
+ * stays put and turns red while its agents "gather" in the lounge; clears on
+ * re-run or manual Dismiss. When the top floor fills, the earliest app descends
+ * a floor (lib/building.ts owns the placement algorithm).
  *
  * Live by polling the existing endpoints (no backend change): `/runs` for the
  * roster, `/runs/{id}/graph` for each visible room's nodes.
  */
 
 const POLL_MS = 1500;
-const DISMISS_KEY = "vapviz.dismissed"; // failed run_ids cleared from the hall
+const DISMISS_KEY = "vapviz.dismissed"; // failed run_ids cleared from the lounge
 
 function loadDismissed(): Set<string> {
   try {
@@ -49,22 +58,25 @@ const DOT: Record<NodeStatus, string> = {
   pending: "bg-status-pending",
 };
 
-interface RoomTileProps {
+/** A floor room: an app's home. Renders its current run's office diorama. */
+function RoomTile({
+  slot,
+  room,
+  nodes,
+  onOpen,
+}: {
+  slot: number;
   room: AppRoom;
   nodes: GraphNode[];
-  hall?: boolean;
   onOpen: () => void;
-  onDismiss?: () => void;
-}
-
-function RoomTile({ room, nodes, hall, onOpen, onDismiss }: RoomTileProps) {
+}) {
   return (
-    <div className={`vt-room ${hall ? "vt-room--hall" : ""} group relative`} data-appkey={room.appKey}>
-      <button
-        onClick={onOpen}
-        title={hall ? "Inspect the failed run" : "Open this app's current run"}
-        className="w-full text-left"
-      >
+    <div
+      className={`vt-room group relative ${room.status === "error" ? "vt-room--error" : ""}`}
+      data-appkey={room.appKey}
+      style={{ gridArea: `r${slot}` }}
+    >
+      <button onClick={onOpen} title="Open this app's current run" className="w-full text-left">
         <div className="flex items-center gap-2 px-1 pb-1">
           <span className={`w-2 h-2 rounded-full shrink-0 ${DOT[room.status]}`} />
           <span className="text-xs font-semibold text-content-muted truncate">{room.label}</span>
@@ -78,37 +90,183 @@ function RoomTile({ room, nodes, hall, onOpen, onDismiss }: RoomTileProps) {
           <OfficeStage nodes={nodes} compact />
         </div>
       </button>
-      {hall && onDismiss && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDismiss();
-          }}
-          title="Dismiss — clears this failure until the app runs again"
-          className="absolute right-2 top-1 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-status-error/40 text-status-error bg-surface/70 hover:bg-status-error/15 transition-colors"
-        >
-          <X size={9} /> Dismiss
-        </button>
-      )}
     </div>
   );
+}
+
+/** Small static pixel icon (door / stairs) blitted into the descent-column frames. */
+function PixelIcon({ build, alt }: { build: () => HTMLCanvasElement; alt: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const src = build();
+    const S = 2;
+    cv.width = src.width * S;
+    cv.height = src.height * S;
+    const ctx = cv.getContext("2d")!;
+    ctx.imageSmoothingEnabled = false;
+    blit(ctx, src, 0, 0, S);
+  }, [build]);
+  return <canvas ref={ref} className="sprite" role="img" aria-label={alt} />;
+}
+
+/** A failed app waiting in the lounge — inspect (click) or dismiss. */
+function LoungeCard({
+  room,
+  onOpen,
+  onDismiss,
+}: {
+  room: AppRoom;
+  onOpen: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="vt-lounge-card" data-lounge={room.appKey}>
+      <button onClick={onOpen} title="Inspect the failed run" className="vt-lounge-open">
+        <Siren size={11} className="text-status-error shrink-0" />
+        <span className="text-[11px] font-semibold text-content truncate">{room.label}</span>
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDismiss();
+        }}
+        title="Dismiss — clears this failure until the app runs again"
+        className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full border border-status-error/40 text-status-error hover:bg-status-error/15 transition-colors shrink-0"
+      >
+        <X size={8} /> Dismiss
+      </button>
+    </div>
+  );
+}
+
+type LocalRect = { x: number; y: number; w: number; h: number };
+
+/** Building-local rects of every room (by appKey) + per-floor door/stairs/walkway
+ *  + the lounge — captured before/after an update to drive the walk overlay. */
+function snapshot(el: HTMLElement): Map<string, LocalRect> {
+  const m = new Map<string, LocalRect>();
+  const b = el.getBoundingClientRect();
+  const put = (key: string, r: DOMRect) =>
+    m.set(key, { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height });
+  el.querySelectorAll<HTMLElement>("[data-appkey]").forEach((e) =>
+    put(`room:${e.dataset.appkey}`, e.getBoundingClientRect())
+  );
+  el.querySelectorAll<HTMLElement>("[data-floor]").forEach((f) => {
+    const fi = f.dataset.floor;
+    const q = (sel: string, key: string) => {
+      const c = f.querySelector(sel);
+      if (c) put(key, c.getBoundingClientRect());
+    };
+    q(".vt-door", `door:${fi}`);
+    q(".vt-stairs", `stairs:${fi}`);
+    q(".vt-walkway", `walk:${fi}`);
+  });
+  const lounge = el.querySelector(".vt-lounge");
+  if (lounge) put("lounge", lounge.getBoundingClientRect());
+  return m;
+}
+
+const rectCenter = (r: LocalRect): Pt => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+
+/** appKey → floor index, for diffing placements between ticks. */
+function floorOf(b: Building): Map<string, number> {
+  const m = new Map<string, number>();
+  b.floors.forEach((f) => f.rooms.forEach((r) => r && m.set(r.appKey, f.index)));
+  return m;
+}
+
+/** Spawn overlay walkers for the transitions between `oldB` and `newB`: an app
+ *  that descended a floor (vanish-at-stairs / reappear-at-door), and an app that
+ *  just failed (its home room stays put; one coworker walks up to the lounge).
+ *  Returns the appKeys given a walker, so the FLIP fallback skips them. */
+function spawnTransitions(
+  oldB: Building,
+  newB: Building,
+  first: Map<string, LocalRect>, // pre-render rects (old positions)
+  now: Map<string, LocalRect>, // post-render rects (new positions)
+  engine: WalkEngine
+): Set<string> {
+  const animated = new Set<string>();
+  const oldPos = floorOf(oldB);
+  const newPos = floorOf(newB);
+  const oldLounge = new Set(oldB.lounge.map((r) => r.appKey));
+
+  // descents — old room → walkway → stairs (VANISH) → door below → walkway → new room
+  for (const [app, nf] of newPos) {
+    const of = oldPos.get(app);
+    if (of === undefined || nf <= of) continue;
+    const start = first.get(`room:${app}`);
+    const stairs = now.get(`stairs:${of}`);
+    const walkFrom = now.get(`walk:${of}`);
+    const door = now.get(`door:${nf}`);
+    const walkTo = now.get(`walk:${nf}`);
+    const end = now.get(`room:${app}`);
+    if (!start || !stairs || !walkFrom || !door || !walkTo || !end) continue;
+    const s = rectCenter(start);
+    const st = rectCenter(stairs);
+    const dr = rectCenter(door);
+    const e = rectCenter(end);
+    const yFrom = rectCenter(walkFrom).y;
+    const yTo = rectCenter(walkTo).y;
+    engine.spawn(
+      app,
+      [
+        s,
+        { x: s.x, y: yFrom },
+        { x: st.x, y: yFrom },
+        st, // enter the stairs…
+        dr, // …and reappear at the door below — segment 3 (stairs→door) is hidden
+        { x: dr.x, y: yTo },
+        { x: e.x, y: yTo },
+        e,
+      ],
+      3
+    );
+    animated.add(app);
+  }
+
+  // failures — the room stays put (red); one coworker walks up to the lounge
+  for (const room of newB.lounge) {
+    if (oldLounge.has(room.appKey)) continue;
+    const start = now.get(`room:${room.appKey}`);
+    const lounge = now.get("lounge");
+    if (!start || !lounge) continue;
+    const s = rectCenter(start);
+    const l = rectCenter(lounge);
+    const floor = newPos.get(room.appKey);
+    const walk = floor !== undefined ? now.get(`walk:${floor}`) : undefined;
+    const yWalk = walk ? rectCenter(walk).y : s.y;
+    engine.spawn(room.appKey, [s, { x: s.x, y: yWalk }, { x: l.x, y: yWalk }, l], -1);
+    animated.add(room.appKey);
+  }
+  return animated;
 }
 
 export function BuildingView() {
   const selectRun = useRunStore((s) => s.selectRun);
   const [building, setBuilding] = useState<Building | null>(null);
   const [nodesByRun, setNodesByRun] = useState<Record<string, GraphNode[]>>({});
+  const [costToday, setCostToday] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
   const prevRef = useRef<Building | null>(null); // room stickiness across ticks
   const dismissedRef = useRef<Set<string>>(loadDismissed());
   const lastRunsRef = useRef<RunSummary[]>([]);
 
-  // FLIP glide: capture each room's rect (First) right before a building
-  // update, then animate from the delta (Invert→Play) after the re-render, so
-  // a descending room glides to its new floor instead of teleporting.
+  // Walk overlay (§4-J) + FLIP fallback. Right before a building update we
+  // capture (First) the building-local rects + the old Building; after the
+  // re-render the walk engine animates descents (room → Walk Way → Stairs,
+  // vanish, Door below → room) and failures (room → lounge). Rooms the overlay
+  // didn't animate fall back to the FLIP glide; reduced motion snaps everything.
   const bodyRef = useRef<HTMLDivElement>(null);
+  const buildingElRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
+  const engineRef = useRef<WalkEngine | null>(null);
   const firstRects = useRef<Map<string, DOMRect>>(new Map());
+  const firstSnap = useRef<Map<string, LocalRect> | null>(null);
+  const animPrev = useRef<Building | null>(null);
 
   const captureRects = () => {
     const rects = new Map<string, DOMRect>();
@@ -116,20 +274,58 @@ export function BuildingView() {
       ?.querySelectorAll<HTMLElement>("[data-appkey]")
       .forEach((el) => rects.set(el.dataset.appkey!, el.getBoundingClientRect()));
     firstRects.current = rects;
+    firstSnap.current = buildingElRef.current ? snapshot(buildingElRef.current) : null;
+    animPrev.current = prevRef.current;
   };
+
+  // Engine lifecycle: create once the building box exists; keep the overlay
+  // canvas sized to it (floors grow/shrink) and track reduced-motion live.
+  useEffect(() => {
+    const el = buildingElRef.current;
+    const cv = overlayRef.current;
+    if (!el || !cv) return;
+    const engine = (engineRef.current ??= new WalkEngine(cv));
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const applyMotion = () => engine.setReduced(mq.matches);
+    applyMotion();
+    mq.addEventListener("change", applyMotion);
+    const ro = new ResizeObserver(() =>
+      engine.resize(el.clientWidth, el.clientHeight, window.devicePixelRatio || 1)
+    );
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener("change", applyMotion);
+    };
+  }, [building === null]);
 
   useLayoutEffect(() => {
     const first = firstRects.current;
+    const firstLocal = firstSnap.current;
+    const oldB = animPrev.current;
     firstRects.current = new Map();
-    if (!first.size || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    bodyRef.current?.querySelectorAll<HTMLElement>("[data-appkey]").forEach((el) => {
-      const prev = first.get(el.dataset.appkey!);
+    firstSnap.current = null;
+    animPrev.current = null;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; // snap
+    // walkers for descents + failures
+    let animated = new Set<string>();
+    const engine = engineRef.current;
+    const el = buildingElRef.current;
+    if (engine && el && oldB && building && firstLocal) {
+      animated = spawnTransitions(oldB, building, firstLocal, snapshot(el), engine);
+    }
+    // FLIP glide for any moved room the overlay didn't take
+    if (!first.size) return;
+    bodyRef.current?.querySelectorAll<HTMLElement>("[data-appkey]").forEach((roomEl) => {
+      const key = roomEl.dataset.appkey!;
+      if (animated.has(key)) return;
+      const prev = first.get(key);
       if (!prev) return;
-      const next = el.getBoundingClientRect();
+      const next = roomEl.getBoundingClientRect();
       const dx = prev.left - next.left;
       const dy = prev.top - next.top;
       if (dx || dy)
-        el.animate(
+        roomEl.animate(
           [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
           { duration: 450, easing: "cubic-bezier(0.25, 0.1, 0.25, 1)" }
         );
@@ -156,7 +352,7 @@ export function BuildingView() {
         const next = buildBuilding(runs, prevRef.current, dismissedRef.current);
 
         const visible = [
-          ...next.incidentHall,
+          ...next.lounge,
           ...next.floors.flatMap((f) => f.rooms.filter((r): r is AppRoom => r !== null)),
         ];
         const graphs: Record<string, GraphNode[]> = {};
@@ -182,6 +378,7 @@ export function BuildingView() {
           prevRef.current = next;
           setBuilding(next);
           setNodesByRun(graphs);
+          setCostToday(runs.reduce((s, r) => s + (r.total_cost_usd ?? 0), 0));
           setLoaded(true);
         }
       } catch {
@@ -207,11 +404,12 @@ export function BuildingView() {
   };
 
   const floors = building?.floors ?? [];
-  const hall = building?.incidentHall ?? [];
+  const lounge = building?.lounge ?? [];
   const active = floors
     .flatMap((f) => f.rooms)
     .filter((r) => r?.status === "running").length;
-  const isEmpty = hall.length === 0 && floors.every((f) => f.rooms.every((r) => r === null));
+  const isEmpty = lounge.length === 0 && floors.every((f) => f.rooms.every((r) => r === null));
+  const costStr = formatCost(costToday);
 
   return (
     <div className="flex-1 min-w-0 flex flex-col min-h-0">
@@ -221,62 +419,119 @@ export function BuildingView() {
         <span className="text-xs text-content-muted">
           {active > 0 ? `${active} app${active > 1 ? "s" : ""} working now` : "watching for activity"}
         </span>
-        {hall.length > 0 && (
+        {lounge.length > 0 && (
           <span className="flex items-center gap-1 text-xs text-status-error">
             <Siren size={12} />
-            {hall.length} incident{hall.length > 1 ? "s" : ""}
+            {lounge.length} in the lounge
           </span>
         )}
       </div>
 
-      <div className="vt-floor flex-1 min-h-0 overflow-auto">
-        {loaded && isEmpty ? (
-          <div className="h-full grid place-items-center text-content-faint text-sm">
-            No runs yet — start an agent and its app will get a room here.
-          </div>
-        ) : (
-          <div className="vt-building">
-            {/* Incident hall — top of the building, extra (never one of the 6 slots) */}
-            {hall.length > 0 && (
-              <div className="vt-hall">
-                <div className="flex items-center gap-1.5 px-1 pb-2 text-[11px] font-semibold uppercase tracking-wider text-status-error">
-                  <Siren size={11} /> Incident hall
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  {hall.map((room) => (
-                    <RoomTile
-                      key={room.appKey}
-                      room={room}
-                      nodes={nodesByRun[room.currentRunId] ?? []}
-                      hall
-                      onOpen={() => selectRun(room.currentRunId)}
-                      onDismiss={() => dismiss(room)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+      <div ref={bodyRef} className="vt-yard flex-1 min-h-0 overflow-auto">
+        {building && (
+          <div className="vt-building" ref={buildingElRef}>
+            <canvas ref={overlayRef} className="vt-walk-overlay sprite" aria-hidden="true" />
+            <div className="vt-roof">
+              <span className="vt-sign">VAPVIZ</span>
+            </div>
 
             {/* Floors, top-down; the tag counts down like a real building */}
             {floors.map((floor) => (
-              <div className="vt-floor-row" key={floor.index}>
+              <div className="vt-floor" data-floor={floor.index} key={floor.index}>
                 <div className="vt-floor-tag">{floors.length - floor.index}F</div>
+
                 {floor.rooms.map((room, i) =>
                   room ? (
                     <RoomTile
                       key={room.appKey}
+                      slot={i}
                       room={room}
                       nodes={nodesByRun[room.currentRunId] ?? []}
                       onOpen={() => selectRun(room.currentRunId)}
                     />
                   ) : (
-                    <div key={`empty-${floor.index}-${i}`} className="vt-room vt-room--empty">
+                    <div
+                      key={`empty-${floor.index}-${i}`}
+                      className="vt-room vt-room--empty"
+                      style={{ gridArea: `r${i}` }}
+                    >
                       <div className="vt-room-stage" />
                     </div>
                   )
                 )}
+
+                <div className="vt-walkway">
+                  <span>Walk way</span>
+                </div>
+                <div className="vt-door">
+                  <PixelIcon build={doorCanvas} alt="Door" />
+                  <small>Door</small>
+                </div>
+                <div className="vt-stairs">
+                  <PixelIcon build={stairsCanvas} alt="Stairs" />
+                  <small>Stairs</small>
+                </div>
+
+                {/* East column: the shared lounge on the top floor, solid wall below. */}
+                {floor.index === 0 ? (
+                  <div className="vt-lounge">
+                    <div className="vt-lounge-head">
+                      <Coffee size={11} /> Lounge
+                    </div>
+                    <LoungeStage apps={lounge.map((r) => ({ id: r.appKey, label: r.label }))} />
+                    {lounge.length > 0 && (
+                      <div className="vt-lounge-cards">
+                        {lounge.map((room) => (
+                          <LoungeCard
+                            key={room.appKey}
+                            room={room}
+                            onOpen={() => selectRun(room.currentRunId)}
+                            onDismiss={() => dismiss(room)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="vt-eastwall">
+                    {Array.from({ length: 4 }, (_, w) => (
+                      <span key={w} className="vt-window" />
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
+
+            {/* Lobby — building base + live directory board (also empty-state home) */}
+            <div className="vt-lobby">
+              {loaded && isEmpty ? (
+                <div className="vt-directory">
+                  <b>VAPVIZ</b>
+                  <span className="vt-dir-sep">·</span>
+                  <span>No runs yet — start an agent and its app gets a room here.</span>
+                </div>
+              ) : (
+                <div className="vt-directory">
+                  <b>VAPVIZ</b>
+                  <span className="vt-dir-sep">·</span>
+                  <span>
+                    <b>{active}</b> app{active === 1 ? "" : "s"} working
+                  </span>
+                  <span className="vt-dir-sep">·</span>
+                  <span>
+                    <b>{lounge.length}</b> in the lounge
+                  </span>
+                  {costStr && (
+                    <>
+                      <span className="vt-dir-sep">·</span>
+                      <span>
+                        <b>{costStr}</b> today
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

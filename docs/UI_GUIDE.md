@@ -116,13 +116,19 @@ How the building works:
   the ×N badge counts its runs. (Give your pipeline a stable identity with
   `vapviz.trace("My app", app_id="my-app")`; without one, runs group by exact label.)
 - **Each agent keeps its desk** across re-runs, so the room always looks familiar.
-- **Floors hold six rooms.** When the top floor is full, the app that's been sitting there
-  longest moves down a floor (still fully live and animating) — the building grows downward,
-  new activity stays on top.
-- **Failures go to the incident hall** — the red hall at the very top. A failing app is pulled
-  out of its room so you can't miss it. **Click it to inspect** the failed run, or press
+- **Floors hold six rooms** — two rows of three around a central **Walk Way**. When the top
+  floor is full, the app that's been sitting there longest moves down a floor (still fully
+  live and animating) — the building grows downward, new activity stays on top. You'll see a
+  coworker **walk** the move: across the Walk Way, into the **Stairs**, then out of the
+  **Door** on the floor below.
+- **Failures gather in the Lounge** — the break room at the building's top-right. A failing
+  app's room **stays where it is and turns red** (so you can't miss it), while its agents
+  head up to the lounge to wait — each doing something different (coffee, vending machine,
+  water cooler, lunch…). **Click its lounge card to inspect** the failed run, or press
   **Dismiss** to clear it until that app runs again (a *new* failure always re-flags, even
   after a dismissal — dismissals survive page reloads).
+- **The lobby board** at the base keeps the live tally: apps working, agents in the lounge,
+  spend today.
 - **Click any room** to drop into that app's current run.
 
 The sidebar mirrors the building: it lists **apps**, not individual runs — expand one (▸) to see
@@ -190,7 +196,7 @@ AI-model calls. `$0` means no billable model calls were recorded.
 | Watch a run as a pixel "office" | Open the **Theater** tab (any mode) |
 | Monitor all apps working at once | Open the **Office building** (🎭 masks icon, sidebar) |
 | See an app's past runs | Expand the app in the sidebar (▸) → click a run |
-| Clear a failed app from the building | **Dismiss** it in the incident hall (returns on its next run) |
+| Clear a failed app from the building | **Dismiss** it in the lounge (returns on its next run) |
 | Compare all runs at a glance | Open the **Dashboard** (chart icon, sidebar) |
 | Hide framework plumbing in the graph | Use the **Simplified** toggle (Graph tab) |
 | Watch a run play out | Use **Replay** (Graph tab) |

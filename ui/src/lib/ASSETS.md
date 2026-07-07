@@ -10,6 +10,7 @@ in this directory and is **owned outright**.
 |---|---|---|---|
 | 12×16 worker (4-frame walk) + recolor palette | `sprites.ts` | Nick + Claude, 2026-06-30 → 07-01 (prototype), ported 2026-07-02 | owned, hand-authored |
 | Room tiles, furniture set, locked office layout | `officeArt.ts` | Nick + Claude, 2026-06-30 → 07-01 (prototype), ported 2026-07-02 | owned, hand-authored |
+| Lounge (break-room) diorama: floor/wall tiles, counter+sink, coffee machine, snack vending machine, mini fridge, water cooler, round table + stools, plants, poster; + Door / Stairs descent-column icons | `loungeArt.ts` | Nick + Claude, 2026-07-07 (Phase 4b) | owned, hand-authored |
 
 (The interim SVG pixel characters — `avatar.ts`, Claude 2026-06 — were retired 2026-07-03
 when the Live Floor moved to the sprite office; both views now use the art above.)

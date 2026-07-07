@@ -10,7 +10,8 @@ import type { NodeStatus, RunSummary } from "../types/events";
  *
  * Placement, in order:
  *   1. stay put — every surviving app keeps its exact {floor, room}
- *   2. errors → top-floor incident hall (dismissed → out until the next run)
+ *   2. failures → stay in their room (red, desks kept) AND surface to the
+ *      shared lounge (dismissed → out of the building until the next run)
  *   3. new apps seat on the top floor
  *   4. full top floor → the earliest app descends (finished preferred;
  *      all-running → earliest-started running descends, stays live below);
@@ -35,7 +36,7 @@ export interface Floor {
 
 export interface Building {
   floors: Floor[];
-  incidentHall: AppRoom[]; // lives on the top floor, extra slot(s)
+  lounge: AppRoom[]; // failed apps gather here — they ALSO keep their red home room
 }
 
 export interface AppGroup {
@@ -133,9 +134,9 @@ function placeOn(floors: (AppRoom | null)[][], room: AppRoom, floorIdx: number):
  *
  * @param runs      the /runs roster (already polled)
  * @param prev      last tick's result — room stickiness (null on first tick)
- * @param dismissed failed run ids the user cleared from the incident hall;
- *                  an app whose *current* run is dismissed leaves the building
- *                  until its next run (a new failed run always re-flags)
+ * @param dismissed failed run ids the user cleared from the lounge; an app
+ *                  whose *current* run is dismissed leaves the building until
+ *                  its next run (a new failed run always re-flags)
  */
 export function buildBuilding(
   runs: RunSummary[],
@@ -144,15 +145,19 @@ export function buildBuilding(
 ): Building {
   const groups = groupApps(runs);
 
-  const incidentHall: AppRoom[] = [];
+  // Partition apps into rooms + the shared lounge. Every app that still exists
+  // keeps (or takes) a room — including a failed one, whose home room stays put
+  // and turns red. A failure ALSO surfaces to the lounge (its agents walk up
+  // there). A *dismissed* failure is the sole exception: it leaves the building
+  // entirely until the app's next run.
+  const lounge: AppRoom[] = [];
   const seated = new Map<string, AppRoom>();
   for (const g of groups) {
-    if (g.current.status === "error") {
-      if (!dismissed.has(g.current.run_id)) incidentHall.push(toRoom(g));
-      // dismissed → out of the building entirely until the app's next run
-    } else {
-      seated.set(g.appKey, toRoom(g));
-    }
+    const failed = g.current.status === "error";
+    if (failed && dismissed.has(g.current.run_id)) continue;
+    const room = toRoom(g);
+    seated.set(g.appKey, room);
+    if (failed) lounge.push(room);
   }
 
   // 1. Stay put — surviving apps keep their exact {floor, room}, with fresh data.
@@ -184,7 +189,7 @@ export function buildBuilding(
 
   return {
     floors: floors.map((rooms, index) => ({ index, rooms })),
-    incidentHall,
+    lounge,
   };
 }
 

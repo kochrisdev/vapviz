@@ -102,7 +102,7 @@ describe("buildBuilding — seating", () => {
     expect(b.floors).toHaveLength(1);
     expect(b.floors[0].rooms).toHaveLength(ROOMS_PER_FLOOR);
     expect(Object.values(positions(b)).every((p) => p.floor === 0)).toBe(true);
-    expect(b.incidentHall).toEqual([]);
+    expect(b.lounge).toEqual([]);
   });
 
   it("re-run stickiness: an app keeps its exact room across ticks", () => {
@@ -144,23 +144,29 @@ describe("buildBuilding — seating", () => {
   });
 });
 
-/* ── incident hall + dismiss ─────────────────────────────────────────────── */
+/* ── lounge (failed rooms stay red) + dismiss ────────────────────────────── */
 
-describe("buildBuilding — incident hall", () => {
-  it("an errored current run pulls the app into the hall and frees its room", () => {
+describe("buildBuilding — lounge", () => {
+  it("a failed current run keeps its room (red) AND surfaces to the lounge", () => {
     const ok = run({ app_id: "a", status: "success" });
     const first = buildBuilding([ok], null, NONE);
+    const seatA = positions(first)["a"];
     const failed = run({ app_id: "a", status: "error", started_at: 99 });
     const second = buildBuilding([ok, failed], first, NONE);
-    expect(positions(second)["a"]).toBeUndefined();
-    expect(second.incidentHall.map((r) => r.appKey)).toEqual(["a"]);
-    expect(second.incidentHall[0].currentRunId).toBe(failed.run_id);
+    // home room stays put, turns red, keeps its desks (current run = the failure)
+    expect(positions(second)["a"]).toEqual(seatA);
+    const room = second.floors[seatA.floor].rooms[seatA.room]!;
+    expect(room.status).toBe("error");
+    expect(room.currentRunId).toBe(failed.run_id);
+    // …and the app is also surfaced to the shared lounge
+    expect(second.lounge.map((r) => r.appKey)).toEqual(["a"]);
+    expect(second.lounge[0].currentRunId).toBe(failed.run_id);
   });
 
-  it("dismiss removes the app from the building entirely", () => {
+  it("dismiss removes the app from the building entirely (no room, no lounge)", () => {
     const failed = run({ app_id: "a", status: "error" });
     const b = buildBuilding([failed], null, new Set([failed.run_id]));
-    expect(b.incidentHall).toEqual([]);
+    expect(b.lounge).toEqual([]);
     expect(positions(b)["a"]).toBeUndefined();
   });
 
@@ -168,24 +174,38 @@ describe("buildBuilding — incident hall", () => {
     const failed = run({ app_id: "a", status: "error", started_at: 1 });
     const dismissed = new Set([failed.run_id]);
 
-    // new healthy run → back in a room despite the old dismissal
+    // new healthy run → back in a room despite the old dismissal, lounge empty
     const healthy = run({ app_id: "a", status: "running", started_at: 2 });
     const b1 = buildBuilding([failed, healthy], null, dismissed);
     expect(positions(b1)["a"]).toBeDefined();
-    expect(b1.incidentHall).toEqual([]);
+    expect(b1.lounge).toEqual([]);
 
-    // that run fails too (different run_id) → hall again
+    // that run fails too (different run_id) → red room stays + lounge again
     const failedAgain = run({ app_id: "a", status: "error", started_at: 2 });
     const b2 = buildBuilding([failed, failedAgain], b1, dismissed);
-    expect(b2.incidentHall.map((r) => r.appKey)).toEqual(["a"]);
+    expect(positions(b2)["a"]).toBeDefined();
+    expect(b2.lounge.map((r) => r.appKey)).toEqual(["a"]);
   });
 
-  it("an older running run keeps an app in its room even if the newest run errored", () => {
+  it("an older running run keeps an app out of the lounge even if the newest run errored", () => {
     const running = run({ app_id: "a", status: "running", started_at: 1 });
     const failed = run({ app_id: "a", status: "error", started_at: 2 });
     const b = buildBuilding([running, failed], null, NONE);
+    // running wins the current-run pick, so the app is healthy — no lounge entry
     expect(positions(b)["a"]).toBeDefined();
-    expect(b.incidentHall).toEqual([]);
+    expect(b.lounge).toEqual([]);
+  });
+
+  it("a failed room keeps its seat across ticks (stays red, doesn't drift)", () => {
+    const failed = run({ app_id: "a", status: "error", started_at: 5 });
+    const other = run({ app_id: "b", status: "success", started_at: 6 });
+    const first = buildBuilding([failed, other], null, NONE);
+    const seatA = positions(first)["a"];
+    expect(seatA).toBeDefined();
+    // a later tick with the same failed run → same seat, still red, still lounged
+    const second = buildBuilding([failed, other], first, NONE);
+    expect(positions(second)["a"]).toEqual(seatA);
+    expect(second.lounge.map((r) => r.appKey)).toEqual(["a"]);
   });
 });
 

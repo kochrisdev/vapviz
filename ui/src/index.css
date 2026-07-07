@@ -96,49 +96,214 @@ body {
 
 .vt-empty { position: absolute; inset: 0; display: grid; place-items: center; color: rgb(var(--content-faint)); font-size: 14px; }
 
-/* ── Office Building view (§4-I) — floors of app rooms + top incident hall ── */
-.vt-floor {
+/* ── Office Building view (§4-J) — the *visual* building ───────────────────
+ * Hybrid render: CSS/vector chrome here (walls, roof, floor slabs, Walk Way,
+ * Door/Stairs frames, east wall, lobby), hand-authored pixel art for the
+ * lounge/props/icons (pixel-art-set), and the locked 12×16 diorama for room
+ * interiors (compact OfficeStage). Layout = Nick's scratch/Floor Layout.jpg:
+ * 6 rooms in two rows of 3 around a central Walk Way; a Door (top-right) and
+ * Stairs (bottom-right) column; the shared Lounge on the top floor's right,
+ * solid east wall + windows below it; a lobby directory board at the base. */
+
+/* The "yard" the building sits on — a tiled ground, scrolls if narrow. */
+.vt-yard {
   background:
     repeating-conic-gradient(rgb(var(--surface-hover)) 0% 25%, rgb(var(--surface-inset)) 0% 50%) 0 0 / 44px 44px,
     rgb(var(--bg));
-  padding: 20px;
+  padding: 24px;
 }
-.vt-building { display: flex; flex-direction: column; gap: 16px; min-width: 1060px; }
-/* One floor: a tag gutter + 6 fixed room slots (the building never grows sideways). */
-.vt-floor-row {
+
+/* The building shell — exterior walls + rounded roofline; the lobby closes the base. */
+.vt-building {
+  position: relative; /* anchors the walk overlay */
+  min-width: 1000px;
+  max-width: 1180px;
+  margin: 0 auto;
+  border: 2px solid rgb(var(--border-strong));
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  background: rgb(var(--surface) / .4);
+  overflow: hidden;
+  box-shadow: 0 20px 44px -26px rgb(0 0 0 / .55);
+}
+
+/* The walk overlay — a sprite layer ABOVE the room canvases (§4-J): descending
+ * or failing coworkers walk across it; it never intercepts clicks. */
+.vt-walk-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Roof + VAPVIZ sign. */
+.vt-roof {
+  height: 36px;
   display: grid;
-  grid-template-columns: 28px repeat(6, minmax(150px, 1fr));
-  gap: 12px;
-  align-items: stretch;
+  place-items: center;
+  background: linear-gradient(rgb(var(--surface-hover)), rgb(var(--surface) / .35));
+  border-bottom: 2px solid rgb(var(--border-strong));
+}
+.vt-sign { font-size: 12px; font-weight: 800; letter-spacing: .24em; color: rgb(var(--accent)); }
+
+/* One floor: a 2×3 room grid around a central Walk Way, with a Door/Stairs
+ * column and the east column (lounge on the top floor, wall below). The
+ * building never grows sideways — 6 rooms/floor, floors stack downward. */
+.vt-floor {
+  display: grid;
+  grid-template-columns: 22px repeat(3, minmax(168px, 1fr)) 46px 208px;
+  grid-template-rows: auto 24px auto;
+  grid-template-areas:
+    "tag r0  r1  r2  door   east"
+    "tag way way way way    east"
+    "tag r3  r4  r5  stairs east";
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 3px solid rgb(var(--border-strong)); /* floor slab */
+  position: relative;
 }
 .vt-floor-tag {
+  grid-area: tag;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
   display: grid;
   place-items: center;
   color: rgb(var(--content-faint));
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: .1em;
 }
+
 .vt-room {
   background: rgb(var(--surface) / .35);
   border: 1px solid rgb(var(--border) / .5);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 8px 8px 6px;
   transition: border-color .2s, background .2s;
 }
 .vt-room:hover { border-color: rgb(var(--border-strong)); background: rgb(var(--surface) / .55); }
 .vt-room--empty { border-style: dashed; background: rgb(var(--surface) / .12); }
 .vt-room--empty:hover { border-color: rgb(var(--border) / .5); background: rgb(var(--surface) / .12); }
+/* A failed app's home room stays put and turns red (its agents walk to the lounge). */
+.vt-room--error { border-color: rgb(var(--status-error) / .5); background: rgb(var(--status-error) / .08); }
+.vt-room--error:hover { border-color: rgb(var(--status-error) / .75); background: rgb(var(--status-error) / .12); }
 /* Room stage keeps the office's 13:8 native aspect (208×128 px room), fluid width. */
-.vt-room-stage { position: relative; width: 100%; aspect-ratio: 13 / 8; border-radius: 12px; overflow: hidden; }
-/* Incident hall — red-washed shell at the top of the building (extra, never one
- * of the 6 slots); state is never color-only (siren icon + Dismiss affordance). */
-.vt-hall {
-  border: 1px dashed rgb(var(--status-error) / .45);
-  border-radius: 16px;
-  padding: 10px;
-  background: rgb(var(--status-error) / .06);
-  margin-left: 40px; /* aligns with the room columns past the floor-tag gutter */
+.vt-room-stage { position: relative; width: 100%; aspect-ratio: 13 / 8; border-radius: 10px; overflow: hidden; }
+
+/* The Walk Way — a corridor between the two room rows, with a dashed centre line. */
+.vt-walkway {
+  grid-area: way;
+  border-radius: 8px;
+  border: 1px solid rgb(var(--border) / .5);
+  background: rgb(var(--surface-inset) / .7);
+  display: grid;
+  place-items: center;
+  position: relative;
 }
-.vt-hall .vt-room { flex: 0 1 300px; min-width: 220px; }
-.vt-room--hall { border-color: rgb(var(--status-error) / .45); background: rgb(var(--status-error) / .08); }
-.vt-room--hall:hover { border-color: rgb(var(--status-error) / .7); background: rgb(var(--status-error) / .12); }
+.vt-walkway::before {
+  content: "";
+  position: absolute; left: 10px; right: 10px; top: 50%;
+  border-top: 2px dashed rgb(var(--border-strong) / .7);
+}
+.vt-walkway span {
+  position: relative;
+  font-size: 9px; letter-spacing: .2em; text-transform: uppercase;
+  color: rgb(var(--content-faint));
+  background: rgb(var(--surface-inset));
+  padding: 0 6px;
+}
+
+/* Door (top-right) and Stairs (bottom-right) frames — a floor's Stairs sit
+ * directly above the next floor's Door, so descent reads as walking down. */
+.vt-door, .vt-stairs {
+  border: 1px solid rgb(var(--border-strong));
+  border-radius: 6px;
+  background: rgb(var(--surface-inset) / .85);
+  display: grid;
+  place-items: center;
+  color: rgb(var(--content-muted));
+  gap: 2px;
+  min-height: 0;
+}
+.vt-door { grid-area: door; align-self: start; }
+.vt-stairs { grid-area: stairs; align-self: end; }
+.vt-door small, .vt-stairs small { font-size: 8px; letter-spacing: .1em; text-transform: uppercase; }
+
+/* East wall (floors below the lounge) — solid facade + windows, so the
+ * building silhouette stays a clean rectangle. */
+.vt-eastwall {
+  grid-area: east;
+  border-left: 2px solid rgb(var(--border-strong));
+  background: rgb(var(--surface) / .5);
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px 18px;
+  padding: 22px 26px;
+  align-content: center;
+}
+.vt-window {
+  aspect-ratio: 3 / 4;
+  border-radius: 3px;
+  background: linear-gradient(150deg, rgb(var(--accent) / .16), rgb(var(--surface-hover)));
+  border: 1px solid rgb(var(--border-strong));
+  box-shadow: inset 0 0 0 1px rgb(var(--surface) / .35);
+}
+
+/* The shared Lounge — top floor's right column, one floor tall. Failures from
+ * any floor gather here (state never color-only: siren icon + Dismiss). */
+.vt-lounge {
+  grid-area: east;
+  border-left: 2px solid rgb(var(--border-strong));
+  background: rgb(var(--surface-inset) / .75);
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 6px;
+  overflow: hidden;
+  position: relative;
+}
+.vt-lounge-head {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: rgb(var(--content-muted));
+  padding: 1px 2px;
+}
+/* the break-room diorama fills the middle; the failed-app strip sits below it */
+.vt-lounge-stage {
+  flex: 1; min-height: 0;
+  display: grid; place-items: center;
+  overflow: hidden; border-radius: 8px;
+}
+.vt-lounge-stage canvas { max-width: 100%; max-height: 100%; }
+.vt-lounge-cards {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 42%; overflow-y: auto; padding-top: 2px;
+}
+.vt-lounge-card {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid rgb(var(--status-error) / .45);
+  background: rgb(var(--status-error) / .1);
+  border-radius: 8px;
+  padding: 4px 6px;
+  transition: border-color .2s, background .2s;
+}
+.vt-lounge-card:hover { border-color: rgb(var(--status-error) / .7); background: rgb(var(--status-error) / .15); }
+.vt-lounge-card .vt-lounge-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; text-align: left; }
+
+/* Lobby — building base + live directory board (also the empty-state home). */
+.vt-lobby {
+  border-top: 3px solid rgb(var(--border-strong));
+  background: linear-gradient(rgb(var(--surface) / .5), rgb(var(--surface-hover)));
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.vt-directory {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 12px; color: rgb(var(--content-muted));
+  font-variant-numeric: tabular-nums;
+}
+.vt-directory b { color: rgb(var(--content)); font-weight: 700; }
+.vt-directory .vt-dir-sep { color: rgb(var(--content-faint)); }

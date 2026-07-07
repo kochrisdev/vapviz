@@ -1365,12 +1365,15 @@ supervisor shows `supervisor` + its workers — so you can see which agent is do
 Click the **🎭 masks icon** at the top of the sidebar for the **Office building**: the control-room
 view where every **app** (grouping key: `app_id ?? label` — see the `app_id` tip in §3) owns a
 miniature office room. Re-running an app lights **the same room** back up (the ×N badge counts its
-runs) and each agent keeps its desk. Floors hold **six rooms**; when the top floor fills, the app
-that's been there longest moves down a floor — still live — so fresh activity stays on top. An app
-whose latest run **failed** is pulled into the red **incident hall** at the very top: click it to
-inspect the failed run, or **Dismiss** it until that app runs again. Click any room to drop into
-that app's current run; the sidebar lists the same apps, and expanding one shows its full run
-history for inspection and replay.
+runs) and each agent keeps its desk. Floors hold **six rooms** (two rows of three around a Walk
+Way); when the top floor fills, the app that's been there longest moves down a floor — still
+live — and a coworker walks the move: across the Walk Way, into the Stairs, out of the Door one
+floor below. An app whose latest run **failed** keeps its room — it just **turns red** — while
+its agents head up to the shared **Lounge** (the break room at the top-right) to wait: click the
+app's lounge card to inspect the failed run, or **Dismiss** it until that app runs again. The
+lobby board at the base tallies apps working, agents in the lounge, and spend today. Click any
+room to drop into that app's current run; the sidebar lists the same apps, and expanding one
+shows its full run history for inspection and replay.
 
 Both views are pure UI over the event stream — the only instrumentation that helps is passing a
 stable `app_id` to `trace()`. See the [UI Guide](UI_GUIDE.md) for the non-technical walkthrough.

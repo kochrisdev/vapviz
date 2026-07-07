@@ -654,8 +654,9 @@ and the `app_id` run identity the Building groups by).
   never disagree. `groupApps(runs)` folds the `/runs` roster into apps and picks each app's
   **current run** (any running run wins, most-recently-started first; else newest).
   `buildBuilding(runs, prev, dismissed)` then places apps deterministically, in order: **stay put**
-  (a surviving app keeps its exact `{floor, room}` from `prev`) → **errors → incident hall** (an app
-  whose current run failed is pulled out; a dismissed failed run — keyed by run id — removes the app
+  (a surviving app keeps its exact `{floor, room}` from `prev`) → **failures stay + surface to the
+  lounge** (an app whose current run failed keeps its room — the room turns red — AND is listed in
+  `Building.lounge`; a dismissed failed run — keyed by run id — removes the app from the building
   until its next run) → **seat new apps on the top floor** → **descend under pressure** (a full top
   floor sends its earliest app down: oldest *finished* preferred, else the earliest-started running
   app, which stays live below; the cascade appends floors at the bottom — never sideways; trailing
@@ -664,16 +665,24 @@ and the `app_id` run identity the Building groups by).
   `FloorView.tsx`. It **polls** `/runs` (+ `/runs/{id}/graph` per visible room, finished graphs
   cached) every ~1.5 s rather than opening many SSE streams — frontend-only, fine for local-scale
   concurrency — and feeds each tick through `buildBuilding` (seeded with the previous tick for room
-  stickiness). Renders floors top-down as rows of `compact` `OfficeStage` rooms (empty slots keep
-  the grid stable) with the red **incident hall** strip at the very top (extra — never one of the 6
-  slots): click a hall room to inspect the failed run, or **Dismiss** it (persisted in
-  `localStorage["vapviz.dismissed"]` as failed run ids, pruned on load against the live roster).
-  Room moves animate with a FLIP transition (rects captured before each state update, deltas played
-  after render; skipped under `prefers-reduced-motion`). Clicking a room selects the app's current
-  run. Desks inside a room are assigned by **sorted agent name** (in `OfficeStage.computeGoals`), so
-  an agent keeps its seat across ticks and re-runs. *(The interim SVG stage — `AgentStage.tsx` +
-  `lib/avatar.ts` — was retired when the Floor moved to the sprite office; the run-keyed `FloorView`
-  was retired when the Building landed.)*
+  stickiness). Renders the **visual building** (Phase 4b): a CSS shell (roof + `VAPVIZ` sign, floor
+  slabs, lobby) whose floors are a **2×3 grid** of `compact` `OfficeStage` rooms around a central
+  **Walk Way**, plus a **Door/Stairs** column (a floor's Stairs sit directly above the next floor's
+  Door). The top floor's east side hosts the shared **Lounge** (`LoungeStage.tsx` over the
+  hand-authored break-room diorama in `lib/loungeArt.ts`); floors below show a solid east wall +
+  windows. A failed app's room stays put and turns red (`.vt-room--error`) while the app is listed
+  in the lounge with one recolored worker idling at a distinct break-room spot (coffee / vending /
+  cooler / table / plant / pacing): click its card to inspect the failed run, or **Dismiss** it
+  (persisted in `localStorage["vapviz.dismissed"]` as failed run ids, pruned on load against the
+  live roster). Transitions animate on the **walk overlay** (`lib/walkOverlay.ts` — a sprite canvas
+  above the room grid): a descent walks room → Walk Way → Stairs (*vanish*) → Door below → room
+  (nobody is ever drawn on the stairs), and a failure walks room → lounge; rooms the overlay didn't
+  animate fall back to the FLIP glide, and `prefers-reduced-motion` snaps everything (no walkers, no
+  FLIP). The lobby doubles as a live **directory board** (apps working · in the lounge · cost
+  today). Clicking a room selects the app's current run. Desks inside a room are assigned by
+  **sorted agent name** (in `OfficeStage.computeGoals`), so an agent keeps its seat across ticks and
+  re-runs. *(The interim SVG stage — `AgentStage.tsx` + `lib/avatar.ts` — was retired when the Floor
+  moved to the sprite office; the run-keyed `FloorView` was retired when the Building landed.)*
 
 ---
 

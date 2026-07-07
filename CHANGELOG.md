@@ -51,14 +51,24 @@ For the detailed per-release notes (APIs, fixes, internals), see the
   office (a re-run lights the same room back up, with an ×N run count) and each agent keeps a
   stable desk within its room. Floors hold **6 rooms**; when the top floor fills, the earliest
   app descends a floor (oldest finished preferred; an all-running floor sends its
-  earliest-started app down still live; floors grow downward, never sideways). An app whose
-  current run **failed** is pulled into a red top-floor **incident hall**: click to inspect,
-  or **Dismiss** to clear it until the app's next run (dismissals key on the failed run id,
-  persist in `localStorage`, and are pruned against the live run roster). Rooms glide to new
-  positions with a FLIP transition (skipped under reduced motion). Placement lives in the pure,
-  unit-tested reducer `ui/src/lib/building.ts` (`buildBuilding`); polls existing endpoints —
-  the only backend touch is the additive `app_id`. *(Supersedes the interim run-keyed
-  `FloorView.tsx`, added and retired within this unreleased window.)*
+  earliest-started app down still live; floors grow downward, never sideways). Placement lives
+  in the pure, unit-tested reducer `ui/src/lib/building.ts` (`buildBuilding`); polls existing
+  endpoints — the only backend touch is the additive `app_id`. *(Supersedes the interim
+  run-keyed `FloorView.tsx`, added and retired within this unreleased window.)*
+- **The visual Office Building** — the monitor renders as an actual pixel-and-CSS building:
+  a roof with the `VAPVIZ` sign, floors as **two rows of three rooms around a central Walk
+  Way**, a **Door/Stairs** column, and a **lobby directory board** with the live tally (apps
+  working · in the lounge · spend today). When an app moves down a floor, a coworker **walks
+  the move** — across the Walk Way, into the Stairs (vanishing), out of the Door one floor
+  below (a new sprite-overlay engine, `ui/src/lib/walkOverlay.ts`). An app whose current run
+  **failed keeps its room** — the room turns red — while its agents head up to the shared
+  **Lounge**, a hand-authored break-room diorama on the top floor's east side
+  (`ui/src/lib/loungeArt.ts`, `ui/src/components/LoungeStage.tsx`; owned art, zero AI): each
+  waiting agent does something different (coffee, vending machine, water cooler, lunch,
+  watering the plants, pacing). Click a lounge card to inspect the failed run or **Dismiss**
+  it until the app's next run (dismissals key on the failed run id, persist in
+  `localStorage`, and are pruned against the live run roster). All motion respects
+  `prefers-reduced-motion` (walkers and glides are skipped; the building snaps).
 - LangChain integration now carries the `langgraph_node` name through to node data (additive
   metadata), so multi-agent LangGraph runs show their real cast (supervisor / workers) in Theater.
 
