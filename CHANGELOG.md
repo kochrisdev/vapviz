@@ -10,6 +10,16 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 ## [Unreleased]
 
 ### Added
+- **Office Building — floor life / room doors** — each room gains a small door (theme-aware
+  CSS chrome) on its Walk-Way-facing edge, and the walk overlay (`ui/src/lib/walkOverlay.ts`)
+  grows a persistent floor-life layer (`reconcileFloorLife`, driven each poll from
+  `BuildingView`): a coworker steps out of every **running** room and mills on that floor's
+  Walk Way, walking back inside when the app finishes — so the floor is alive while work is
+  happening, not only during a descent/failure transition. Kept honest — one walker per
+  running room; a floor with nothing running gets an occasional **ambient** stroll instead
+  (decorative, never shown alongside real activity on the same floor). No floor life under
+  `prefers-reduced-motion`. UI-only (re-presents the derived graph); the locked 12×16 room
+  diorama is untouched.
 - **`app_id` — stable app identity for runs** — `vapviz.trace()` and `atrace()` accept an
   optional `app_id`: a stable identifier for the pipeline ("app") a run belongs to, so every
   invocation of the same app can be grouped. It rides in the run's `agent_start` data

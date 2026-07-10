@@ -37,7 +37,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Search & tagging** — full-text search across run contents (`GET /search`) plus persistent per-run tags, surfaced in the UI
 - **Trace replay** — scrub a run event-by-event in the UI; the graph fills in node by node as it happened
 - **Theater view** — watch a run as a cozy pixel office: each agent is a hand-drawn sprite that walks from its home desk to the LLM desk or a tool station (SEARCH / FETCH / DATA / PRINT, picked from the tool's name), speech bubble overhead — live or replayed
-- **Office building** — a centralized monitor keyed to **apps**, drawn as a real pixel building: each app owns a room (a re-run lights the same room back up), floors hold six rooms around a Walk Way with the earliest app **walking down the stairs** when the top floor fills, and a failing app's room turns red while its agents wait it out in the rooftop **lounge** (inspect or dismiss) — watch all your agents work across every app on one screen
+- **Office building** — a centralized monitor keyed to **apps**, drawn as a real pixel building: each app owns a room (a re-run lights the same room back up), floors hold six rooms around a Walk Way with the earliest app **walking down the stairs** when the top floor fills, and a failing app's room turns red while its agents wait it out in the rooftop **lounge** (inspect or dismiss). A coworker steps out of every **running** room to mill on the Walk Way, so the floor is alive exactly while work is happening — watch all your agents work across every app on one screen
 - **Persistent storage** — `vapviz.configure(db="vapviz.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vapviz serve --db vapviz.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -981,6 +981,11 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **The building shell** — roof + `VAPVIZ` sign, floor slabs, each floor a **2×3 room grid around a central Walk Way**, a **Door/Stairs** descent column, a solid east wall + windows, and a **lobby directory board** with the live tally (apps working · in the lounge · spend today)
 - [x] **The Lounge** — the incident hall reimagined as a shared rooftop break room (hand-authored diorama: coffee machine, vending machine, kitchen counter, water cooler, fridge, table, plants). A failing app's room now **stays in place and turns red** while the app surfaces to the lounge — inspect + dismiss unchanged; each waiting agent idles differently (`lib/loungeArt.ts`, `LoungeStage.tsx`)
 - [x] **The walk overlay** (`lib/walkOverlay.ts`) — a sprite layer above the rooms: a descending app's coworker walks the Walk Way, enters the Stairs (vanishing), and emerges from the Door one floor below; a failing app's coworker walks up to the lounge. FLIP glide is the fallback; `prefers-reduced-motion` snaps everything
+
+### Phase 20 — Floor life / room doors (complete)
+- [x] **Room doors** — each room gains a small door (theme-aware CSS) on its Walk-Way-facing edge; the locked 12×16 room diorama is untouched
+- [x] **Living floor** — the walk overlay grows a persistent layer (`reconcileFloorLife`, driven each poll): a coworker steps out of every **running** room and mills on that floor's Walk Way, going back inside when the app finishes — so the floor is alive while work is happening, not just during a transition
+- [x] **Honest by design** — a walker on the corridor means real work: one per running room. A quiet floor (nothing running) gets an occasional **ambient** stroll instead — decorative office life, never shown alongside real activity on the same floor. `prefers-reduced-motion` → no floor life
 
 ---
 

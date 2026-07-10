@@ -1368,7 +1368,10 @@ miniature office room. Re-running an app lights **the same room** back up (the �
 runs) and each agent keeps its desk. Floors hold **six rooms** (two rows of three around a Walk
 Way); when the top floor fills, the app that's been there longest moves down a floor — still
 live — and a coworker walks the move: across the Walk Way, into the Stairs, out of the Door one
-floor below. An app whose latest run **failed** keeps its room — it just **turns red** — while
+floor below. Every room has a **door** on the Walk Way, and while an app is **running** a coworker
+steps out of its room to mill on that floor's corridor (back inside when it finishes) — so a walker
+on the corridor means real work is happening (a fully-idle floor gets the occasional decorative
+stroll instead; nothing moves under reduced-motion). An app whose latest run **failed** keeps its room — it just **turns red** — while
 its agents head up to the shared **Lounge** (the break room at the top-right) to wait: click the
 app's lounge card to inspect the failed run, or **Dismiss** it until that app runs again. The
 lobby board at the base tallies apps working, agents in the lounge, and spend today. Click any

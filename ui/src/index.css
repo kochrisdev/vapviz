@@ -190,6 +190,25 @@ body {
 /* Room stage keeps the office's 13:8 native aspect (208×128 px room), fluid width. */
 .vt-room-stage { position: relative; width: 100%; aspect-ratio: 13 / 8; border-radius: 10px; overflow: hidden; }
 
+/* Door on the room's Walk-Way-facing edge (§4-K floor life) — a gap in the wall
+ * where agents step out onto the corridor. The opening reads as `--bg` (the
+ * corridor beyond) framed by the wall border; top-row rooms open downward,
+ * bottom-row rooms upward. Its centre is the walker spawn/return anchor. */
+.vt-room-door {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 10px;
+  z-index: 3;
+  background: rgb(var(--bg));
+  border: 1px solid rgb(var(--border-strong));
+  box-shadow: inset 0 0 0 1px rgb(var(--surface) / .5);
+  pointer-events: none;
+}
+.vt-room-door--bottom { bottom: -5px; border-top: none; border-radius: 0 0 6px 6px; }
+.vt-room-door--top { top: -5px; border-bottom: none; border-radius: 6px 6px 0 0; }
+
 /* The Walk Way — a corridor between the two room rows, with a dashed centre line. */
 .vt-walkway {
   grid-area: way;

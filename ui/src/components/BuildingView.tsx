@@ -7,7 +7,13 @@ import { useRunStore } from "../store/runStore";
 import { formatCost } from "../lib/format";
 import { blit } from "../lib/sprites";
 import { doorCanvas, stairsCanvas } from "../lib/loungeArt";
-import { WalkEngine, type Pt } from "../lib/walkOverlay";
+import {
+  WalkEngine,
+  type Pt,
+  type Lane,
+  type LifeSpec,
+  type IdleFloor,
+} from "../lib/walkOverlay";
 import {
   buildBuilding,
   pruneDismissed,
@@ -90,6 +96,14 @@ function RoomTile({
           <OfficeStage nodes={nodes} compact />
         </div>
       </button>
+      {/* Door on the Walk-Way-facing edge (§4-K): where floor-life walkers step
+          out. Top-row rooms open downward, bottom-row rooms upward. Its rect is
+          the walker's spawn/return anchor (captured as roomdoor:<appKey>). */}
+      <span
+        className={`vt-room-door vt-room-door--${slot < 3 ? "bottom" : "top"}`}
+        data-roomdoor={room.appKey}
+        aria-hidden="true"
+      />
     </div>
   );
 }
@@ -152,6 +166,9 @@ function snapshot(el: HTMLElement): Map<string, LocalRect> {
     m.set(key, { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height });
   el.querySelectorAll<HTMLElement>("[data-appkey]").forEach((e) =>
     put(`room:${e.dataset.appkey}`, e.getBoundingClientRect())
+  );
+  el.querySelectorAll<HTMLElement>("[data-roomdoor]").forEach((e) =>
+    put(`roomdoor:${e.dataset.roomdoor}`, e.getBoundingClientRect())
   );
   el.querySelectorAll<HTMLElement>("[data-floor]").forEach((f) => {
     const fi = f.dataset.floor;
@@ -244,6 +261,41 @@ function spawnTransitions(
   return animated;
 }
 
+/** Derive the floor-life inputs (§4-K) from the current Building + fresh rects:
+ *  one honest walker per RUNNING room, and — for floors with nothing running —
+ *  an idle-floor entry (with its occupied rooms' doors) eligible for an ambient
+ *  stroller. A room's door + its floor's Walk Way must both be measured. */
+function floorLife(
+  b: Building,
+  rects: Map<string, LocalRect>
+): { busy: LifeSpec[]; idle: IdleFloor[] } {
+  const busy: LifeSpec[] = [];
+  const idle: IdleFloor[] = [];
+  for (const floor of b.floors) {
+    const walk = rects.get(`walk:${floor.index}`);
+    if (!walk) continue;
+    const floorId = `f${floor.index}`;
+    const lane: Lane = { y: walk.y + walk.h / 2, x0: walk.x, x1: walk.x + walk.w };
+    const occupied = floor.rooms.filter((r): r is AppRoom => r !== null);
+    const doorPt = (r: AppRoom): Pt | null => {
+      const d = rects.get(`roomdoor:${r.appKey}`);
+      return d ? rectCenter(d) : null;
+    };
+    const running = occupied.filter((r) => r.status === "running");
+    if (running.length) {
+      for (const r of running) {
+        const door = doorPt(r);
+        if (door) busy.push({ key: r.appKey, floorId, door, lane });
+      }
+    } else if (occupied.length) {
+      // Nothing running on this floor → eligible for a decorative stroller.
+      const doors = occupied.map(doorPt).filter((p): p is Pt => p !== null);
+      if (doors.length) idle.push({ id: floorId, lane, doors });
+    }
+  }
+  return { busy, idle };
+}
+
 export function BuildingView() {
   const selectRun = useRunStore((s) => s.selectRun);
   const [building, setBuilding] = useState<Building | null>(null);
@@ -280,7 +332,11 @@ export function BuildingView() {
 
   // Engine lifecycle: create once the building box exists; keep the overlay
   // canvas sized to it (floors grow/shrink) and track reduced-motion live.
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so the engine exists before the poll-driven
+  // animation layout effect below runs on the first building commit — else
+  // floor life would be skipped until the next poll. On unmount, clearAll()
+  // stops the rAF loop (residents keep it alive, so it won't self-terminate).
+  useLayoutEffect(() => {
     const el = buildingElRef.current;
     const cv = overlayRef.current;
     if (!el || !cv) return;
@@ -296,6 +352,7 @@ export function BuildingView() {
     return () => {
       ro.disconnect();
       mq.removeEventListener("change", applyMotion);
+      engine.clearAll();
     };
   }, [building === null]);
 
@@ -307,12 +364,15 @@ export function BuildingView() {
     firstSnap.current = null;
     animPrev.current = null;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; // snap
-    // walkers for descents + failures
+    // walkers for descents + failures, plus the persistent floor-life layer
     let animated = new Set<string>();
     const engine = engineRef.current;
     const el = buildingElRef.current;
-    if (engine && el && oldB && building && firstLocal) {
-      animated = spawnTransitions(oldB, building, firstLocal, snapshot(el), engine);
+    if (engine && el && building) {
+      const now = snapshot(el);
+      if (oldB && firstLocal) animated = spawnTransitions(oldB, building, firstLocal, now, engine);
+      const { busy, idle } = floorLife(building, now);
+      engine.reconcileFloorLife(busy, idle);
     }
     // FLIP glide for any moved room the overlay didn't take
     if (!first.size) return;

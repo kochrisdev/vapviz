@@ -678,7 +678,15 @@ and the `app_id` run identity the Building groups by).
   above the room grid): a descent walks room → Walk Way → Stairs (*vanish*) → Door below → room
   (nobody is ever drawn on the stairs), and a failure walks room → lounge; rooms the overlay didn't
   animate fall back to the FLIP glide, and `prefers-reduced-motion` snaps everything (no walkers, no
-  FLIP). The lobby doubles as a live **directory board** (apps working · in the lounge · cost
+  FLIP). **Floor life (Phase 4c):** the same overlay also runs a *persistent* layer —
+  `WalkEngine.reconcileFloorLife(busy, idle)`, called each poll from `BuildingView` with a fresh
+  `snapshot(el)` (now capturing per-room `roomdoor:<appKey>` anchors; each room has a CSS
+  `.vt-room-door` on its Walk-Way edge). It keeps one honest `Resident` (state machine
+  `in → mill → out`) per **running** room — recolored by `appKey`, milling on that floor's Walk-Way
+  lane, walking back through the door when the room finishes — plus an occasional decorative ambient
+  stroller on any floor where *nothing* is running (so honest and ambient motion never mix on one
+  floor). Residents keep the rAF loop alive, so the engine is stopped explicitly on unmount
+  (`clearAll`); reduced-motion spawns no floor life. UI-only, exempt from the dual-logic rule. The lobby doubles as a live **directory board** (apps working · in the lounge · cost
   today). Clicking a room selects the app's current run. Desks inside a room are assigned by
   **sorted agent name** (in `OfficeStage.computeGoals`), so an agent keeps its seat across ticks and
   re-runs. *(The interim SVG stage — `AgentStage.tsx` + `lib/avatar.ts` — was retired when the Floor

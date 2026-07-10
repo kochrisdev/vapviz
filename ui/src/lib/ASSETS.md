@@ -15,6 +15,12 @@ in this directory and is **owned outright**.
 (The interim SVG pixel characters — `avatar.ts`, Claude 2026-06 — were retired 2026-07-03
 when the Live Floor moved to the sprite office; both views now use the art above.)
 
+**Phase 4c — floor life / room doors (2026-07-09):** added **no new art**. The
+floor-life walkers (`walkOverlay.ts` `reconcileFloorLife`) reuse the existing 12×16
+`WALK` sprite above, recolored per app; the room **door** is theme-aware **CSS chrome**
+(`.vt-room-door`, via `vapviz-design` — not pixel art), so the LOCKED 12×16 room
+diorama is untouched.
+
 Reference prototype (final approved renders `pose10.png` / `live10.png`):
 `scratch/sprite-proto/` (local, gitignored). Room layout **locked by Nick
 2026-07-01** — do not rearrange or restyle without a new sign-off. Authoring

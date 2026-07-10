@@ -121,6 +121,11 @@ How the building works:
   live and animating) — the building grows downward, new activity stays on top. You'll see a
   coworker **walk** the move: across the Walk Way, into the **Stairs**, then out of the
   **Door** on the floor below.
+- **The floor is alive while work runs** — every room has a small **door** on the Walk Way,
+  and a coworker steps out of any **running** room to mill on that floor's corridor, heading
+  back inside when the app finishes. A walker on the corridor means real work: one per running
+  room. A quiet floor (nothing running) gets the occasional decorative stroll instead. (No
+  floor motion if your system is set to reduce motion.)
 - **Failures gather in the Lounge** — the break room at the building's top-right. A failing
   app's room **stays where it is and turns red** (so you can't miss it), while its agents
   head up to the lounge to wait — each doing something different (coffee, vending machine,
