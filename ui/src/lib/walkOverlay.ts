@@ -42,22 +42,12 @@ export interface LifeSpec {
   lane: Lane;
 }
 
-/** A floor with NOTHING running — eligible for an occasional ambient stroller
- *  emerging from one of its occupied rooms' `doors`. */
-export interface IdleFloor {
-  id: string;
-  lane: Lane;
-  doors: Pt[];
-}
-
 const SPEED = 300; // CSS px/s along the path (~4s for a full descent, ~2s to the lounge)
 const LIFE_SPEED = 130; // CSS px/s for the relaxed floor-life stroll
 const SPRITE_S = 2; // CSS scale of the 12×16 worker (×dpr for device px)
 const LINGER_MS = 450; // hold at the destination before despawning
 const FRAME_MS = 120; // walk-cycle frame duration
-const AMB_CHANCE = 0.25; // per idle floor, per reconcile (~1.5s poll) → a stroller appears
 const MILL_MARGIN = 14; // keep mill targets off the very ends of the lane
-const AMB_MILLS: [number, number] = [2, 4]; // ambient legs before it heads home
 
 interface Walker {
   frames: HTMLCanvasElement[];
@@ -70,15 +60,15 @@ interface Walker {
 }
 
 /**
- * A persistent floor-life resident (§4-K). Honest residents (one per running
- * room) live as long as the room runs; ambient residents (idle-floor strollers)
- * head home after a few mill legs. State machine: `in` (door → lane) → `mill`
- * (drift between random lane points) → `out` (lane → back through the door).
+ * A persistent floor-life resident (§4-K; honest-only since §4-L — the ambient
+ * idle-floor stroller was deleted with the environment redesign). One per
+ * RUNNING room, alive as long as the room runs. State machine: `in` (door →
+ * lane) → `mill` (drift between random lane points) → `out` (lane → back
+ * through the door).
  */
 interface Resident {
-  key: string; // "h:<appKey>" (honest) | "a:<floorId>" (ambient) — one per key
-  ambient: boolean;
-  floorId: string; // owning floor (ambient retires when its floor stops being idle)
+  key: string; // "h:<appKey>" — one per running room
+  floorId: string; // owning floor (re-anchored if the running app descends)
   frames: HTMLCanvasElement[];
   door: Pt; // walkway-facing edge of the home room (updated by reconcile)
   lane: Lane;
@@ -88,7 +78,6 @@ interface Resident {
   facingLeft: boolean;
   pauseMs: number; // remaining pause at a mill point (idle → frame 0)
   wanted: boolean; // reconcile clears this → the resident walks home and despawns
-  millsLeft: number; // ambient: mill legs before heading home (Infinity for honest)
   yJit: number; // per-resident lane-band offset so they don't perfectly overlap
   done: boolean; // reached the door on the way out → filtered next tick
 }
@@ -187,29 +176,20 @@ export class WalkEngine {
   }
 
   /**
-   * Reconcile the persistent floor-life layer (§4-K) against the current poll.
-   * `busy` = one honest resident per running room; `idle` = floors with nothing
-   * running, eligible for an occasional ambient stroller. Called each tick from
+   * Reconcile the persistent floor-life layer (§4-K, honest-only since §4-L)
+   * against the current poll: one honest resident per running room, nothing
+   * else — an empty floor has an empty corridor. Called each tick from
    * BuildingView after the fresh snapshot. No-op (and clears) under reduced motion.
    */
-  reconcileFloorLife(busy: LifeSpec[], idle: IdleFloor[]) {
+  reconcileFloorLife(busy: LifeSpec[]) {
     if (this.reduced) {
       if (this.life.length) this.life = [];
       return;
     }
     const busyByKey = new Map(busy.map((s) => [`h:${s.key}`, s]));
-    const idleById = new Map(idle.map((f) => [f.id, f]));
 
-    // Honest residents: re-anchor the ones whose room still runs; send the rest
-    // home (room finished). Ambient: keep re-anchored while its floor is idle,
-    // else send it home (its floor started running, or was removed).
+    // Re-anchor the residents whose room still runs; send the rest home.
     for (const r of this.life) {
-      if (r.ambient) {
-        const f = idleById.get(r.floorId);
-        if (f) r.lane = f.lane;
-        else r.wanted = false;
-        continue;
-      }
       const s = busyByKey.get(r.key);
       if (!s) {
         r.wanted = false;
@@ -232,36 +212,16 @@ export class WalkEngine {
     const have = new Set(this.life.map((r) => r.key));
     for (const s of busy) {
       const key = `h:${s.key}`;
-      if (!have.has(key)) this.life.push(this.makeResident(key, s.key, s.door, s.lane, false, Infinity, s.floorId));
-    }
-
-    // Ambient: at most one stroller per idle floor, spawned occasionally.
-    for (const f of idle) {
-      const key = `a:${f.id}`;
-      if (have.has(key) || !f.doors.length) continue;
-      if (Math.random() < AMB_CHANCE) {
-        const door = f.doors[Math.floor(Math.random() * f.doors.length)];
-        const mills = AMB_MILLS[0] + Math.floor(Math.random() * (AMB_MILLS[1] - AMB_MILLS[0] + 1));
-        this.life.push(this.makeResident(key, key, door, f.lane, true, mills, f.id));
-      }
+      if (!have.has(key)) this.life.push(this.makeResident(key, s.key, s.door, s.lane, s.floorId));
     }
 
     this.ensureLoop();
   }
 
-  private makeResident(
-    key: string,
-    colorId: string,
-    door: Pt,
-    lane: Lane,
-    ambient: boolean,
-    mills: number,
-    floorId = ""
-  ): Resident {
+  private makeResident(key: string, colorId: string, door: Pt, lane: Lane, floorId: string): Resident {
     const yJit = ((this.jitN++ % 5) - 2) * 3; // −6..+6 across the corridor band
     return {
       key,
-      ambient,
       floorId,
       frames: this.framesFor(colorId),
       door: { ...door },
@@ -272,7 +232,6 @@ export class WalkEngine {
       facingLeft: false,
       pauseMs: 0,
       wanted: true,
-      millsLeft: mills,
       yJit,
       done: false,
     };
@@ -309,17 +268,16 @@ export class WalkEngine {
       r.phase = "mill";
       this.pickMill(r);
     } else if (r.phase === "mill") {
-      if (!r.wanted || r.millsLeft <= 0) {
+      if (!r.wanted) {
         r.phase = "out";
         r.target = { x: r.door.x, y: r.lane.y + r.yJit }; // line up with the door
       } else {
-        r.millsLeft -= 1;
         r.pauseMs = 400 + Math.random() * 800;
         this.pickMill(r);
       }
     } else {
       // "out": if the room started running again mid-exit, turn back to milling.
-      if (r.wanted && r.millsLeft > 0) {
+      if (r.wanted) {
         r.phase = "mill";
         this.pickMill(r);
         return;

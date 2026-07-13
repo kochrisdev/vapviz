@@ -3,16 +3,14 @@ import { Coffee, Drama, Siren, X } from "lucide-react";
 import type { GraphNode, NodeStatus, RunSummary } from "../types/events";
 import { OfficeStage } from "./OfficeStage";
 import { LoungeStage } from "./LoungeStage";
+import { FloorEnv } from "./FloorEnv";
 import { useRunStore } from "../store/runStore";
 import { formatCost } from "../lib/format";
-import { blit } from "../lib/sprites";
-import { doorCanvas, stairsCanvas } from "../lib/loungeArt";
 import {
   WalkEngine,
   type Pt,
   type Lane,
   type LifeSpec,
-  type IdleFloor,
 } from "../lib/walkOverlay";
 import {
   buildBuilding,
@@ -76,6 +74,7 @@ function RoomTile({
   nodes: GraphNode[];
   onOpen: () => void;
 }) {
+  const side = slot < 3 ? "bottom" : "top";
   return (
     <div
       className={`vt-room group relative ${room.status === "error" ? "vt-room--error" : ""}`}
@@ -83,46 +82,28 @@ function RoomTile({
       style={{ gridArea: `r${slot}` }}
     >
       <button onClick={onOpen} title="Open this app's current run" className="w-full text-left">
-        <div className="flex items-center gap-2 px-1 pb-1">
-          <span className={`w-2 h-2 rounded-full shrink-0 ${DOT[room.status]}`} />
-          <span className="text-xs font-semibold text-content-muted truncate">{room.label}</span>
-          {room.runCount > 1 && (
-            <span className="text-[10px] text-content-faint shrink-0 tabular-nums">
-              ×{room.runCount}
-            </span>
-          )}
-        </div>
         <div className="vt-room-stage">
           <OfficeStage nodes={nodes} compact />
         </div>
       </button>
       {/* Door on the Walk-Way-facing edge (§4-K): where floor-life walkers step
           out. Top-row rooms open downward, bottom-row rooms upward. Its rect is
-          the walker's spawn/return anchor (captured as roomdoor:<appKey>). */}
+          the walker's spawn/return anchor (captured as roomdoor:<appKey>); the
+          visible opening is drawn by the FloorEnv canvas (§4-L). */}
       <span
-        className={`vt-room-door vt-room-door--${slot < 3 ? "bottom" : "top"}`}
+        className={`vt-room-door vt-room-door--${side}`}
         data-roomdoor={room.appKey}
         aria-hidden="true"
       />
+      {/* Nameplate (§4-L): signage on the corridor wall beside the door — art-
+          styled plate, crisp DOM text (app names are arbitrary strings). */}
+      <span className={`vt-plate vt-plate--${side}`}>
+        <span className={`vt-led ${DOT[room.status]}`} />
+        <span className="vt-plate-name">{room.label}</span>
+        {room.runCount > 1 && <span className="vt-plate-n">×{room.runCount}</span>}
+      </span>
     </div>
   );
-}
-
-/** Small static pixel icon (door / stairs) blitted into the descent-column frames. */
-function PixelIcon({ build, alt }: { build: () => HTMLCanvasElement; alt: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const cv = ref.current;
-    if (!cv) return;
-    const src = build();
-    const S = 2;
-    cv.width = src.width * S;
-    cv.height = src.height * S;
-    const ctx = cv.getContext("2d")!;
-    ctx.imageSmoothingEnabled = false;
-    blit(ctx, src, 0, 0, S);
-  }, [build]);
-  return <canvas ref={ref} className="sprite" role="img" aria-label={alt} />;
 }
 
 /** A failed app waiting in the lounge — inspect (click) or dismiss. */
@@ -261,39 +242,23 @@ function spawnTransitions(
   return animated;
 }
 
-/** Derive the floor-life inputs (§4-K) from the current Building + fresh rects:
- *  one honest walker per RUNNING room, and — for floors with nothing running —
- *  an idle-floor entry (with its occupied rooms' doors) eligible for an ambient
- *  stroller. A room's door + its floor's Walk Way must both be measured. */
-function floorLife(
-  b: Building,
-  rects: Map<string, LocalRect>
-): { busy: LifeSpec[]; idle: IdleFloor[] } {
+/** Derive the floor-life inputs (§4-K, honest-only since §4-L) from the current
+ *  Building + fresh rects: one honest walker per RUNNING room. A room's door +
+ *  its floor's Walk Way must both be measured. */
+function floorLife(b: Building, rects: Map<string, LocalRect>): LifeSpec[] {
   const busy: LifeSpec[] = [];
-  const idle: IdleFloor[] = [];
   for (const floor of b.floors) {
     const walk = rects.get(`walk:${floor.index}`);
     if (!walk) continue;
     const floorId = `f${floor.index}`;
     const lane: Lane = { y: walk.y + walk.h / 2, x0: walk.x, x1: walk.x + walk.w };
-    const occupied = floor.rooms.filter((r): r is AppRoom => r !== null);
-    const doorPt = (r: AppRoom): Pt | null => {
+    for (const r of floor.rooms) {
+      if (!r || r.status !== "running") continue;
       const d = rects.get(`roomdoor:${r.appKey}`);
-      return d ? rectCenter(d) : null;
-    };
-    const running = occupied.filter((r) => r.status === "running");
-    if (running.length) {
-      for (const r of running) {
-        const door = doorPt(r);
-        if (door) busy.push({ key: r.appKey, floorId, door, lane });
-      }
-    } else if (occupied.length) {
-      // Nothing running on this floor → eligible for a decorative stroller.
-      const doors = occupied.map(doorPt).filter((p): p is Pt => p !== null);
-      if (doors.length) idle.push({ id: floorId, lane, doors });
+      if (d) busy.push({ key: r.appKey, floorId, door: rectCenter(d), lane });
     }
   }
-  return { busy, idle };
+  return busy;
 }
 
 export function BuildingView() {
@@ -371,8 +336,7 @@ export function BuildingView() {
     if (engine && el && building) {
       const now = snapshot(el);
       if (oldB && firstLocal) animated = spawnTransitions(oldB, building, firstLocal, now, engine);
-      const { busy, idle } = floorLife(building, now);
-      engine.reconcileFloorLife(busy, idle);
+      engine.reconcileFloorLife(floorLife(building, now));
     }
     // FLIP glide for any moved room the overlay didn't take
     if (!first.size) return;
@@ -498,6 +462,11 @@ export function BuildingView() {
             {/* Floors, top-down; the tag counts down like a real building */}
             {floors.map((floor) => (
               <div className="vt-floor" data-floor={floor.index} key={floor.index}>
+                {/* The environment canvas (§4-L): corridor tiles, walls + door
+                    openings, props — drawn under the rooms from measured rects. */}
+                <FloorEnv
+                  sig={`${floor.rooms.map((r) => (r ? r.appKey : "·")).join("|")}#${floor.index === 0 ? "L" : "E"}`}
+                />
                 <div className="vt-floor-tag">{floors.length - floor.index}F</div>
 
                 {floor.rooms.map((room, i) =>
@@ -513,6 +482,7 @@ export function BuildingView() {
                     <div
                       key={`empty-${floor.index}-${i}`}
                       className="vt-room vt-room--empty"
+                      data-doorside={i < 3 ? "bottom" : "top"}
                       style={{ gridArea: `r${i}` }}
                     >
                       <div className="vt-room-stage" />
@@ -520,17 +490,11 @@ export function BuildingView() {
                   )
                 )}
 
-                <div className="vt-walkway">
-                  <span>Walk way</span>
-                </div>
-                <div className="vt-door">
-                  <PixelIcon build={doorCanvas} alt="Door" />
-                  <small>Door</small>
-                </div>
-                <div className="vt-stairs">
-                  <PixelIcon build={stairsCanvas} alt="Stairs" />
-                  <small>Stairs</small>
-                </div>
+                {/* Walk Way / Door / Stairs — layout anchors; visuals live on
+                    the FloorEnv canvas (corridor rug + lights, alcove icons). */}
+                <div className="vt-walkway" />
+                <div className="vt-door" role="img" aria-label="Door" />
+                <div className="vt-stairs" role="img" aria-label="Stairs" />
 
                 {/* East column: the shared lounge on the top floor, solid wall below. */}
                 {floor.index === 0 ? (
@@ -553,11 +517,8 @@ export function BuildingView() {
                     )}
                   </div>
                 ) : (
-                  <div className="vt-eastwall">
-                    {Array.from({ length: 4 }, (_, w) => (
-                      <span key={w} className="vt-window" />
-                    ))}
-                  </div>
+                  /* anchor only — the wall + windows are drawn by FloorEnv */
+                  <div className="vt-eastwall" />
                 )}
               </div>
             ))}

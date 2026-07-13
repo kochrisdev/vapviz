@@ -983,9 +983,14 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **The walk overlay** (`lib/walkOverlay.ts`) — a sprite layer above the rooms: a descending app's coworker walks the Walk Way, enters the Stairs (vanishing), and emerges from the Door one floor below; a failing app's coworker walks up to the lounge. FLIP glide is the fallback; `prefers-reduced-motion` snaps everything
 
 ### Phase 20 — Floor life / room doors (complete)
-- [x] **Room doors** — each room gains a small door (theme-aware CSS) on its Walk-Way-facing edge; the locked 12×16 room diorama is untouched
+- [x] **Room doors** — each room gains a door on its Walk-Way-facing edge (drawn by the floor environment since Phase 21); the locked 12×16 room diorama is untouched
 - [x] **Living floor** — the walk overlay grows a persistent layer (`reconcileFloorLife`, driven each poll): a coworker steps out of every **running** room and mills on that floor's Walk Way, going back inside when the app finishes — so the floor is alive while work is happening, not just during a transition
-- [x] **Honest by design** — a walker on the corridor means real work: one per running room. A quiet floor (nothing running) gets an occasional **ambient** stroll instead — decorative office life, never shown alongside real activity on the same floor. `prefers-reduced-motion` → no floor life
+- [x] **Honest by design** — a walker on the corridor means real work: exactly one per running room, nothing decorative (the interim ambient stroll was removed in Phase 21); a quiet floor is an empty corridor. `prefers-reduced-motion` → no floor life
+
+### Phase 21 — The actual floor (complete)
+- [x] **Floor environment canvas** — each floor drawn as one pixel scene from measured DOM rects (`lib/floorArt.ts`, `FloorEnv.tsx`): stone corridor tiles, shared wall runs with a drawn door threshold per room, the Door/Stairs alcove, and east-wall windows — hand-authored owned art, zero AI
+- [x] **Props** — runner rug + ceiling lights down the Walk Way, plants, water cooler, cork notice board, framed wall art, wall clock; empty rooms read as unlet offices
+- [x] **Nameplates** — rooms drop their CSS card chrome; each app's name + status LED hangs on the wall by its door (crisp DOM text on art-styled signage)
 
 ---
 

@@ -152,15 +152,22 @@ body {
 .vt-floor {
   display: grid;
   grid-template-columns: 22px repeat(3, minmax(168px, 1fr)) 46px 208px;
-  grid-template-rows: auto 24px auto;
+  grid-template-rows: auto 30px auto;
   grid-template-areas:
     "tag r0  r1  r2  door   east"
     "tag way way way way    east"
     "tag r3  r4  r5  stairs east";
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 10px; /* floorArt.ts WALL_G is half this gap — keep them in sync */
+  padding: 16px;
   border-bottom: 3px solid rgb(var(--border-strong)); /* floor slab */
   position: relative;
+}
+/* The floor-environment canvas (§4-L) — corridor tiles, walls + door openings,
+ * props — drawn under the rooms (first child → paints below its siblings). */
+.vt-floor-env {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 .vt-floor-tag {
   grid-area: tag;
@@ -174,99 +181,75 @@ body {
   letter-spacing: .1em;
 }
 
+/* Rooms (§4-L): no card chrome — the FloorEnv canvas draws the walls around
+ * each room rect; the tile itself is just the diorama stage + interactions. */
 .vt-room {
-  background: rgb(var(--surface) / .35);
-  border: 1px solid rgb(var(--border) / .5);
-  border-radius: 14px;
-  padding: 8px 8px 6px;
-  transition: border-color .2s, background .2s;
+  position: relative;
+  transition: filter .2s;
 }
-.vt-room:hover { border-color: rgb(var(--border-strong)); background: rgb(var(--surface) / .55); }
-.vt-room--empty { border-style: dashed; background: rgb(var(--surface) / .12); }
-.vt-room--empty:hover { border-color: rgb(var(--border) / .5); background: rgb(var(--surface) / .12); }
-/* A failed app's home room stays put and turns red (its agents walk to the lounge). */
-.vt-room--error { border-color: rgb(var(--status-error) / .5); background: rgb(var(--status-error) / .08); }
-.vt-room--error:hover { border-color: rgb(var(--status-error) / .75); background: rgb(var(--status-error) / .12); }
+.vt-room:hover .vt-room-stage { box-shadow: 0 0 0 2px rgb(var(--accent) / .55); }
+/* A failed app's home room stays put and turns red (its agents walk to the
+ * lounge) — a red ring + tint over the stage; the plate's siren-red LED and
+ * the lounge card carry the state beyond color. */
+.vt-room--error .vt-room-stage {
+  box-shadow: 0 0 0 2px rgb(var(--status-error) / .7);
+  background: rgb(var(--status-error) / .1);
+}
+.vt-room--error:hover .vt-room-stage { box-shadow: 0 0 0 2px rgb(var(--status-error)); }
 /* Room stage keeps the office's 13:8 native aspect (208×128 px room), fluid width. */
-.vt-room-stage { position: relative; width: 100%; aspect-ratio: 13 / 8; border-radius: 10px; overflow: hidden; }
+.vt-room-stage { position: relative; width: 100%; aspect-ratio: 13 / 8; border-radius: 4px; overflow: hidden; }
 
-/* Door on the room's Walk-Way-facing edge (§4-K floor life) — a gap in the wall
- * where agents step out onto the corridor. The opening reads as `--bg` (the
- * corridor beyond) framed by the wall border; top-row rooms open downward,
- * bottom-row rooms upward. Its centre is the walker spawn/return anchor. */
+/* Door anchor on the room's Walk-Way-facing edge (§4-K floor life): its centre
+ * is the walker spawn/return point. Invisible since §4-L — the opening itself
+ * (threshold, posts) is drawn by the FloorEnv canvas. */
 .vt-room-door {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
   width: 28px;
   height: 10px;
-  z-index: 3;
-  background: rgb(var(--bg));
-  border: 1px solid rgb(var(--border-strong));
-  box-shadow: inset 0 0 0 1px rgb(var(--surface) / .5);
   pointer-events: none;
 }
-.vt-room-door--bottom { bottom: -5px; border-top: none; border-radius: 0 0 6px 6px; }
-.vt-room-door--top { top: -5px; border-bottom: none; border-radius: 6px 6px 0 0; }
+.vt-room-door--bottom { bottom: -5px; }
+.vt-room-door--top { top: -5px; }
 
-/* The Walk Way — a corridor between the two room rows, with a dashed centre line. */
-.vt-walkway {
-  grid-area: way;
-  border-radius: 8px;
-  border: 1px solid rgb(var(--border) / .5);
-  background: rgb(var(--surface-inset) / .7);
-  display: grid;
-  place-items: center;
-  position: relative;
-}
-.vt-walkway::before {
-  content: "";
-  position: absolute; left: 10px; right: 10px; top: 50%;
-  border-top: 2px dashed rgb(var(--border-strong) / .7);
-}
-.vt-walkway span {
-  position: relative;
-  font-size: 9px; letter-spacing: .2em; text-transform: uppercase;
-  color: rgb(var(--content-faint));
-  background: rgb(var(--surface-inset));
-  padding: 0 6px;
-}
-
-/* Door (top-right) and Stairs (bottom-right) frames — a floor's Stairs sit
- * directly above the next floor's Door, so descent reads as walking down. */
-.vt-door, .vt-stairs {
-  border: 1px solid rgb(var(--border-strong));
-  border-radius: 6px;
-  background: rgb(var(--surface-inset) / .85);
-  display: grid;
-  place-items: center;
-  color: rgb(var(--content-muted));
-  gap: 2px;
-  min-height: 0;
-}
-.vt-door { grid-area: door; align-self: start; }
-.vt-stairs { grid-area: stairs; align-self: end; }
-.vt-door small, .vt-stairs small { font-size: 8px; letter-spacing: .1em; text-transform: uppercase; }
-
-/* East wall (floors below the lounge) — solid facade + windows, so the
- * building silhouette stays a clean rectangle. */
-.vt-eastwall {
-  grid-area: east;
-  border-left: 2px solid rgb(var(--border-strong));
-  background: rgb(var(--surface) / .5);
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px 18px;
-  padding: 22px 26px;
-  align-content: center;
-}
-.vt-window {
-  aspect-ratio: 3 / 4;
+/* Nameplate (§4-L) — signage on the corridor wall beside the room's door.
+ * Fixed warm hexes: this chip sits ON the drawn diorama wall, so it keeps the
+ * art's palette in both themes (the locked pixel-art exemption, 2026-07-01 —
+ * same family as officeArt's CHROME chrome set). */
+.vt-plate {
+  position: absolute;
+  left: 8px;
+  max-width: calc(50% - 26px);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 13px;
   border-radius: 3px;
-  background: linear-gradient(150deg, rgb(var(--accent) / .16), rgb(var(--surface-hover)));
-  border: 1px solid rgb(var(--border-strong));
-  box-shadow: inset 0 0 0 1px rgb(var(--surface) / .35);
+  background: #2e2419;
+  border: 1px solid #241a14;
+  box-shadow: inset 0 1px 0 rgba(246, 241, 230, .12);
+  color: #efe7da;
+  z-index: 3;
+  pointer-events: none;
 }
+.vt-plate--bottom { bottom: -13px; }
+.vt-plate--top { top: -13px; }
+.vt-plate-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vt-plate-n { color: #cbbfa8; font-size: 9px; font-variant-numeric: tabular-nums; }
+.vt-led { width: 6px; height: 6px; border-radius: 9999px; flex-shrink: 0; }
+
+/* Walk Way / Door / Stairs / east wall — pure layout anchors since §4-L; the
+ * corridor (rug, lights, props), alcove icons, and windows are all drawn by
+ * the FloorEnv canvas. A floor's Stairs sit directly above the next floor's
+ * Door, so descent reads as walking down. */
+.vt-walkway { grid-area: way; }
+.vt-door { grid-area: door; align-self: start; min-height: 60px; }
+.vt-stairs { grid-area: stairs; align-self: end; min-height: 60px; }
+.vt-eastwall { grid-area: east; }
 
 /* The shared Lounge — top floor's right column, one floor tall. Failures from
  * any floor gather here (state never color-only: siren icon + Dismiss). */

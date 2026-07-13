@@ -10,16 +10,22 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 ## [Unreleased]
 
 ### Added
-- **Office Building — floor life / room doors** — each room gains a small door (theme-aware
-  CSS chrome) on its Walk-Way-facing edge, and the walk overlay (`ui/src/lib/walkOverlay.ts`)
-  grows a persistent floor-life layer (`reconcileFloorLife`, driven each poll from
-  `BuildingView`): a coworker steps out of every **running** room and mills on that floor's
-  Walk Way, walking back inside when the app finishes — so the floor is alive while work is
-  happening, not only during a descent/failure transition. Kept honest — one walker per
-  running room; a floor with nothing running gets an occasional **ambient** stroll instead
-  (decorative, never shown alongside real activity on the same floor). No floor life under
-  `prefers-reduced-motion`. UI-only (re-presents the derived graph); the locked 12×16 room
-  diorama is untouched.
+- **Office Building — the actual floor** — every floor is now drawn as one pixel-art
+  environment (a per-floor canvas under the rooms — `ui/src/lib/floorArt.ts` +
+  `ui/src/components/FloorEnv.tsx`, hand-authored owned art): stone corridor tiles, shared
+  wall runs with a drawn door opening per room, a runner rug and ceiling lights down the
+  Walk Way, plants, a water cooler, a notice board, wall art and a clock, the Door/Stairs
+  alcove, and east-wall windows. Rooms drop their CSS card chrome; each app's name + status
+  moved to a **nameplate** hung on the wall by its door (crisp text + status light). Empty
+  rooms read as unlet offices. UI-only; the locked 12×16 room diorama is untouched.
+- **Office Building — floor life / room doors** — the walk overlay
+  (`ui/src/lib/walkOverlay.ts`) grows a persistent floor-life layer (`reconcileFloorLife`,
+  driven each poll from `BuildingView`): a coworker steps out of every **running** room's
+  door and mills on that floor's Walk Way, walking back inside when the app finishes — so
+  the floor is alive while work is happening, not only during a descent/failure transition.
+  Kept honest — exactly one walker per running room, nothing decorative; a quiet floor is an
+  empty corridor. No floor life under `prefers-reduced-motion`. UI-only (re-presents the
+  derived graph).
 - **`app_id` — stable app identity for runs** — `vapviz.trace()` and `atrace()` accept an
   optional `app_id`: a stable identifier for the pipeline ("app") a run belongs to, so every
   invocation of the same app can be grouped. It rides in the run's `agent_start` data

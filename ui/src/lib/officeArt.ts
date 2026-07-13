@@ -109,7 +109,7 @@ function deskCanvas(): Cv {
   return c;
 }
 // potted plant — 14×18
-function plantCanvas(): Cv {
+export function plantCanvas(): Cv {
   const c = newCv(14, 18);
   box(c, 4, 12, 6, 5, "#caa874");
   rect(c, 3, 11, 8, 2, "#9c6636"); // pot
@@ -136,7 +136,7 @@ function rugCanvas(): Cv {
   return c;
 }
 // wall clock — 9×9, crisp pixel disc (no anti-aliased arc → sharp when scaled)
-function clockCanvas(): Cv {
+export function clockCanvas(): Cv {
   const c = newCv(9, 9);
   for (let y = 0; y < 9; y++)
     for (let x = 0; x < 9; x++) {
@@ -286,7 +286,7 @@ function tvCanvas(): Cv {
   return c;
 }
 // water cooler (filler + animated — bubble rises live) — 12×22
-function waterCoolerCanvas(): Cv {
+export function waterCoolerCanvas(): Cv {
   const c = newCv(12, 22);
   box(c, 2, 0, 8, 9, "#bcdcef");
   rect(c, 3, 1, 6, 7, "#8fc4e6"); // water bottle
@@ -298,7 +298,7 @@ function waterCoolerCanvas(): Cv {
   return c;
 }
 // window on the back wall — 30×13 (outdoor view: a city skyline)
-function windowCanvas(): Cv {
+export function windowCanvas(): Cv {
   const c = newCv(30, 13);
   box(c, 0, 0, 30, 13, "#74502f"); // frame
   rect(c, 2, 2, 26, 8, "#9fc6e0"); // daytime sky
