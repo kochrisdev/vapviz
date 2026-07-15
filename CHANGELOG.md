@@ -96,8 +96,8 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 ### Added
 - **Theater view** — a watchable, game-like per-run view (UI). Each agent is a deterministic
   pixel character (built from its name) that walks to an LLM/tool desk while it's working, with
-  its name overhead; available in both Simple and Technical modes and driven by the existing
-  replay/live pipeline. New: `ui/src/lib/theater.ts`, `ui/src/components/TheaterView.tsx`.
+  its name overhead; a tab on every run, driven by the existing replay/live pipeline.
+  New: `ui/src/lib/theater.ts`, `ui/src/components/TheaterView.tsx`.
 - **Office building** — a centralized monitor (`ui/src/components/BuildingView.tsx`, sidebar 🎭
   icon) keyed to **apps**, not runs: each app owns one room shown as a live compact sprite
   office (a re-run lights the same room back up, with an ×N run count) and each agent keeps a

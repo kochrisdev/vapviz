@@ -1023,6 +1023,7 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 | `zustand` | Client-side state management |
 | `tailwindcss` | Utility CSS |
 | `lucide-react` | Icons |
+| `@fontsource/silkscreen` · `@fontsource/pixelify-sans` · `@fontsource/vt323` | Self-hosted pixel typefaces (display · body · mono; OFL) |
 
 ---
 

@@ -28,3 +28,9 @@ Reference prototype (final approved renders `pose10.png` / `live10.png`):
 `scratch/sprite-proto/` (local, gitignored). Room layout **locked by Nick
 2026-07-01** — do not rearrange or restyle without a new sign-off. Authoring
 rules live in the `pixel-art-set` skill.
+
+**Scope note:** this file covers the pixel *art* only. The app-chrome pixel
+**fonts** added in the 2026-07-15 reskin (Silkscreen, Pixelify Sans, VT323) are
+NOT hand-authored art — they're third-party OFL typefaces vendored via
+`@fontsource/*` npm packages (listed in the README dependency table). "Owned
+outright / zero third-party" above refers to the sprites and furniture, not the fonts.
