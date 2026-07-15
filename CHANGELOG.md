@@ -9,6 +9,42 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 ## [Unreleased]
 
+### Changed
+- **Pixel look, end to end — the app now lives in the office's world.** Square corners,
+  chunky 2px borders, hard-offset "pixel-step" shadows, a faint checkerboard ground (the
+  Building's yard tile), pixel scrollbars, and an all-pixel type system (self-hosted, OFL):
+  **Silkscreen** for display chrome (headings, tabs, badges), **Pixelify Sans** for all
+  reading text, **VT323** for code-shaped text (JSON, logs, durations). The **color tokens
+  are now derived from the sprite office's own palette** so the chrome matches the Theater
+  and Building scenes in both themes — dark is the office after hours (deep warm browns,
+  cream text, amber accent), light is the office by day (wall-cream surfaces, wood borders,
+  deep amber accent). The sidebar is topped by a VAPVIZ plate like the building's rooftop
+  sign. Backgrounds stay plain (subtle tile only — no imagery).
+- **The Simple/Technical mode toggle is gone — one adaptive UI for everyone.** Every run
+  shows the Story, Theater, Graph, and Logs tabs; tags, export, and replay are always
+  available. Depth is progressive instead of gated: runs open on the plain-language Story,
+  and raw JSON sits behind the detail panel's "Show technical details" expander (for
+  everyone now). The stored `vapviz-mode` preference is simply ignored.
+
+### Fixed
+- **A malformed node can no longer blank the whole app.** The node-detail panel assumed
+  token usage always arrived as `usage.input_tokens`/`output_tokens`; any other shape
+  (e.g. OpenAI-style `prompt_tokens` written through the public `set_output()`) threw while
+  rendering and, with no error boundary in the tree, unmounted the entire UI to a black
+  screen. The panel now tolerates unknown usage shapes (and understands the
+  `prompt_tokens`/`completion_tokens` aliases), and the app gained error boundaries — one
+  around the whole app, one around the detail panel — so a bad node shows a friendly
+  "couldn't display this" card instead of killing the page.
+- **Graph text was unreadable in the dark theme.** ReactFlow v12 adds its own
+  `colorMode` class (default `"light"`) to the graph container, which collided with
+  vapviz's `.light` theme selector and flipped every design token inside the graph to
+  light-theme values on a dark page. The theme selector is now scoped to `html.light` and
+  the graph receives the app theme via ReactFlow's `colorMode` prop.
+- **Streamed runs showed their raw run id as the title.** The store now takes the run's
+  label from the `agent_start` event, so the run header and Story card say
+  "Research Agent", not `44bf3d452b05` (previously only the Office Building's polling
+  path set a real label). Guarded by a new unit test.
+
 ### Added
 - **Office Building — the actual floor** — every floor is now drawn as one pixel-art
   environment (a per-floor canvas under the rooms — `ui/src/lib/floorArt.ts` +

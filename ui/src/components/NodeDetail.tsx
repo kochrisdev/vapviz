@@ -42,7 +42,7 @@ function ChatBubble({ role, content }: { role: string; content: string }) {
   const label = ROLE_LABEL[role] ?? role;
   return (
     <div className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
-      <span className="text-[10px] uppercase tracking-wider text-content-faint mb-0.5">{label}</span>
+      <span className="text-[10px] px-display text-content-faint mb-0.5">{label}</span>
       <div
         className={`max-w-[95%] rounded-lg px-2.5 py-1.5 text-xs leading-relaxed whitespace-pre-wrap break-words ${
           isSystem
@@ -92,7 +92,7 @@ function JsonBlock({ value }: { value: unknown }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] text-content-faint uppercase tracking-wider mb-1.5">{title}</div>
+      <div className="text-[10px] text-content-faint px-display mb-1.5">{title}</div>
       {children}
     </div>
   );
@@ -111,11 +111,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 interface Props {
   node: GraphNode;
-  /** Technical mode shows raw JSON inline; Simple tucks it behind an expander. */
-  technical?: boolean;
 }
 
-export function NodeDetail({ node, technical = false }: Props) {
+export function NodeDetail({ node }: Props) {
   const selectNode = useRunStore((s) => s.selectNode);
   const [showRaw, setShowRaw] = useState(false);
 
@@ -124,8 +122,13 @@ export function NodeDetail({ node, technical = false }: Props) {
 
   const input = node.data.input as Record<string, unknown> | undefined;
   const output = node.data.output as Record<string, unknown> | undefined;
-  const usage = output?.usage as { input_tokens: number; output_tokens: number } | undefined;
-  const costUsd = output?.cost_usd as number | undefined;
+  // Usage comes from arbitrary user/integration data — never trust its shape.
+  // Accept the canonical keys plus the common OpenAI-style aliases.
+  const rawUsage = output?.usage as Record<string, unknown> | undefined;
+  const asCount = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const tokensIn = asCount(rawUsage?.input_tokens) ?? asCount(rawUsage?.prompt_tokens);
+  const tokensOut = asCount(rawUsage?.output_tokens) ?? asCount(rawUsage?.completion_tokens);
+  const costUsd = typeof output?.cost_usd === "number" ? output.cost_usd : undefined;
 
   // Chat rendering when an LLM node carries structured messages.
   const messages =
@@ -150,7 +153,7 @@ export function NodeDetail({ node, technical = false }: Props) {
       <div className="flex items-start justify-between px-4 py-3 border-b border-border gap-2">
         <div className="min-w-0">
           <div
-            className="text-[10px] uppercase tracking-wider font-semibold mb-0.5"
+            className="text-[10px] px-display mb-0.5"
             style={{ color: `rgb(var(${KIND_TOKEN[node.kind]}))` }}
           >
             {node.kind}
@@ -186,10 +189,10 @@ export function NodeDetail({ node, technical = false }: Props) {
         </div>
 
         {/* Token usage */}
-        {usage && (
+        {(tokensIn !== null || tokensOut !== null) && (
           <Row label="Tokens">
             <span className="text-content-muted">
-              {usage.input_tokens.toLocaleString()} in&nbsp;/&nbsp;{usage.output_tokens.toLocaleString()} out
+              {(tokensIn ?? 0).toLocaleString()} in&nbsp;/&nbsp;{(tokensOut ?? 0).toLocaleString()} out
             </span>
           </Row>
         )}
@@ -244,19 +247,17 @@ export function NodeDetail({ node, technical = false }: Props) {
           </Section>
         )}
 
-        {/* Technical details (raw JSON) — inline in Technical mode, tucked
-            behind an expander in Simple mode. */}
+        {/* Raw JSON — progressive disclosure for everyone: plain-language
+            explanation above, exact data one click away. */}
         {(input !== undefined || output !== undefined) &&
-          (technical || showRaw ? (
+          (showRaw ? (
             <div className="space-y-3 pt-1">
-              {!technical && (
-                <button
-                  onClick={() => setShowRaw(false)}
-                  className="flex items-center gap-1 text-[11px] text-content-faint hover:text-content"
-                >
-                  <ChevronRight size={12} className="rotate-90" /> Hide technical details
-                </button>
-              )}
+              <button
+                onClick={() => setShowRaw(false)}
+                className="flex items-center gap-1 text-[11px] text-content-faint hover:text-content"
+              >
+                <ChevronRight size={12} className="rotate-90" /> Hide technical details
+              </button>
               {input !== undefined && (
                 <Section title="Raw input">
                   <JsonBlock value={input} />

@@ -647,7 +647,7 @@ and the `app_id` run identity the Building groups by).
   home between back-to-back calls; desks only glow for a *running* call.
 - **`TheaterView.tsx`** — the per-run view: a thin wrapper that hands the run's `shownNodes` (live or
   replayed) to a full-size `OfficeStage`. Added as a 4th run tab in `App` (Story/Theater/Graph/Logs);
-  shown in **both** Simple and Technical modes; the existing `ReplayBar` drives playback.
+  a tab on every run; the existing `ReplayBar` drives playback.
 - **`lib/building.ts` — the Office Building reducer** (pure, tested — like `officeScene`/`buildScene`,
   it re-presents derived data and is NOT part of the dual-logic parity rule). `appKey(run) =
   run.app_id ?? run.label` is THE grouping key, shared by the building and the sidebar so they can

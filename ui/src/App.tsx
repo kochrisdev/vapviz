@@ -5,12 +5,12 @@ import { AgentGraph } from "./components/AgentGraph";
 import { TheaterView } from "./components/TheaterView";
 import { BuildingView } from "./components/BuildingView";
 import { Dashboard } from "./components/Dashboard";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { LogsView } from "./components/LogsView";
 import { ExportMenu } from "./components/ExportMenu";
 import { NodeDetail } from "./components/NodeDetail";
 import { ReplayBar } from "./components/ReplayBar";
 import { RunComparison } from "./components/RunComparison";
-import { ModeToggle } from "./components/ModeToggle";
 import { RunList } from "./components/RunList";
 import { StatusBadge } from "./components/StatusBadge";
 import { StoryView } from "./components/StoryView";
@@ -28,12 +28,9 @@ function RunViewer() {
   const selectedNodeId = useRunStore((s) => s.selectedNodeId);
   const runs = useRunStore((s) => s.runs);
   const view = useRunStore((s) => s.view);
-  const mode = useRunStore((s) => s.mode);
   const selectRun = useRunStore((s) => s.selectRun);
   const selectNode = useRunStore((s) => s.selectNode);
   const setCompareRun = useRunStore((s) => s.setCompareRun);
-
-  const technical = mode === "technical";
 
   const streamStatus = useRunStream(selectedRunId);
 
@@ -82,9 +79,11 @@ function RunViewer() {
 
   return (
     <div className="flex h-screen bg-bg text-content overflow-hidden">
-      {/* Sidebar — global mode switch + run list */}
+      {/* Sidebar — brand plate + run list */}
       <div className="w-64 shrink-0 flex flex-col">
-        <ModeToggle />
+        <div className="px-brand text-center text-sm py-3 bg-surface-inset border-b-2 border-border select-none">
+          vapviz
+        </div>
         <RunList onSelect={selectRun} />
       </div>
 
@@ -115,79 +114,71 @@ function RunViewer() {
                 </span>
               )}
 
-              {/* Tabs — Story + Theater in both modes; Graph + Logs are Technical-only */}
-              <div className="flex items-center gap-1 bg-surface-inset rounded-lg p-1">
+              {/* Tabs — one adaptive UI: every view for everyone; depth lives
+                  behind progressive disclosure inside the views. */}
+              <div className="flex items-center gap-1 bg-surface-inset p-1 border-2 border-border">
                 <TabButton active={tab === "story"} onClick={() => setTab("story")} icon={BookOpen}>
                   Story
                 </TabButton>
                 <TabButton active={tab === "theater"} onClick={() => setTab("theater")} icon={Drama}>
                   Theater
                 </TabButton>
-                {technical && (
-                  <>
-                    <TabButton active={tab === "graph"} onClick={() => setTab("graph")} icon={Network}>
-                      Graph
-                    </TabButton>
-                    <TabButton active={tab === "logs"} onClick={() => setTab("logs")} icon={ScrollText}>
-                      Logs
-                    </TabButton>
-                  </>
-                )}
+                <TabButton active={tab === "graph"} onClick={() => setTab("graph")} icon={Network}>
+                  Graph
+                </TabButton>
+                <TabButton active={tab === "logs"} onClick={() => setTab("logs")} icon={ScrollText}>
+                  Logs
+                </TabButton>
               </div>
 
-              {/* Technical-only controls */}
-              {technical && (
-                <>
-                  <div className="border-l border-border pl-3">
-                    <TagEditor
-                      runId={selectedRunId!}
-                      tags={runs.find((r) => r.run_id === selectedRunId)?.tags ?? []}
-                    />
-                  </div>
-                  <div className="ml-auto flex items-center gap-2">
-                    {tab === "graph" && (
-                      <>
-                        {/* Simplified | Detailed toggle */}
-                        <div className="flex items-center gap-0.5 bg-surface-inset rounded-lg p-0.5">
-                          <button
-                            onClick={() => setGraphSimplified(true)}
-                            className={`text-xs font-medium px-2 py-1 rounded-md transition-colors ${
-                              graphSimplified ? "bg-surface text-content shadow-sm" : "text-content-faint hover:text-content"
-                            }`}
-                            title="Hide framework-internal nodes"
-                          >
-                            Simplified
-                          </button>
-                          <button
-                            onClick={() => setGraphSimplified(false)}
-                            className={`text-xs font-medium px-2 py-1 rounded-md transition-colors ${
-                              !graphSimplified ? "bg-surface text-content shadow-sm" : "text-content-faint hover:text-content"
-                            }`}
-                            title="Show every node"
-                          >
-                            Detailed
-                          </button>
-                        </div>
-                        <button
-                          onClick={() => setReplayIndex(replayIndex === null ? state.events.length : null)}
-                          title="Replay this run event by event"
-                          className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${
-                            replayIndex !== null
-                              ? "bg-accent/15 text-accent"
-                              : "text-content-faint hover:text-content hover:bg-surface-hover"
-                          }`}
-                        >
-                          <History size={13} /> Replay
-                        </button>
-                      </>
-                    )}
-                    <ExportMenu runId={selectedRunId!} label={state.label} graphContainerRef={graphRef} />
-                  </div>
-                </>
-              )}
+              <div className="border-l-2 border-border pl-3">
+                <TagEditor
+                  runId={selectedRunId!}
+                  tags={runs.find((r) => r.run_id === selectedRunId)?.tags ?? []}
+                />
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                {tab === "graph" && (
+                  <>
+                    {/* Simplified | Detailed toggle */}
+                    <div className="flex items-center gap-0.5 bg-surface-inset p-0.5 border-2 border-border">
+                      <button
+                        onClick={() => setGraphSimplified(true)}
+                        className={`px-display text-[10px] px-2 py-1 transition-colors ${
+                          graphSimplified ? "bg-surface text-content shadow-sm" : "text-content-faint hover:text-content"
+                        }`}
+                        title="Hide framework-internal nodes"
+                      >
+                        Simplified
+                      </button>
+                      <button
+                        onClick={() => setGraphSimplified(false)}
+                        className={`px-display text-[10px] px-2 py-1 transition-colors ${
+                          !graphSimplified ? "bg-surface text-content shadow-sm" : "text-content-faint hover:text-content"
+                        }`}
+                        title="Show every node"
+                      >
+                        Detailed
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setReplayIndex(replayIndex === null ? state.events.length : null)}
+                      title="Replay this run event by event"
+                      className={`flex items-center gap-1.5 px-display text-[10px] px-2 py-1 transition-colors ${
+                        replayIndex !== null
+                          ? "bg-accent/15 text-accent"
+                          : "text-content-faint hover:text-content hover:bg-surface-hover"
+                      }`}
+                    >
+                      <History size={13} /> Replay
+                    </button>
+                  </>
+                )}
+                <ExportMenu runId={selectedRunId!} label={state.label} graphContainerRef={graphRef} />
+              </div>
             </div>
 
-            {/* Body — Story + Theater in both modes; Graph + Logs Technical-only */}
+            {/* Body */}
             {tab === "theater" ? (
               <div className="flex-1 min-w-0 flex flex-col min-h-0">
                 <div className="flex-1 min-h-0">
@@ -207,7 +198,7 @@ function RunViewer() {
                   }}
                 />
               </div>
-            ) : !technical || tab === "story" ? (
+            ) : tab === "story" ? (
               <StoryView state={state} />
             ) : tab === "logs" ? (
               <LogsView events={state.events} startedAt={state.started_at ?? 0} />
@@ -236,10 +227,13 @@ function RunViewer() {
             )}
           </div>
 
-          {/* Node detail panel */}
+          {/* Node detail panel — boundary keyed by node so a bad node's data
+              can't blank the run view; picking another node resets it. */}
           {selectedNode && (
             <div className="w-72 shrink-0">
-              <NodeDetail node={selectedNode} technical={technical} />
+              <ErrorBoundary key={selectedNode.id} label="this step's details">
+                <NodeDetail node={selectedNode} />
+              </ErrorBoundary>
             </div>
           )}
         </>
@@ -279,13 +273,13 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-md transition-colors ${
+      className={`flex items-center gap-1.5 px-display text-[11px] px-3 py-1.5 transition-colors ${
         active
           ? "bg-accent text-content-on-accent shadow-sm"
           : "text-content-muted hover:text-content hover:bg-surface-hover"
       }`}
     >
-      <Icon size={15} /> {children}
+      <Icon size={13} /> {children}
     </button>
   );
 }

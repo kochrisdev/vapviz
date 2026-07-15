@@ -78,7 +78,7 @@ export function LogsView({ events, startedAt }: Props) {
 
         {/* Table */}
         <div className="rounded-xl border border-border bg-surface overflow-hidden">
-          <div className="grid grid-cols-[80px_1fr_1.4fr] gap-3 px-4 py-2 border-b border-border text-[10px] uppercase tracking-wider text-content-faint">
+          <div className="grid grid-cols-[80px_1fr_1.4fr] gap-3 px-4 py-2 border-b border-border text-[10px] px-display text-content-faint">
             <span className="text-right">Time</span>
             <span>Event</span>
             <span>Node</span>

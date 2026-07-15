@@ -10,27 +10,33 @@
  *
  * :root holds the DARK theme (default). `.light` on <html> overrides to light.
  * Toggling that class re-themes the entire app, including the graph.
+ *
+ * Scoped to html.light on purpose: ReactFlow v12 puts its own colorMode class
+ * ("light"/"dark") on the .react-flow container, and a bare `.light` selector
+ * would let that flip our tokens inside the graph independently of the theme.
  */
 :root {
-  /* surfaces / elevation */
-  --bg:             9 11 17;
-  --surface:        17 20 28;
-  --surface-hover:  26 31 43;
-  --surface-inset:  13 16 23;
+  /* surfaces / elevation — the sprite office after hours: every value is
+     drawn from the diorama's own palette (officeArt.ts) so the chrome and
+     the pixel scenes read as one world. #241a14 is the art's outline ink. */
+  --bg:             26 19 14;
+  --surface:        36 26 20;
+  --surface-hover:  50 37 28;
+  --surface-inset:  30 22 16;
 
   /* borders */
-  --border:         38 44 58;
-  --border-strong:  55 63 82;
+  --border:         74 55 38;
+  --border-strong:  110 82 55;
 
-  /* text */
-  --content:           233 237 245;
-  --content-muted:     160 170 190;
-  --content-faint:     107 117 137;
-  --content-on-accent: 255 255 255;
+  /* text — chip/paper creams from the diorama */
+  --content:           243 234 217;
+  --content-muted:     206 188 156;
+  --content-faint:     158 138 108;
+  --content-on-accent: 26 19 14;
 
-  /* accent (primary action + selection) */
-  --accent:        99 102 241;
-  --accent-hover:  129 140 248;
+  /* accent — warm office-lamp amber (dark text on it) */
+  --accent:        224 164 74;
+  --accent-hover:  240 184 100;
 
   /* node kinds */
   --kind-agent:  129 140 248;
@@ -43,24 +49,29 @@
   --status-running:  245 158  11;
   --status-success:   34 197  94;
   --status-error:    239  68  68;
+
+  /* pixel-step shadow ink (hard offsets, no blur — see tailwind.config.ts) */
+  --shadow: 0 0 0;
 }
 
-.light {
-  --bg:             246 247 250;
-  --surface:        255 255 255;
-  --surface-hover:  240 242 246;
-  --surface-inset:  240 242 246;
+html.light {
+  /* The office by day: wall cream + paper surfaces, wood borders. */
+  --bg:             238 227 205;
+  --surface:        246 241 230;
+  --surface-hover:  231 216 191;
+  --surface-inset:  241 234 216;
 
-  --border:         224 228 236;
-  --border-strong:  198 206 219;
+  --border:         202 168 116;
+  --border-strong:  156 102 54;
 
-  --content:           24 30 44;
-  --content-muted:     82 92 110;
-  --content-faint:    130 140 158;
-  --content-on-accent: 255 255 255;
+  --content:           58 44 32;
+  --content-muted:     106 84 62;
+  --content-faint:    145 120 94;
+  --content-on-accent: 246 241 230;
 
-  --accent:        79 70 229;
-  --accent-hover:  67 56 202;
+  /* deep amber so the accent still pops on cream */
+  --accent:        158 94 26;
+  --accent-hover:  128 74 18;
 
   --kind-agent:  79 70 229;
   --kind-step:    2 132 199;
@@ -71,6 +82,8 @@
   --status-running:  217 119   6;
   --status-success:   22 163  74;
   --status-error:    220  38  38;
+
+  --shadow: 156 122 84;
 }
 
 * {
@@ -79,9 +92,64 @@
 
 body {
   margin: 0;
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  background: rgb(var(--bg));
+  /* All text is pixel-family: Pixelify Sans for reading text, VT323 for mono
+     (below), Silkscreen for display chrome (.px-display/.px-brand). */
+  font-family: "Pixelify Sans", ui-sans-serif, system-ui, sans-serif;
+  /* Faint checkerboard — the same "yard tile" material as the Office Building,
+     one notch subtler, so the whole app sits on the pixel world's ground. */
+  background:
+    repeating-conic-gradient(rgb(var(--surface-inset) / 0.5) 0% 25%, transparent 0% 50%) 0 0 / 28px 28px,
+    rgb(var(--bg));
   color: rgb(var(--content));
+}
+
+/* ── Pixel chrome (2026-07 reskin) ──────────────────────────────────────────
+ * Hybrid rule: chrome is pixel (Silkscreen display face, square corners,
+ * hard 2px borders + offset shadows, LED squares) — DATA text stays a crisp
+ * sans so traces remain legible. Radius/shadow scales live in tailwind.config. */
+
+/* Display face is uppercase + tracked by definition — one class, used for
+   tabs, headings, badges, section labels. Never for run data. */
+.px-display {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 400;
+}
+
+/* Square, chunky keyboard focus — visible in both themes. */
+:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 1px;
+  border-radius: 0;
+}
+
+/* Pixel scrollbars (WebKit) — square track, blocky thumb. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: rgb(var(--surface-inset)); }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-strong));
+  border: 2px solid rgb(var(--surface-inset));
+}
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--content-faint)); }
+
+::selection { background: rgb(var(--accent) / 0.35); }
+
+/* Pixel terminal face for code-shaped text. VT323 draws small for its em
+   size, so it gets a nudge up to stay readable at the app's text-xs scale. */
+pre, code, kbd, .font-mono {
+  font-family: "VT323", ui-monospace, monospace;
+  font-size: 1.16em;
+  line-height: 1.35;
+}
+
+/* The sidebar brand plate — same idea as the building's rooftop VAPVIZ sign. */
+.px-brand {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em; /* recenters tracked text */
+  color: rgb(var(--accent));
 }
 
 /* ── Theater + Floor (Phase 3, §4-F) — the sprite office ──────────────────

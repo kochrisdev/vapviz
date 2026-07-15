@@ -21,11 +21,11 @@ export function StatusBadge({ status, showLabel = true, className = "" }: Props)
   const Icon = s.icon;
   return (
     <span
-      className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium border ${className}`}
+      className={`inline-flex items-center gap-1.5 text-[9px] px-display px-2 py-0.5 border-2 ${className}`}
       style={{
         color: `rgb(var(${s.token}))`,
         background: `rgb(var(${s.token}) / 0.15)`,
-        borderColor: `rgb(var(${s.token}) / 0.3)`,
+        borderColor: `rgb(var(${s.token}) / 0.45)`,
       }}
     >
       <Icon size={10} className={s.spin ? "animate-spin" : undefined} />

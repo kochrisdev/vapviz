@@ -325,8 +325,7 @@ asyncio.run(main())
 **What you'll see:**
 
 The three `fetch/*` nodes appear as siblings. Because they overlap in real time their start times
-are very close — you can confirm this in the **Logs** tab (the full-width chronological event log,
-Technical mode).
+are very close — you can confirm this in the **Logs** tab (the full-width chronological event log).
 
 > **Tip:** `ContextVar` is coroutine-local, so concurrent `asyncio.gather` tasks each get their
 > own parent-tracking context. The nesting is correct even when tasks are truly concurrent.
@@ -1343,8 +1342,7 @@ and reads the events already streamed for the run, so it works on live and histo
 ## 27. Theater & the Office Building
 
 Where the graph is the analytical view, the **Theater** is the *watchable* one — it turns a run into a
-little pixel "office". Select a run and open the **Theater** tab (it's available in both Simple and
-Technical modes).
+little pixel "office". Select a run and open the **Theater** tab.
 
 - Each agent is a **hand-drawn pixel worker**, recolored deterministically from its name (same
   name → same hair/shirt/skin, every run), with its **name floating overhead** — that's what
@@ -1370,8 +1368,10 @@ Way); when the top floor fills, the app that's been there longest moves down a f
 live — and a coworker walks the move: across the Walk Way, into the Stairs, out of the Door one
 floor below. Every room has a **door** on the Walk Way, and while an app is **running** a coworker
 steps out of its room to mill on that floor's corridor (back inside when it finishes) — so a walker
-on the corridor means real work is happening (a fully-idle floor gets the occasional decorative
-stroll instead; nothing moves under reduced-motion). An app whose latest run **failed** keeps its room — it just **turns red** — while
+on the corridor **always** means real work is happening; a fully-idle floor is an empty corridor
+(nothing moves under reduced-motion). Each floor is drawn as one pixel scene — stone corridor,
+shared walls with a door opening per room, rug, lights, plants and props — and every app's name +
+status light hangs on a **nameplate** by its door. An app whose latest run **failed** keeps its room — it just **turns red** — while
 its agents head up to the shared **Lounge** (the break room at the top-right) to wait: click the
 app's lounge card to inspect the failed run, or **Dismiss** it until that app runs again. The
 lobby board at the base tallies apps working, agents in the lounge, and spend today. Click any

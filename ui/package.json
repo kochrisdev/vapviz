@@ -10,6 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fontsource/pixelify-sans": "^5.2.7",
+    "@fontsource/silkscreen": "^5.2.8",
+    "@fontsource/vt323": "^5.2.7",
     "@xyflow/react": "^12.3.0",
     "dagre": "^0.8.5",
     "html2canvas": "^1.4.1",

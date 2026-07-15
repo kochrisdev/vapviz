@@ -9,17 +9,19 @@ knowledge needed. If you can open a web page, you can use this.
 
 ---
 
-## The two modes: Simple and Technical
+## One app for everyone
 
-At the top-left of the app there's a switch:
+There's no "beginner mode" to pick — everyone sees the same app, and depth is
+opt-in where you need it. A run always opens on its plain-language **Story**;
+the **Theater**, **Graph**, and **Logs** tabs sit right next to it when you
+want to go deeper; and raw JSON stays tucked behind a *"Show technical
+details"* link inside the detail panel until you ask for it. Nothing is
+hidden, nothing is forced on you.
 
-| Mode | Who it's for | What you see |
-|------|--------------|--------------|
-| **Simple** *(default)* | Anyone — PMs, support, stakeholders | A plain-language story of the run. Each step explained in words. |
-| **Technical** | Developers / debugging | Everything in Simple **plus** the visual graph, the raw event log, and the underlying JSON data. |
-
-Your choice is remembered the next time you open the app. Switching modes never changes
-your data — it only changes how much detail is shown.
+> The app wears vapviz's pixel-office look, end to end: chunky borders, square
+> corners, pixel typefaces throughout, and a warm palette taken straight from
+> the pixel office itself — so the app and its little animated scenes feel like
+> one world, in both light and dark themes.
 
 ---
 
@@ -53,7 +55,7 @@ icon in the sidebar header to come back.
 
 ---
 
-## Reading a run in Simple mode
+## Reading a run — the Story tab
 
 Opening a run shows its **Story** — a summary card at the top, then a collapsible list of
 what the agent did:
@@ -73,7 +75,7 @@ English, plus:
 - **Tokens** used and the **cost** (for AI-model steps).
 - The full **conversation** with the model, shown as chat bubbles (who said what).
 - A **"Show technical details"** link — click it if you want to peek at the raw data
-  behind the step. (In Technical mode this is always shown.)
+  behind the step.
 
 Sensitive values like API keys are automatically hidden.
 
@@ -83,8 +85,7 @@ Press **Esc** to close the detail panel.
 
 ## Theater — watch your agents work
 
-The **Theater** tab turns a run into a cozy pixel office. It's available in **both Simple and
-Technical** modes (it's meant for everyone), as a tab at the top of a run.
+The **Theater** tab turns a run into a cozy pixel office — a tab at the top of every run.
 
 - **Each agent is a little pixel worker** with its **name floating above its head**. The same
   agent always gets the same hair, shirt and skin colours, so you learn to recognise your cast —
@@ -144,13 +145,9 @@ its full run history and click any past run to inspect and replay it.
 
 ---
 
-## Technical mode extras
+## Going deeper — the Graph and Logs tabs
 
-Switching to **Technical** keeps everything above and adds the **Graph** and **Logs** tabs (on top of
-Story and Theater):
-
-### Story
-The same narrative as Simple mode.
+Next to Story and Theater, every run also has:
 
 ### Graph
 A visual diagram (flow chart) of the run:
@@ -179,7 +176,7 @@ Your choice is remembered. Everything — including the graph — re-themes toge
 
 ## Exporting & sharing
 
-In Technical mode, the **Export** button (top-right of a run) lets you download the run as
+The **Export** button (top-right of a run) lets you download the run as
 **JSON** (the full data) or a **PNG** image of the graph — handy for sharing or attaching
 to a report.
 
@@ -197,11 +194,11 @@ AI-model calls. `$0` means no billable model calls were recorded.
 
 | I want to… | Do this |
 |------------|---------|
-| See plain-language explanations | Stay in **Simple** mode |
-| See the visual graph or raw data | Switch to **Technical** mode |
+| See plain-language explanations | Open a run — it starts on **Story** |
+| See the visual graph or raw event log | The **Graph** / **Logs** tabs |
 | Understand one step | Click its box → read the detail panel |
 | See the raw JSON for a step | Click **"Show technical details"** |
-| Watch a run as a pixel "office" | Open the **Theater** tab (any mode) |
+| Watch a run as a pixel "office" | Open the **Theater** tab |
 | Monitor all apps working at once | Open the **Office building** (🎭 masks icon, sidebar) |
 | See an app's past runs | Expand the app in the sidebar (▸) → click a run |
 | Clear a failed app from the building | **Dismiss** it in the lounge (returns on its next run) |

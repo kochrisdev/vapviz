@@ -957,7 +957,7 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **`ReplayBar.tsx`** + a Replay toggle in the run header; resets when the selected run changes
 
 ### Phase 15 — Theater & Live Floor (complete)
-- [x] **Theater view** — a watchable per-run view: each agent is a deterministic pixel character (built from its name) that walks to an LLM/tool desk while working, name overhead; live or replayed. A 4th run tab, in both Simple and Technical modes
+- [x] **Theater view** — a watchable per-run view: each agent is a deterministic pixel character (built from its name) that walks to an LLM/tool desk while working, name overhead; live or replayed. A 4th run tab
 - [x] **Pixel-character engine** (`lib/avatar.ts`) + **scene model** (`lib/theater.ts`) + shared **`AgentStage.tsx`** room/walking renderer
 - [x] **Live Floor** (`FloorView.tsx`, sidebar 🎭) — every active/recent run as a soft zone on one office floor, each a live `AgentStage`; polls existing endpoints, no backend change
 - [x] **LangGraph cast** — additive `langgraph_node` marker in the LangChain integration so multi-agent graphs show their real agents (supervisor / workers)

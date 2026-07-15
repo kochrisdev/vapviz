@@ -2,6 +2,16 @@
 
 Mirrors the backend. Vite + React + Zustand + ReactFlow (`@xyflow/react`).
 
+**Pixel look (2026-07-15):** the whole app lives in the office's world — theme tokens
+are DERIVED FROM THE DIORAMA PALETTE (`officeArt.ts` hexes; dark = office after hours,
+light = office by day), all type is pixel-family (Silkscreen display via
+`px-display`/`px-brand`, Pixelify Sans body, VT323 mono — all @fontsource, imported in
+`main.tsx`), square corners + hard-offset shadows via the `borderRadius`/`boxShadow`
+scale OVERRIDES in `tailwind.config.ts`. Backgrounds stay simple (subtle tile, never
+imagery). Theme tokens are scoped `html.light` (ReactFlow's own colorMode class would
+hijack a bare `.light`). There is NO Simple/Technical mode — one adaptive UI, raw JSON
+behind the detail panel's expander. Rules in the `vapviz-design` skill.
+
 - `store/runStore.ts` — Zustand store; the pure `applyEventToGraph` + `totalLlmCost` re-implement the backend's reduction (the store's `applyEvent` just calls them).
 - `hooks/useRunStream.ts` — one `EventSource` per selected run; `RunList` polls `/runs` ~3s.
 - `components/RunList.tsx` — **app-grouped sidebar**: groups runs into apps via `lib/building.ts`'s `appKey`/`groupApps` (key = `app_id ?? label`); expand an app → run-history rows (select → inspect/replay).

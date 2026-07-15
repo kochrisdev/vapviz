@@ -37,7 +37,7 @@ function StatCard({ side, graph }: { side: "A" | "B"; graph: RunGraph }) {
 
   return (
     <div className="flex-1 space-y-1">
-      <div className={`text-[10px] uppercase tracking-wider font-semibold ${color}`}>Run {side}</div>
+      <div className={`text-[10px] px-display ${color}`}>Run {side}</div>
       <div className="text-sm font-medium text-content truncate">{graph.label}</div>
       <div className="flex flex-wrap gap-2 text-xs text-content-muted">
         <span
@@ -127,7 +127,7 @@ export function RunComparison({ runIdA, runIdB, labelA, labelB, onClose }: Props
 
         {/* Diff pill */}
         <div className="flex flex-col items-center gap-1.5 px-3 text-center shrink-0">
-          <div className="text-[10px] uppercase tracking-wider text-content-faint">Diff</div>
+          <div className="text-[10px] px-display text-content-faint">Diff</div>
           <div className="flex gap-2 text-xs flex-wrap justify-center">
             {common.length > 0 && <span className="text-content-muted">{common.length} common</span>}
             {onlyA.length > 0 && <span className="text-kind-step">{onlyA.length} only A</span>}
