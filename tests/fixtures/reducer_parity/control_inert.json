@@ -1,0 +1,24 @@
+{
+  "name": "control_inert",
+  "description": "the 'control' audit event (pause/resume) is inert in both reducers — it must not create nodes or change status; the run finishes as a normal success",
+  "events": [
+    {"id": "e1", "run_id": "r4", "timestamp": 4000, "type": "agent_start", "node_id": "a1", "node_kind": "agent", "node_label": "Steady Agent", "parent_id": null, "data": {}},
+    {"id": "e2", "run_id": "r4", "timestamp": 4001, "type": "control", "node_id": "a1", "node_kind": "agent", "node_label": "Steady Agent", "parent_id": null, "data": {"action": "pause"}},
+    {"id": "e3", "run_id": "r4", "timestamp": 4002, "type": "step_start", "node_id": "s1", "node_kind": "step", "node_label": "work", "parent_id": "a1", "data": {}},
+    {"id": "e4", "run_id": "r4", "timestamp": 4003, "type": "control", "node_id": "a1", "node_kind": "agent", "node_label": "Steady Agent", "parent_id": null, "data": {"action": "resume"}},
+    {"id": "e5", "run_id": "r4", "timestamp": 4004, "type": "step_end", "node_id": "s1", "node_kind": "step", "node_label": "work", "parent_id": "a1", "data": {}},
+    {"id": "e6", "run_id": "r4", "timestamp": 4005, "type": "agent_end", "node_id": "a1", "node_kind": "agent", "node_label": "Steady Agent", "parent_id": null, "data": {}}
+  ],
+  "expected": {
+    "status": "success",
+    "ended_at": 4005,
+    "nodes": [
+      {"id": "a1", "kind": "agent", "label": "Steady Agent", "status": "success", "parent_id": null, "started_at": 4000, "ended_at": 4005},
+      {"id": "s1", "kind": "step", "label": "work", "status": "success", "parent_id": "a1", "started_at": 4002, "ended_at": 4004}
+    ],
+    "edges": [
+      {"id": "a1→s1", "source": "a1", "target": "s1"}
+    ],
+    "total_cost_usd": null
+  }
+}

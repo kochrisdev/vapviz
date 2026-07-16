@@ -13,6 +13,10 @@ export interface RunState {
 
 export type View = "runs" | "dashboard" | "floor";
 
+/** Per-run tabs inside the run viewer (App.tsx). Lives here so callers of
+ *  `selectRun` (e.g. the floor view) can request which tab to land on. */
+export type RunTab = "story" | "theater" | "graph" | "logs";
+
 interface Store {
   runs: RunSummary[];
   selectedRunId: string | null;
@@ -20,9 +24,12 @@ interface Store {
   selectedNodeId: string | null;
   compareRunId: string | null;
   view: View;
+  // Which per-run tab to open on the next run selection ("story" unless a
+  // caller asked otherwise, e.g. a floor-view room click → "theater").
+  entryTab: RunTab;
 
   setRuns: (runs: RunSummary[]) => void;
-  selectRun: (runId: string | null) => void;
+  selectRun: (runId: string | null, tab?: RunTab) => void;
   selectNode: (nodeId: string | null) => void;
   applyEvent: (event: VapEvent) => void;
   setRunGraph: (runId: string, nodes: GraphNode[], edges: GraphEdge[], label: string, status: NodeStatus, started_at: number, ended_at: number | null) => void;
@@ -76,13 +83,16 @@ export function applyEventToGraph(prev: GraphState, event: VapEvent): GraphState
       }
     }
   } else if (END_TYPES.has(event.type)) {
+    // DUAL-LOGIC: mirrors `_terminal_status` in vapviz/store.py. `error` wins
+    // over `stopped`; a user-stopped node/run carries `stopped` and no `error`.
+    const terminal: NodeStatus = event.data.error ? "error" : event.data.stopped ? "stopped" : "success";
     nodes = nodes.map((n) =>
       n.id === event.node_id
-        ? { ...n, status: event.data.error ? "error" : "success", ended_at: event.timestamp, data: { ...n.data, ...event.data } }
+        ? { ...n, status: terminal, ended_at: event.timestamp, data: { ...n.data, ...event.data } }
         : n
     );
     if (event.type === "agent_end") {
-      status = event.data.error ? "error" : "success";
+      status = terminal;
       ended_at = event.timestamp;
     }
   } else if (event.type === "error") {
@@ -113,11 +123,14 @@ export const useRunStore = create<Store>((set) => ({
   // The global analytics Dashboard is the default landing view — the first
   // thing users see. Selecting a run switches to the per-run view.
   view: "dashboard",
+  entryTab: "story",
 
   setRuns: (runs) => set({ runs }),
 
-  // Selecting a run always returns to the run (graph) view
-  selectRun: (runId) => set({ selectedRunId: runId, selectedNodeId: null, compareRunId: null, view: "runs" }),
+  // Selecting a run switches to the per-run view. `tab` picks the landing tab
+  // (default "story"); the run viewer reads `entryTab` on the run change.
+  selectRun: (runId, tab = "story") =>
+    set({ selectedRunId: runId, selectedNodeId: null, compareRunId: null, view: "runs", entryTab: tab }),
 
   selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 

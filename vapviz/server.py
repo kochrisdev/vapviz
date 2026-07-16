@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import time
+import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -11,15 +13,30 @@ from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 
 from .budgets import Budget, BudgetReport, check_budget
+from .control import ACTION_TO_DESIRED
 from .evals import EvalResult, run_checks
-from .events import RunGraph, RunSummary, VapEvent
+from .events import EventType, NodeKind, NodeStatus, RunGraph, RunSummary, VapEvent
 from .metrics import Metrics, compute_metrics
 from .search import run_matches
 from .store import RunStore, default_store
 
+# Terminal run statuses — control is a no-op once a run has ended.
+_TERMINAL = {NodeStatus.SUCCESS, NodeStatus.ERROR, NodeStatus.STOPPED}
+
 
 class TagUpdate(BaseModel):
     tags: list[str]
+
+
+class ControlCommand(BaseModel):
+    action: str  # "pause" | "resume" | "stop"
+
+
+class RunControlOut(BaseModel):
+    desired: str
+    acked: str
+    updated_at: float
+    ended: bool = False  # true when the run already terminated (control was a no-op)
 
 
 def create_app(store: RunStore | None = None, static_dir: str | None = None) -> FastAPI:
@@ -210,6 +227,61 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
             raise HTTPException(status_code=400, detail="run_id mismatch")
         _store.add_event(event)
         return {"ok": True}
+
+    # ------------------------------------------------------------------
+    # Live run control (Pause / Resume / Stop) — the return lane.
+    # In-process agents obey it at each step checkpoint (see tracer.py). The
+    # live latch is a side channel (NOT the event log); each action also emits
+    # an inert `control` audit event so it shows in the timeline. See
+    # docs/notes/DESIGN-agent-control.md.
+    # ------------------------------------------------------------------
+
+    @app.get("/runs/{run_id}/control", response_model=RunControlOut)
+    async def read_control(run_id: str):
+        """Current control latch — the UI polls this to render pausing…/paused."""
+        summary = _store.get_run(run_id)
+        if not summary:
+            raise HTTPException(status_code=404, detail="Run not found")
+        c = _store.get_control(run_id)
+        return RunControlOut(
+            desired=c.desired, acked=c.acked, updated_at=c.updated_at,
+            ended=summary.status in _TERMINAL,
+        )
+
+    @app.post("/runs/{run_id}/control", response_model=RunControlOut)
+    async def send_control(run_id: str, cmd: ControlCommand):
+        """Pause / resume / stop a live in-process run."""
+        summary = _store.get_run(run_id)
+        if not summary:
+            raise HTTPException(status_code=404, detail="Run not found")
+        desired = ACTION_TO_DESIRED.get(cmd.action)
+        if desired is None:
+            raise HTTPException(status_code=422, detail=f"invalid action: {cmd.action!r}")
+
+        # No-op on an already-ended run — nothing live to control.
+        if summary.status in _TERMINAL:
+            c = _store.get_control(run_id)
+            return RunControlOut(desired=c.desired, acked=c.acked, updated_at=c.updated_at, ended=True)
+
+        c = _store.set_desired(run_id, desired)
+
+        # Inert audit marker for the Logs/Story timeline (ignored by the reducers).
+        graph = _store.get_graph(run_id)
+        root_id = graph.nodes[0].id if graph and graph.nodes else run_id
+        _store.add_event(
+            VapEvent(
+                id=uuid.uuid4().hex[:12],
+                run_id=run_id,
+                timestamp=time.time(),
+                type=EventType.CONTROL,
+                node_id=root_id,
+                node_kind=NodeKind.AGENT,
+                node_label=summary.label,
+                parent_id=None,
+                data={"action": cmd.action},
+            )
+        )
+        return RunControlOut(desired=c.desired, acked=c.acked, updated_at=c.updated_at, ended=False)
 
     # ------------------------------------------------------------------
     # Deletion

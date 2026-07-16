@@ -69,6 +69,7 @@ export default {
           running: token("--status-running"),
           success: token("--status-success"),
           error: token("--status-error"),
+          stopped: token("--status-stopped"),
         },
       },
     },

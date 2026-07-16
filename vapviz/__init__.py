@@ -1,4 +1,5 @@
 from .tracer import trace, atrace, get_current_step, Tracer, RunContext
+from .control import VapStopped
 from .store import default_store, RunStore, MemoryStore
 from .server import create_app, app
 from .integrations.anthropic_sdk import patch_anthropic
@@ -65,6 +66,8 @@ __all__ = [
     "get_current_step",
     "Tracer",
     "RunContext",
+    # Control (Pause / Resume / Stop)
+    "VapStopped",
     # Store
     "default_store",
     "RunStore",

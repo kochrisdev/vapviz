@@ -23,6 +23,7 @@ const STATUS_DOT: Record<NodeStatus, { token: string; pulse?: boolean }> = {
   running: { token: "--status-running", pulse: true },
   success: { token: "--status-success" },
   error: { token: "--status-error" },
+  stopped: { token: "--status-stopped" },
 };
 
 function fmt(ts: number) {

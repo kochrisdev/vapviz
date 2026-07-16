@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+import threading
 from pathlib import Path
 from threading import Lock
 from typing import Optional
 
+from ..control import RunControl
 from ..events import (
     EventType,
     NodeStatus,
@@ -74,6 +76,8 @@ class SqliteStore(RunStore):
         self._tags: dict[str, list[str]] = {}
         self._event_ids: dict[str, set[str]] = {}   # run_id -> set of event IDs for dedup
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
+        self._control: dict[str, RunControl] = {}            # live pause/stop latch (ephemeral, not persisted)
+        self._control_wake: dict[str, threading.Event] = {}  # per-run wake for parked agents
         self._lock = Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -255,6 +259,8 @@ class SqliteStore(RunStore):
             self._graphs.pop(run_id, None)
             self._event_ids.pop(run_id, None)
             self._tags.pop(run_id, None)
+            self._control.pop(run_id, None)
+            self._control_wake.pop(run_id, None)
             self._conn.execute("DELETE FROM events WHERE run_id = ?", (run_id,))
             self._conn.execute("DELETE FROM tags WHERE run_id = ?", (run_id,))
             self._conn.commit()
@@ -265,6 +271,8 @@ class SqliteStore(RunStore):
             self._graphs.clear()
             self._event_ids.clear()
             self._tags.clear()
+            self._control.clear()
+            self._control_wake.clear()
             self._conn.execute("DELETE FROM events")
             self._conn.execute("DELETE FROM tags")
             self._conn.commit()

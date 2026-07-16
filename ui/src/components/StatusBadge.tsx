@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, Loader2, XCircle, type LucideIcon } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, OctagonX, XCircle, type LucideIcon } from "lucide-react";
 import type { NodeStatus } from "../types/events";
 
 // Status is always colour + icon so it stays colourblind-safe.
@@ -7,6 +7,7 @@ const STATUS: Record<NodeStatus, { token: string; icon: LucideIcon; label: strin
   running: { token: "--status-running", icon: Loader2, label: "running", spin: true },
   success: { token: "--status-success", icon: CheckCircle2, label: "success" },
   error: { token: "--status-error", icon: XCircle, label: "error" },
+  stopped: { token: "--status-stopped", icon: OctagonX, label: "stopped" },
 };
 
 interface Props {

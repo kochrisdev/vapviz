@@ -52,6 +52,8 @@ This document describes the internal design of the Visualization Agentic Process
 │  GET    /runs/{id}/export      → RunGraph JSON file download        │
 │  GET    /runs/{id}/events      → SSE stream (replay + live)         │
 │  POST   /runs/{id}/events      → remote event ingest                │
+│  GET    /runs/{id}/control     → control latch (desired + acked)    │
+│  POST   /runs/{id}/control     → pause / resume / stop a live run   │
 │  DELETE /runs                  → clear all runs                     │
 │  DELETE /runs/{id}             → delete one run                     │
 └──────────────────────────┬───────────────────────────────────────────┘
@@ -103,15 +105,18 @@ Each node kind has a symmetric open/close pair:
 | `llm_call` | `llm_response` | `llm` |
 | — | `error` | any (replaces close) |
 
-The `state_update` event is freestanding — it doesn't open/close a node, it updates metadata on the nearest parent node.
+Two event types are freestanding — they don't open/close a node:
+
+- `state_update` — updates metadata on the nearest parent node (currently inert in the graph reducers).
+- `control` — an inert audit marker emitted by the server when a user pauses/resumes/stops a run (see [Control channel](#control-channel-pause--resume--stop)). It appears in the timeline (Logs) but produces **no** graph change in either reducer — a parity fixture (`control_inert.json`) asserts both reducers ignore it identically.
 
 ### Graph construction
 
 The store builds a `RunGraph` incrementally as events arrive via the shared pure function `_apply_event_to_graph(graph, event)`:
 
 - **Open event** → add `GraphNode` with `status: running`; if `parent_id` exists, add a `GraphEdge`
-- **Close event** → update the matching node's `status` to `success` or `error`, set `ended_at`, merge `data`
-- **`agent_end`** → also updates the top-level `RunGraph.status` and `RunGraph.ended_at`
+- **Close event** → update the matching node's terminal `status`, set `ended_at`, merge `data`. Status is derived by `_terminal_status(data)`: `error` in the data → `error`; else `stopped: true` in the data → `stopped` (the run was halted by user control — see [Control channel](#control-channel-pause--resume--stop)); else `success`. `error` always wins — a crash is a crash even if a stop was pending.
+- **`agent_end`** → also updates the top-level `RunGraph.status` and `RunGraph.ended_at` (same `_terminal_status` rule)
 
 This logic is extracted into a standalone pure function so both `MemoryStore` and `SqliteStore` share identical graph-building behaviour without inheritance.
 
@@ -461,6 +466,53 @@ def configure(db: str | None = None) -> None:
 ```
 
 The `sys.modules[__name__]` trick is needed because Python's import machinery creates a binding in `vapviz.__init__` at import time (`from .store import default_store`). Simply reassigning `_sm.default_store` would leave the `vapviz.default_store` name pointing at the old object. Writing through `sys.modules` updates both bindings atomically from the caller's perspective.
+
+---
+
+## Control channel (Pause / Resume / Stop)
+
+Everything above describes a **one-directional** system: the agent talks, vapviz listens and draws. The control channel (`vapviz/control.py`) is the **return lane** — the only place data flows *back* from the UI toward the agent. It lets a user pause, resume, or stop a live **in-process** run (agent and server sharing one Python process, as in `run_dev.py`).
+
+**The one hard constraint that shapes the whole design:** vapviz observes; it does not drive. The agent's code runs in *its own* call stack — vapviz only sees it when the agent passes through the tracer's context managers. So control must be **cooperative**: the tracer checks a per-run "mailbox" at the top of every `step`/`astep` (the turnstiles the agent already walks through) and obeys what it finds. It is a polite halt at the next checkpoint, never a force-kill. An agent stuck inside one long tool call won't react until it next enters a step, and an agent with no sub-steps has no checkpoints at all — both are documented limits, surfaced honestly in the UI as "pausing…" / "stopping…".
+
+```
+   ┌────────── existing one-way event lane (unchanged) ──────────┐
+   │  agent → Tracer → RunStore → SSE → UI  (VapEvent history)   │
+   └──────────────────────────────────────────────────────────────┘
+
+   ┌────────── the return lane ───────────────────────────────────┐
+   │  UI  ──POST /runs/{id}/control {action}──►  RunStore         │
+   │        (Pause/Resume/Stop buttons)         (control latch)   │
+   │                                                  │           │
+   │  UI  ◄─GET /runs/{id}/control (poll ~1s)──  desired + acked  │
+   │        (renders "pausing…/paused/stopping…")     ▲           │
+   │                                                  │           │
+   │  Tracer checkpoint at each step/astep enter ─────┘           │
+   │        reads latch → parks, or raises VapStopped             │
+   └───────────────────────────────────────────────────────────────┘
+```
+
+**The latch (`RunControl`)** is a tiny per-run record with two fields whose *difference* is the point: `desired` (what the user asked for, written by the server) and `acked` (what the agent has actually done, written by the tracer at a checkpoint). The gap between them is the honest cooperative lag the UI renders — `desired=paused, acked=running` is "pausing…"; when they agree it's "paused".
+
+**Where the latch lives — a side channel, deliberately.** `desired`/`acked` is mutable, ephemeral state (a request about what to do *next*), a poor fit for the append-only event log. So it sits in the store as plain in-memory state guarded by the existing `self._lock`, exactly like tags: concrete methods `get_control` / `set_desired` / `set_ack` on the `RunStore` ABC, backed by a `self._control` dict in both `MemoryStore` and `SqliteStore`. It is **never fed to the graph reducers and never persisted** — even for SQLite, on purpose: a restarted server has no live agent left to control, so there is nothing meaningful to restore (and no DB migration needed).
+
+**Exactly two things do ride the event lane** (and therefore pay the dual-logic tax — see the parity-test note below):
+
+1. **The inert `control` audit event.** Each successful control action makes the server emit a `control` event (`data: {action: "pause"|"resume"|"stop"}`) through the normal `add_event` path, so "⏸ Paused by user" appears live in the Logs timeline and persists with the run. Both reducers ignore it completely (like `state_update`); the `control_inert.json` parity fixture enforces that.
+2. **The first-class `stopped` status.** A user-stopped run terminates with `agent_end` carrying `data={stopped: true, error_type: "VapStopped"}` and **no `error` key** — so both reducers derive the terminal status `stopped` (not a success, not a crash) via the shared `_terminal_status` rule, and every status-keyed surface (badges, run list, building rooms, metrics) renders it as its own neutral state. The `stopped_run.json` parity fixture enforces agreement.
+
+**Tracer checkpoints.** `_check_control` (sync) and `_acheck_control` (async) run as the *first* line of `step`/`astep`, before the child node's start event — so a pause parks the agent cleanly *between* steps (never mid-tool-call), and a stop raises before the next step ever appears. The two variants exist because parking must not freeze the wrong thing:
+
+- **Sync agent** (own thread): blocks on a per-run `threading.Event` with a `CONTROL_POLL` (0.1 s) timeout. `set_desired` `.set()`s the event so resume is effectively instant; the timeout is only a safety re-poll bounding worst-case latency if a wake is ever missed. The server's asyncio loop keeps serving throughout — only the agent's thread is parked.
+- **Async agent** (sharing the server's event loop): `await asyncio.sleep(CONTROL_POLL)` in a loop, yielding so the very Resume request that will unpause it can be served.
+
+**Stop = a real exception.** When `desired == "stopped"`, the checkpoint raises `VapStopped(run_id)` (exported as `vapviz.VapStopped`). Each open `step`/`astep` catches it, closes its node with `stopped: true` (not an error), and re-raises; `trace`/`atrace` end the run as stopped and re-raise again so the agent's own code genuinely unwinds and halts. An author who wants a graceful shutdown can `except vapviz.VapStopped:` at their top level.
+
+**Server endpoints.** `GET /runs/{id}/control` returns the latch (+ `ended: true` when the run is terminal — the UI hides the bar). `POST /runs/{id}/control` validates the action (`pause`/`resume`/`stop`, 422 otherwise), no-ops with `ended: true` on already-terminal runs, maps the action to a desired state, and emits the audit event.
+
+**UI.** `RunControlBar.tsx` (Theater tab, live runs only) polls `GET /control` every 1 s and posts actions; the branchy state table lives in the pure, unit-tested `lib/runControl.ts` (`controlUiState(desired, acked, runStatus)` → banner + buttons). This latch-side UI state is **not** part of the dual-logic rule — only the `stopped` status and the `control` event type are.
+
+**Current scope and deferred layers:** this is Layer 1 — lifecycle control of in-process agents. Deferred by design: message injection / task prompting (Layer 2, plus a `vapviz.checkpoint()` escape hatch for step-less long loops), retry/re-run (Layer 3), and cross-process control for remote-ingest agents, whose tracers cannot see the server's in-memory latch (Layer 4).
 
 ---
 
@@ -1105,6 +1157,18 @@ Spans follow OpenTelemetry's GenAI semantic conventions where they apply
 2. **`vapviz/tracer.py`** — add the start/end `EventType` mappings in the `_start_event` / `_end_event` helpers
 3. **`ui/src/components/AgentGraph.tsx`** — add a colour entry to `KIND_BG`
 4. **`ui/src/types/events.ts`** — add the string literal to the `NodeKind` union
+
+### Adding a new event type or node status
+
+Both are **dual-logic** touches — the Python and TypeScript halves must move together, and the parity test enforces it:
+
+1. **`vapviz/events.py`** ↔ **`ui/src/types/events.ts`** — add the `EventType` / `NodeStatus` value to both.
+2. **Both reducers** — `_apply_event_to_graph` (`vapviz/store.py`) ↔ `applyEventToGraph` (`ui/src/store/runStore.ts`): implement identical behaviour, including "deliberately inert" (an event that changes nothing, like `state_update` / `control`, still needs a fixture proving both sides ignore it). The replay scrubber's `buildGraphAt` (`ui/src/lib/replay.ts`) is a third, nodes-only copy of the reduction — the parity test replays the fixtures through it too.
+3. **A parity fixture** — drop a JSON case in `tests/fixtures/reducer_parity/`; both test halves pick it up automatically.
+3a. **The SSE listener list** — `ui/src/hooks/useRunStream.ts` registers a listener per event type (unlistened SSE named events are dropped silently); its list is `satisfies Record<EventType, …>`, so the compiler flags the omission.
+4. **For a new status:** every `Record<NodeStatus, …>` map in the UI (StatusBadge, BuildingView's dot map, AgentGraph borders, …) — the TS compiler lists them for you — plus `vapviz/metrics.py` (which counts runs by status) and the status clauses in `vapviz/summary.py` ↔ `ui/src/lib/summary.ts`.
+
+The `stopped` status added with the control channel is the worked example of this checklist. Note the boundary: the control **latch** (`RunControl`, `lib/runControl.ts`) is a side channel and UI state respectively — *not* part of the dual-logic rule; only what rides the event lane is.
 
 ### Adding a new integration
 

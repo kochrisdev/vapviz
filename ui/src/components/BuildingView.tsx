@@ -60,6 +60,7 @@ const DOT: Record<NodeStatus, string> = {
   success: "bg-status-success",
   error: "bg-status-error",
   pending: "bg-status-pending",
+  stopped: "bg-status-stopped",
 };
 
 /** A floor room: an app's home. Renders its current run's office diorama. */
@@ -81,7 +82,7 @@ function RoomTile({
       data-appkey={room.appKey}
       style={{ gridArea: `r${slot}` }}
     >
-      <button onClick={onOpen} title="Open this app's current run" className="w-full text-left">
+      <button onClick={onOpen} title="Open this app's current run in Theater" className="w-full text-left">
         <div className="vt-room-stage">
           <OfficeStage nodes={nodes} compact />
         </div>
@@ -476,7 +477,7 @@ export function BuildingView() {
                       slot={i}
                       room={room}
                       nodes={nodesByRun[room.currentRunId] ?? []}
-                      onOpen={() => selectRun(room.currentRunId)}
+                      onOpen={() => selectRun(room.currentRunId, "theater")}
                     />
                   ) : (
                     <div

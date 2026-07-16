@@ -15,6 +15,7 @@ class EventType(str, Enum):
     LLM_CALL = "llm_call"
     LLM_RESPONSE = "llm_response"
     STATE_UPDATE = "state_update"
+    CONTROL = "control"  # inert audit marker (pause/resume/stop); ignored by the graph reducers
     ERROR = "error"
 
 
@@ -30,6 +31,7 @@ class NodeStatus(str, Enum):
     RUNNING = "running"
     SUCCESS = "success"
     ERROR = "error"
+    STOPPED = "stopped"  # terminal: halted by user control (not a success, not a crash)
 
 
 class VapEvent(BaseModel):

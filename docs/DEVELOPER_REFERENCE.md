@@ -464,6 +464,29 @@ The app wires `store.set_loop()` in its `lifespan` startup handler and calls `st
 
 ---
 
+#### `vapviz.VapStopped`
+
+Exception raised inside a traced agent when the run is **stopped from the UI** (or via `POST /runs/{id}/control`). Defined in `vapviz/control.py`; exported at package level.
+
+```python
+class VapStopped(Exception):
+    run_id: str
+```
+
+The tracer raises it at the run's next `step`/`astep` entry ("checkpoint"), so the agent's own call stack unwinds and the code genuinely halts — vapviz never force-kills. Open nodes close with `stopped: true` (not an error) and the run ends with status `"stopped"`. Catch it at your top level for a graceful shutdown:
+
+```python
+try:
+    with vapviz.trace("my agent") as run:
+        ...
+except vapviz.VapStopped:
+    cleanup()
+```
+
+Control only reaches **in-process** agents (agent + server in one Python process); remote-ingest tracers can't see the server's in-memory control latch. See [ARCHITECTURE → Control channel](ARCHITECTURE.md#control-channel-pause--resume--stop) and the [`/control` endpoints](#get--post-runsrun_idcontrol).
+
+---
+
 ### Tracer
 
 `vapviz.Tracer` is the class underlying the module-level `trace` / `atrace` functions. Use it when you need an isolated tracer with its own store (e.g. in tests).
@@ -623,6 +646,16 @@ from vapviz.store import RunStore
 | `clear` | `() -> None` | Remove all runs. |
 | `subscribe` | `(run_id: str) -> asyncio.Queue` | Queue for live SSE events. |
 | `unsubscribe` | `(run_id: str, q: asyncio.Queue) -> None` | Remove queue from subscriber list. |
+
+The ABC also provides three **concrete** control-latch methods (used by the [control endpoints](#get--post-runsrun_idcontrol) and the tracer's checkpoints; both built-in stores inherit them):
+
+| Method | Signature | Description |
+|---|---|---|
+| `get_control` | `(run_id: str) -> RunControl` | Snapshot of the run's live control latch (`desired`, `acked`, `updated_at`); defaults to `running`. |
+| `set_desired` | `(run_id: str, desired: str) -> RunControl` | Record what the user asked for (`running`/`paused`/`stopped`) and wake a parked agent. Called by the server. |
+| `set_ack` | `(run_id: str, acked: str) -> None` | Record what the agent actually did at a checkpoint. Called by the tracer. |
+
+The latch is ephemeral in-memory state — never persisted (even by `SqliteStore`) and never part of the event log or graph.
 
 ---
 
@@ -787,6 +820,7 @@ All enums extend `str, Enum` — their `.value` is the wire string.
 | `LLM_CALL` | `"llm_call"` | `step()` enter with kind=llm; Anthropic patch enter |
 | `LLM_RESPONSE` | `"llm_response"` | `step()` exit with kind=llm; Anthropic patch exit |
 | `STATE_UPDATE` | `"state_update"` | Freestanding state metadata event |
+| `CONTROL` | `"control"` | Freestanding audit marker (`data.action`: pause/resume/stop) emitted by `POST /runs/{id}/control`; ignored by both graph reducers |
 | `ERROR` | `"error"` | Any unhandled exception inside a step block |
 
 #### `NodeKind`
@@ -806,6 +840,7 @@ All enums extend `str, Enum` — their `.value` is the wire string.
 | `RUNNING` | `"running"` | Open event received, no close yet |
 | `SUCCESS` | `"success"` | Close event received without error |
 | `ERROR` | `"error"` | Error event received |
+| `STOPPED` | `"stopped"` | Terminal: halted by user control (close event carried `stopped: true`, no error). Neither a success nor a failure — excluded from metrics' success/error counts |
 
 ---
 
@@ -1490,6 +1525,33 @@ Ingest an event from a remote process or out-of-process tracer.
 
 ---
 
+### `GET` / `POST /runs/{run_id}/control`
+
+Live run control (Pause / Resume / Stop) for **in-process** agents — the tracer obeys the latch cooperatively at each `step`/`astep` entry. See [ARCHITECTURE → Control channel](ARCHITECTURE.md#control-channel-pause--resume--stop).
+
+**`GET`** returns the run's control latch. The UI polls this ~1 s while a run is live:
+
+```json
+{"desired": "paused", "acked": "running", "updated_at": 1752641200.5, "ended": false}
+```
+
+`desired` = what the user asked for; `acked` = what the agent has actually done at its last checkpoint (the gap is the cooperative lag — here, "pausing…"). `ended: true` means the run is already terminal.
+
+**`POST`** sends a command:
+
+```json
+{"action": "pause"}
+```
+
+- `action` must be `"pause"`, `"resume"`, or `"stop"` — otherwise `422`.
+- On a live run: sets `desired`, emits an inert `control` audit event into the run's timeline, and returns the updated latch (`200`).
+- On an already-ended run: no-op; returns the latch with `"ended": true`.
+- Unknown run: `404` (both verbs).
+
+A stopped agent sees `vapviz.VapStopped` raised at its next checkpoint; the run terminates with status `"stopped"`.
+
+---
+
 ### `DELETE /runs/{run_id}`
 
 Delete a single run and all its events.
@@ -1674,6 +1736,7 @@ type EventType =
   | "tool_call"   | "tool_result"
   | "llm_call"    | "llm_response"
   | "state_update"
+  | "control"     // inert audit marker (pause/resume/stop); ignored by the reducer
   | "error";
 ```
 
@@ -1686,7 +1749,7 @@ type NodeKind = "agent" | "step" | "tool" | "llm";
 ### `NodeStatus`
 
 ```typescript
-type NodeStatus = "pending" | "running" | "success" | "error";
+type NodeStatus = "pending" | "running" | "success" | "error" | "stopped";
 ```
 
 ### `VapEvent`
@@ -1770,6 +1833,8 @@ interface RunGraph {
 
 ### Unreleased
 
+- **Live run control (Pause / Resume / Stop, in-process)** — new `vapviz/control.py` (`RunControl` latch, `VapStopped`, action/state constants); concrete `get_control` / `set_desired` / `set_ack` methods on the `RunStore` ABC (ephemeral in-memory latch, never persisted); cooperative tracer checkpoints at every `step`/`astep` entry (`_check_control` sync / `_acheck_control` async — pause parks between steps, stop raises `VapStopped`, open nodes close with `stopped: true`); `GET`/`POST /runs/{id}/control` endpoints (422 on bad action, no-op + `ended: true` on terminal runs, emits an inert `control` audit event); new `EventType.CONTROL` and **first-class `NodeStatus.STOPPED`** through both graph reducers (`_terminal_status`: error > stopped > success; parity fixtures `stopped_run.json` + `control_inert.json`); stopped runs excluded from metrics' success/error counts; UI `RunControlBar.tsx` (Theater tab, polls the latch ~1 s) with the pure `lib/runControl.ts` state table; Logs renders control events ("Paused by user"). `vapviz.VapStopped` exported. In-process agents only.
+- **Room click → Theater** — `selectRun(runId, tab?)` gains an optional landing-tab parameter (stored as `entryTab` in the Zustand store); the Office Building's room tiles pass `"theater"` so clicking a room opens the live office scene (lounge cards still open Story).
 - **`app_id` run identity** — `vapviz.trace()` / `atrace()` (and `RunContext`) accept an optional `app_id: str | None`, a stable pipeline identity carried in the `agent_start` event's `data` (additive — no event→graph reduction change) and surfaced as `RunSummary.app_id` (Pydantic + TS mirror; also on `RunGraph`, set at run creation). The UI groups runs into apps by `app_id ?? label`.
 - **Office Building (UI)** — the global monitor (`ui/src/components/BuildingView.tsx`, sidebar 🎭) is keyed to apps (app = room, agent = stable desk; grouping key `app_id ?? label`), 6 rooms per floor with a descent cascade when the top floor fills. Pure placement reducer in `ui/src/lib/building.ts` (`appKey` / `groupApps` / `buildBuilding`, unit-tested). The sidebar (`RunList.tsx`) lists apps with expandable per-run history rows (select → inspect/replay). *(Supersedes the interim run-keyed `FloorView.tsx`, added and retired within this unreleased window.)*
 - **The visual Office Building (UI, Phase 4b)** — the Building renders as an actual building: CSS shell (roof + `VAPVIZ` sign, floor slabs, lobby with a live directory board), each floor a **2×3 room grid around a central Walk Way** with a **Door/Stairs** descent column, the shared **Lounge** on the top floor's east side (hand-authored break-room diorama, `ui/src/lib/loungeArt.ts` + `ui/src/components/LoungeStage.tsx`; solid east wall + windows on floors below). Reconciliation in `building.ts`: a failed app's room now **stays in place (red)** and the app is surfaced in `Building.lounge` (replaces the removed-into-`incidentHall` behavior); one recolored worker per lounged app idles at a distinct break-room activity. Transitions animate on the **walk overlay** (`ui/src/lib/walkOverlay.ts`, a sprite canvas above the room grid): descents walk room → Walk Way → Stairs (vanish) → Door below → room; failures walk room → lounge; FLIP remains the fallback for moves the overlay doesn't take, and `prefers-reduced-motion` snaps everything. Inspect + dismiss stay on the lounge cards (dismissed failed run ids in `localStorage["vapviz.dismissed"]`, pruned against the live roster).

@@ -11,15 +11,14 @@ import { ExportMenu } from "./components/ExportMenu";
 import { NodeDetail } from "./components/NodeDetail";
 import { ReplayBar } from "./components/ReplayBar";
 import { RunComparison } from "./components/RunComparison";
+import { RunControlBar } from "./components/RunControlBar";
 import { RunList } from "./components/RunList";
 import { StatusBadge } from "./components/StatusBadge";
 import { StoryView } from "./components/StoryView";
 import { TagEditor } from "./components/TagEditor";
 import { buildGraphAt } from "./lib/replay";
 import { useRunStream } from "./hooks/useRunStream";
-import { useRunStore } from "./store/runStore";
-
-type RunTab = "story" | "theater" | "graph" | "logs";
+import { useRunStore, type RunTab } from "./store/runStore";
 
 function RunViewer() {
   const selectedRunId = useRunStore((s) => s.selectedRunId);
@@ -28,6 +27,7 @@ function RunViewer() {
   const selectedNodeId = useRunStore((s) => s.selectedNodeId);
   const runs = useRunStore((s) => s.runs);
   const view = useRunStore((s) => s.view);
+  const entryTab = useRunStore((s) => s.entryTab);
   const selectRun = useRunStore((s) => s.selectRun);
   const selectNode = useRunStore((s) => s.selectNode);
   const setCompareRun = useRunStore((s) => s.setCompareRun);
@@ -37,8 +37,10 @@ function RunViewer() {
   const state = selectedRunId ? runStates[selectedRunId] : null;
   const selectedNode = state?.nodes.find((n) => n.id === selectedNodeId) ?? null;
 
-  // Per-run tab — Story is the default legible view.
-  const [tab, setTab] = useState<RunTab>("story");
+  // Per-run tab — Story is the default legible view; a caller of selectRun can
+  // request another landing tab via the store's `entryTab` (e.g. a floor-view
+  // room click → "theater").
+  const [tab, setTab] = useState<RunTab>(entryTab);
   // Graph "Simplified" hides framework-internal nodes (default on).
   const [graphSimplified, setGraphSimplified] = useState(true);
 
@@ -46,12 +48,15 @@ function RunViewer() {
   const [replayIndex, setReplayIndex] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
 
-  // Reset tab + replay when the selected run changes.
+  // Reset tab + replay when the selected run changes. The tab follows the
+  // requested `entryTab` (defaults to "story") so a floor-view room click lands
+  // on Theater; entryTab is also a dep so re-selecting the same run still honors
+  // a newly requested tab.
   useEffect(() => {
-    setTab("story");
+    setTab(entryTab);
     setReplayIndex(null);
     setReplayPlaying(false);
-  }, [selectedRunId]);
+  }, [selectedRunId, entryTab]);
 
   // The graph to render: live nodes/edges, or a partial graph during replay.
   const replayGraph = useMemo(
@@ -181,6 +186,7 @@ function RunViewer() {
             {/* Body */}
             {tab === "theater" ? (
               <div className="flex-1 min-w-0 flex flex-col min-h-0">
+                <RunControlBar runId={selectedRunId!} runStatus={state.status} />
                 <div className="flex-1 min-h-0">
                   <TheaterView nodes={shownNodes} />
                 </div>

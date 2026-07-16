@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
+import time
 from abc import ABC, abstractmethod
 from threading import Lock
-from typing import Optional
+from typing import Any, Optional
 
+from .control import DESIRED_STATES, RunControl
 from .events import (
     EventType,
     GraphEdge,
@@ -40,6 +43,21 @@ def _total_cost(graph: RunGraph) -> Optional[float]:
             total += cost
             found = True
     return round(total, 8) if found else None
+
+
+def _terminal_status(data: dict[str, Any]) -> NodeStatus:
+    """Derive a node/run's terminal status from an end event's data.
+
+    DUAL-LOGIC: mirrors the ternary in ``applyEventToGraph`` (ui/src/store/
+    runStore.ts). ``error`` wins over ``stopped`` (a crash is a crash); a
+    user-stopped run carries ``stopped`` and no ``error`` → first-class
+    ``stopped`` status.
+    """
+    if data.get("error"):
+        return NodeStatus.ERROR
+    if data.get("stopped"):
+        return NodeStatus.STOPPED
+    return NodeStatus.SUCCESS
 
 
 def _apply_event_to_graph(graph: RunGraph, event: VapEvent) -> None:
@@ -83,11 +101,11 @@ def _apply_event_to_graph(graph: RunGraph, event: VapEvent) -> None:
     elif event.type in end_types:
         node = node_map.get(event.node_id)
         if node:
-            node.status = NodeStatus.ERROR if event.data.get("error") else NodeStatus.SUCCESS
+            node.status = _terminal_status(event.data)
             node.ended_at = event.timestamp
             node.data.update(event.data)
         if event.type == EventType.AGENT_END:
-            graph.status = NodeStatus.ERROR if event.data.get("error") else NodeStatus.SUCCESS
+            graph.status = _terminal_status(event.data)
             graph.ended_at = event.timestamp
 
     elif event.type == EventType.ERROR:
@@ -174,6 +192,49 @@ class RunStore(ABC):
                 self._tags.pop(run_id, None)  # type: ignore[attr-defined]
         return norm
 
+    # ------------------------------------------------------------------
+    # Live run control (Pause / Resume / Stop) — ephemeral in-memory side
+    # channel, guarded by ``self._lock`` (like tags). NOT part of the event log
+    # or graph reducers, and NOT persisted. The tracer reads it at each step
+    # checkpoint; the server writes it. Subclasses provide ``self._control``
+    # (run_id -> RunControl) and ``self._control_wake`` (run_id -> Event).
+    # See docs/notes/DESIGN-agent-control.md.
+    # ------------------------------------------------------------------
+
+    def get_control(self, run_id: str) -> RunControl:
+        """Return a snapshot copy of the run's control latch (default: running)."""
+        with self._lock:  # type: ignore[attr-defined]
+            c = self._control.get(run_id)  # type: ignore[attr-defined]
+            return RunControl(c.desired, c.acked, c.updated_at) if c else RunControl()
+
+    def set_desired(self, run_id: str, desired: str) -> RunControl:
+        """Set what the UI wants the run to do next, then wake a parked agent."""
+        if desired not in DESIRED_STATES:
+            raise ValueError(f"invalid desired control state: {desired!r}")
+        with self._lock:  # type: ignore[attr-defined]
+            c = self._control.setdefault(run_id, RunControl())  # type: ignore[attr-defined]
+            c.desired = desired
+            c.updated_at = time.time()
+            snap = RunControl(c.desired, c.acked, c.updated_at)
+        self._control_wake_for(run_id).set()  # nudge a paused sync agent to re-check now
+        return snap
+
+    def set_ack(self, run_id: str, acked: str) -> None:
+        """Record what the agent has actually done at a checkpoint (from the tracer)."""
+        with self._lock:  # type: ignore[attr-defined]
+            c = self._control.setdefault(run_id, RunControl())  # type: ignore[attr-defined]
+            c.acked = acked
+            c.updated_at = time.time()
+
+    def _control_wake_for(self, run_id: str) -> threading.Event:
+        """Get-or-create the per-run wake Event a parked sync agent blocks on."""
+        with self._lock:  # type: ignore[attr-defined]
+            ev = self._control_wake.get(run_id)  # type: ignore[attr-defined]
+            if ev is None:
+                ev = threading.Event()
+                self._control_wake[run_id] = ev  # type: ignore[attr-defined]
+            return ev
+
 
 # ---------------------------------------------------------------------------
 # In-memory implementation (default)
@@ -188,6 +249,8 @@ class MemoryStore(RunStore):
         self._graphs: dict[str, RunGraph] = {}
         self._tags: dict[str, list[str]] = {}
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
+        self._control: dict[str, RunControl] = {}            # live pause/stop latch (ephemeral)
+        self._control_wake: dict[str, threading.Event] = {}  # per-run wake for parked agents
         self._lock = Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -228,6 +291,8 @@ class MemoryStore(RunStore):
             self._event_ids.pop(run_id, None)
             self._graphs.pop(run_id, None)
             self._tags.pop(run_id, None)
+            self._control.pop(run_id, None)
+            self._control_wake.pop(run_id, None)
 
     def clear(self) -> None:
         with self._lock:
@@ -235,6 +300,8 @@ class MemoryStore(RunStore):
             self._event_ids.clear()
             self._graphs.clear()
             self._tags.clear()
+            self._control.clear()
+            self._control_wake.clear()
 
     # ------------------------------------------------------------------
     # Read path

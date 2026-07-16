@@ -27,4 +27,5 @@ export const STATUS_TOKEN: Record<NodeStatus, string> = {
   running: "--status-running",
   success: "--status-success",
   error: "--status-error",
+  stopped: "--status-stopped",
 };

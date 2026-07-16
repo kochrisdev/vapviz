@@ -38,6 +38,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Trace replay** — scrub a run event-by-event in the UI; the graph fills in node by node as it happened
 - **Theater view** — watch a run as a cozy pixel office: each agent is a hand-drawn sprite that walks from its home desk to the LLM desk or a tool station (SEARCH / FETCH / DATA / PRINT, picked from the tool's name), speech bubble overhead — live or replayed
 - **Office building** — a centralized monitor keyed to **apps**, drawn as a real pixel building: each app owns a room (a re-run lights the same room back up), floors hold six rooms around a Walk Way with the earliest app **walking down the stairs** when the top floor fills, and a failing app's room turns red while its agents wait it out in the rooftop **lounge** (inspect or dismiss). A coworker steps out of every **running** room to mill on the Walk Way, so the floor is alive exactly while work is happening — watch all your agents work across every app on one screen
+- **Live run control** — **Pause / Resume / Stop** a running in-process agent from the UI (Theater tab) or `POST /runs/{id}/control`. Cooperative: the tracer obeys at each step boundary — pause parks the agent *between* steps, stop raises `vapviz.VapStopped` so the code genuinely halts, and the run ends with a first-class neutral `stopped` status
 - **Persistent storage** — `vapviz.configure(db="vapviz.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vapviz serve --db vapviz.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -56,7 +57,7 @@ New to vapviz? The **[step-by-step tutorial](docs/TUTORIAL.md)** walks you from 
 fully instrumented agent — covering tracing, async, error handling, cost tracking, the OpenAI /
 Anthropic / LangGraph / CrewAI / Pydantic AI / LlamaIndex / AutoGen integrations, remote ingest, run
 comparison, export, the analytics dashboard, OpenTelemetry export, budgets, evals, search & tagging,
-and trace replay.
+trace replay, and live run control (pause / resume / stop).
 
 ---
 
@@ -583,6 +584,7 @@ The FastAPI server (`http://localhost:8001`) exposes:
 | `GET` | `/runs/{id}/events` | **SSE stream** — replays history then pushes live |
 | `GET` | `/runs/compare?a={id}&b={id}` | Return two run graphs for comparison |
 | `POST` | `/runs/{id}/events` | Ingest an event from a remote process |
+| `GET` / `POST` | `/runs/{id}/control` | Read / send live run control (pause / resume / stop, in-process agents) |
 | `DELETE` | `/runs` | Clear all runs from store |
 | `DELETE` | `/runs/{id}` | Delete a single run |
 
@@ -598,6 +600,7 @@ step_start   step_end
 tool_call    tool_result
 llm_call     llm_response
 state_update
+control
 error
 ```
 
@@ -618,6 +621,7 @@ vapviz/                          Python package
 ├── budgets.py                Cost/latency budgets — check_budget(), enable_budget_alerts()
 ├── evals.py                  Agent evals — eval_run(), checks, scoring
 ├── search.py                 Run search — run_matches() predicate
+├── control.py                Live run control — RunControl latch, VapStopped
 ├── backends/
 │   ├── __init__.py
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
@@ -769,6 +773,16 @@ python examples/remote_ingest_demo.py --agent-only --server-url http://localhost
 Demonstrates the HTTP ingest pattern: the "agent" process uses only `urllib.request` (no `vapviz` import)
 and POSTs `VapEvent` JSON payloads directly to `POST /runs/{run_id}/events`. Useful for polyglot
 architectures where the agent runs in a different language or on a separate machine.
+
+### Live run control demo (no API key)
+
+```bash
+python examples/control_demo.py
+```
+
+Starts the server on `:8001` and a slow synthetic agent, then prints the `curl` commands (and the UI
+path) to pause, resume, and stop it live. Shows the cooperative contract end-to-end: "pausing…" until
+the next step boundary, `vapviz.VapStopped` unwinding the agent, and the run ending as **⏹ Stopped**.
 
 ### Anthropic demo
 
@@ -992,6 +1006,11 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **Props** — runner rug + ceiling lights down the Walk Way, plants, water cooler, cork notice board, framed wall art, wall clock; empty rooms read as unlet offices
 - [x] **Nameplates** — rooms drop their CSS card chrome; each app's name + status LED hangs on the wall by its door (crisp DOM text on art-styled signage)
 
+### Phase 22 — Agent control, Layer 1 (complete)
+- [x] **Pause / Resume / Stop a live run** — the return lane: an **Agent control** bar in the Theater tab (and `GET`/`POST /runs/{id}/control`) drives a per-run desired/acked latch in the store; the tracer obeys **cooperatively** at each `step`/`astep` entry (pause parks between steps, stop raises `vapviz.VapStopped` so the agent's code unwinds). In-process agents only for now
+- [x] **First-class `stopped` status** — a user-stopped run is neither a success nor a failure: new `NodeStatus` value through **both** graph reducers (+ parity fixtures), badges, building rooms, metrics (excluded from success/error rates)
+- [x] **Control audit trail** — every pause/resume/stop is recorded as an inert `control` event in the run's timeline ("Paused by user" in Logs), persisted with the run
+
 ---
 
 ## Dependencies
@@ -1035,7 +1054,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide. Quick sta
 # Install with all integration + dev dependencies
 pip install -e ".[dev]"
 
-# Run the Python test suite (303 tests; integration tests skip if the
+# Run the Python test suite (330 unit tests; integration tests skip if the
 # corresponding framework isn't installed)
 pytest -q
 

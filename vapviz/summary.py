@@ -130,6 +130,8 @@ def _status_clause(status: NodeStatus) -> str:
         return "succeeded"
     if status == NodeStatus.ERROR:
         return "failed"
+    if status == NodeStatus.STOPPED:
+        return "stopped"
     return "running"
 
 

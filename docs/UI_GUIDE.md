@@ -29,7 +29,8 @@ hidden, nothing is forced on you.
 
 The left sidebar lists every run, newest first. Each entry shows:
 
-- A **coloured dot** for status — green = finished, red = failed, amber (pulsing) = still running.
+- A **coloured dot** for status — green = finished, red = failed, amber (pulsing) = still running,
+  grey = stopped by you (see *Pause, resume, stop* below).
 - The run's **name**.
 - A **one-line summary** of what happened, e.g.
   *"Weather agent answered 'What's the weather in Paris?' — 2 model calls (gpt-4o-mini),
@@ -103,6 +104,25 @@ The **Theater** tab turns a run into a cozy pixel office — a tab at the top of
 > Multi-agent runs (a CrewAI crew, a LangGraph supervisor + workers) are where this shines — you can
 > literally see which agent is doing what.
 
+### Pause, resume, stop — the Agent control bar
+
+While a run is **live**, the Theater tab shows an **Agent control** bar with **Pause** and
+**Stop** buttons (it disappears once the run ends). This isn't just for show — it really
+controls the agent:
+
+- **Pause** asks the agent to hold on. Agents are polite, not instant: the bar says
+  **"pausing…"** until the agent finishes the step it's on and actually parks, then
+  **"paused"** with a **Resume** button. Think of asking a colleague to stop — they finish
+  their sentence first.
+- **Stop** ends the run at the agent's next opportunity. A stopped run gets a neutral grey
+  **⏹ Stopped** badge — it didn't succeed and it didn't fail; *you* ended it — and it doesn't
+  count against your success rate on the Dashboard.
+- Every pause/resume/stop is written into the run's **Logs** ("Paused by user"), so the
+  record stays honest.
+
+> This works for agents running in the same process as the vapviz server (like the demos).
+> Agents that report over the network can't be controlled yet.
+
 ## The Office Building — monitor everything at once
 
 Click the **🎭 masks icon** at the top of the sidebar for the **Office building**: every **app**
@@ -138,7 +158,8 @@ How the building works:
   after a dismissal — dismissals survive page reloads).
 - **The lobby board** at the base keeps the live tally: apps working, agents in the lounge,
   spend today.
-- **Click any room** to drop into that app's current run.
+- **Click any room** to drop into that app's current run — it opens straight onto the
+  **Theater** tab, so you land in the live office scene (with the control bar if it's running).
 
 The sidebar mirrors the building: it lists **apps**, not individual runs — expand one (▸) to see
 its full run history and click any past run to inspect and replay it.
@@ -199,6 +220,7 @@ AI-model calls. `$0` means no billable model calls were recorded.
 | Understand one step | Click its box → read the detail panel |
 | See the raw JSON for a step | Click **"Show technical details"** |
 | Watch a run as a pixel "office" | Open the **Theater** tab |
+| Pause / resume / stop a live run | The **Agent control** bar (Theater tab, while running) |
 | Monitor all apps working at once | Open the **Office building** (🎭 masks icon, sidebar) |
 | See an app's past runs | Expand the app in the sidebar (▸) → click a run |
 | Clear a failed app from the building | **Dismiss** it in the lounge (returns on its next run) |

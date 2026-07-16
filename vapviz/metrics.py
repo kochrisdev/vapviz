@@ -119,6 +119,8 @@ def compute_metrics(graphs: list[RunGraph]) -> Metrics:
             m.success_count += 1
         elif g.status == NodeStatus.ERROR:
             m.error_count += 1
+        elif g.status == NodeStatus.STOPPED:
+            pass  # terminal, but neither a success nor a failure — not "running"
         else:
             m.running_count += 1
 

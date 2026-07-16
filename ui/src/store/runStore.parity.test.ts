@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { describe, it, expect } from "vitest";
 
 import { applyEventToGraph, totalLlmCost, type GraphState } from "./runStore";
+import { buildGraphAt } from "../lib/replay";
 import type { GraphNode, NodeStatus, VapEvent } from "../types/events";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,6 +58,19 @@ describe("reducer parity (TS half)", () => {
   for (const { name, data } of fixtures) {
     it(`TS reducer matches fixture: ${data.name ?? name}`, () => {
       expect(normalize(replay(data.events))).toEqual(data.expected);
+    });
+  }
+
+  // lib/replay.ts's buildGraphAt is a THIRD implementation of the event→graph
+  // reduction (it powers the replay scrubber). It only derives nodes + edges
+  // (no run status / cost), but its node statuses must agree with the fixtures
+  // — a `stopped` node once replayed as `success` because it was missed.
+  for (const { name, data } of fixtures) {
+    it(`replay buildGraphAt matches fixture nodes: ${data.name ?? name}`, () => {
+      const { nodes, edges } = buildGraphAt(data.events as VapEvent[], data.events.length);
+      const got = normalize({ nodes, edges, status: "running", ended_at: null } as GraphState);
+      expect(got.nodes).toEqual(data.expected.nodes);
+      expect(got.edges).toEqual(data.expected.edges);
     });
   }
 });

@@ -41,7 +41,9 @@ export function buildGraphAt(events: VapEvent[], count: number): {
     } else if (END_TYPES.has(event.type)) {
       const node = nodeMap.get(event.node_id);
       if (node) {
-        node.status = (event.data?.error ? "error" : "success") as NodeStatus;
+        // Same terminal-status rule as applyEventToGraph / Python _terminal_status:
+        // error wins over stopped; a user-stopped node is not a success.
+        node.status = (event.data?.error ? "error" : event.data?.stopped ? "stopped" : "success") as NodeStatus;
         node.ended_at = event.timestamp;
         node.data = { ...node.data, ...event.data };
       }

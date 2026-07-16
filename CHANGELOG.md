@@ -9,7 +9,25 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 ## [Unreleased]
 
+### Added
+- **Live run control — Pause / Resume / Stop (in-process).** vapviz gains its first return
+  lane: while a run is live, an **Agent control** bar in the Theater tab (or
+  `GET`/`POST /runs/{id}/control`) can pause, resume, or stop the agent. Control is
+  **cooperative** — the tracer checks a per-run desired/acked latch at every `step`/`astep`
+  entry and obeys there: pause parks the agent *between* steps (sync agents block their own
+  thread, async agents yield to the event loop), stop raises the new `vapviz.VapStopped`
+  inside the agent so its code genuinely unwinds and halts (catchable for a graceful
+  shutdown). The UI shows the honest lag ("pausing…" until the agent actually parks). A
+  user-stopped run ends with a **first-class `stopped` status** — neither a success nor a
+  failure — rendered as a neutral ⏹ badge everywhere and excluded from the dashboard's
+  success/error rates, and every action is recorded as an inert `control` event in the run's
+  timeline ("Paused by user" in Logs). In-process agents only for this slice; remote-ingest
+  agents can't see the server's latch yet. Try `python examples/control_demo.py` (no API key).
+
 ### Changed
+- **Clicking a room in the Office Building now lands on the Theater tab** (was: Story), so
+  the room you were watching opens straight onto its live office scene — where the new
+  control bar also lives. Lounge cards still open the Story view for debugging a failure.
 - **Pixel look, end to end — the app now lives in the office's world.** Square corners,
   chunky 2px borders, hard-offset "pixel-step" shadows, a faint checkerboard ground (the
   Building's yard tile), pixel scrollbars, and an all-pixel type system (self-hosted, OFL):

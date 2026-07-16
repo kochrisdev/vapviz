@@ -49,6 +49,7 @@
   --status-running:  245 158  11;
   --status-success:   34 197  94;
   --status-error:    239  68  68;
+  --status-stopped:  161 161 170;  /* halted by user — neutral zinc, not a failure */
 
   /* pixel-step shadow ink (hard offsets, no blur — see tailwind.config.ts) */
   --shadow: 0 0 0;
@@ -82,6 +83,7 @@ html.light {
   --status-running:  217 119   6;
   --status-success:   22 163  74;
   --status-error:    220  38  38;
+  --status-stopped:  113 113 122;  /* halted by user — neutral zinc, not a failure */
 
   --shadow: 156 122 84;
 }

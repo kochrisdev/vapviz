@@ -34,7 +34,8 @@ the last, so work through them in order. No prior vapviz knowledge required.
 25. [Search & Tagging](#25-search--tagging)
 26. [Trace Replay](#26-trace-replay)
 27. [Theater & the Office Building](#27-theater--the-office-building)
-28. [What's Next?](#28-whats-next)
+28. [Controlling a Live Run (Pause / Resume / Stop)](#28-controlling-a-live-run-pause--resume--stop)
+29. [What's Next?](#29-whats-next)
 
 ---
 
@@ -1383,7 +1384,77 @@ stable `app_id` to `trace()`. See the [UI Guide](UI_GUIDE.md) for the non-techni
 
 ---
 
-## 28. What's Next?
+## 28. Controlling a Live Run (Pause / Resume / Stop)
+
+Everything so far has been one-directional: your agent talks, vapviz listens. The **control bar**
+is the return lane — while a run is live, you can pause it, resume it, or stop it from the UI.
+
+Select a running run and open the **Theater** tab (clicking a room in the Office Building lands
+there too). While the run is live you'll see an **Agent control** bar with **Pause** and **Stop**
+buttons:
+
+- **Pause** — the agent finishes the step it's in, then parks *between* steps. The bar shows
+  "pausing…" until it actually parks, then "paused" with a **Resume** button.
+- **Resume** — the agent picks up where it left off, usually instantly.
+- **Stop** — the agent halts at its next step boundary and the run ends with a neutral
+  **⏹ Stopped** status: not a success, not a failure — *you* ended it. Stopped runs are excluded
+  from the dashboard's success and error rates.
+
+Every action is also recorded in the run's timeline (the Logs tab shows "Paused by user",
+"Resumed by user", "Stopped by user"), so a trace you look at next week still tells the whole story.
+
+**How it works — and the honest fine print.** vapviz *watches* your agent; it doesn't run it. So
+control is **cooperative**: the tracer checks for pending commands each time your code enters a
+`step`/`astep`, and obeys there. Think of it like asking a colleague to stop — you don't yank
+their keyboard away; they finish their current sentence first. In practice:
+
+- Pause/Stop take effect **at the next step boundary**. An agent inside one long tool or LLM call
+  reacts when that call's step finishes — the "pausing…" / "stopping…" banner is telling you the
+  truth, not being slow.
+- A run with **no sub-steps has no checkpoints** and can't be paused mid-flight.
+- This works for **in-process** agents (agent + server in one Python process, like `run_dev.py`).
+  Remote-ingest agents (§17) don't obey control yet — their tracer can't see the server's control
+  state.
+
+**Stopping raises `vapviz.VapStopped` in your agent** — that's what actually unwinds your code so
+it genuinely halts (otherwise "stop" would just be a label while your agent kept burning tokens).
+If you want to shut down gracefully, catch it:
+
+```python
+import vapviz
+
+try:
+    with vapviz.trace("my agent") as run:
+        for task in tasks:
+            with run.step(task.name) as step:   # ← control checkpoint on every entry
+                do_work(task)
+except vapviz.VapStopped:
+    print("Run stopped from the UI — cleaning up.")
+```
+
+The run still ends with status `stopped` either way; catching it just lets you run your own
+cleanup instead of unwinding to the top.
+
+Over HTTP (or from a script), the same controls are two endpoints:
+
+```bash
+curl -X POST http://localhost:8001/runs/{run_id}/control \
+  -H "Content-Type: application/json" -d '{"action": "pause"}'   # pause | resume | stop
+
+curl http://localhost:8001/runs/{run_id}/control
+# → {"desired": "paused", "acked": "paused", "updated_at": ..., "ended": false}
+```
+
+`desired` is what you asked for; `acked` is what the agent has actually done at its last
+checkpoint — the gap between them is the cooperative lag the UI renders as "pausing…".
+
+> **Try it with no API key:** `python examples/control_demo.py` starts a server + a slow synthetic
+> agent and walks you through pausing, resuming, and stopping it — from the UI or straight from
+> the printed `curl` commands.
+
+---
+
+## 29. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -1401,6 +1472,7 @@ python examples/autogen_demo.py       # offline agents — requires pip install 
 python examples/otel_demo.py          # console OTel export — requires pip install "vapviz[otel]"
 python examples/budgets_demo.py       # cost/latency budget alerting
 python examples/evals_demo.py         # agent evals / assertions
+python examples/control_demo.py       # pause/resume/stop a live run
 
 # Requires an API key:
 python examples/openai_demo.py

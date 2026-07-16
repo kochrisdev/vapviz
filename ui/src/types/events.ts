@@ -8,10 +8,11 @@ export type EventType =
   | "llm_call"
   | "llm_response"
   | "state_update"
+  | "control" // inert audit marker (pause/resume/stop); ignored by the reducer
   | "error";
 
 export type NodeKind = "agent" | "step" | "tool" | "llm";
-export type NodeStatus = "pending" | "running" | "success" | "error";
+export type NodeStatus = "pending" | "running" | "success" | "error" | "stopped";
 
 export interface VapEvent {
   id: string;
