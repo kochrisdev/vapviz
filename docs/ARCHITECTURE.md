@@ -52,6 +52,8 @@ This document describes the internal design of the Visualization Agentic Process
 │  GET    /runs/{id}/export      → RunGraph JSON file download        │
 │  GET    /runs/{id}/events      → SSE stream (replay + live)         │
 │  POST   /runs/{id}/events      → remote event ingest                │
+│  GET    /runs/{id}/control     → control latch (desired + acked)    │
+│  POST   /runs/{id}/control     → pause / resume / stop a live run   │
 │  DELETE /runs                  → clear all runs                     │
 │  DELETE /runs/{id}             → delete one run                     │
 └──────────────────────────┬───────────────────────────────────────────┘
@@ -63,7 +65,7 @@ This document describes the internal design of the Visualization Agentic Process
 │  useRunStream(runId)           SSE hook -> applyEvent() in Zustand  │
 │  runStore.ts                   Builds nodes/edges from event stream  │
 │  AgentGraph.tsx                ReactFlow DAG with dagre layout       │
-│  EventTimeline.tsx             Chronological event log               │
+│  LogsView.tsx                  Full-width filterable event log       │
 │  NodeDetail.tsx                Selected-node inspector               │
 │  Dashboard.tsx                 Cross-run analytics (GET /metrics)    │
 └──────────────────────────────────────────────────────────────────────┘
@@ -103,15 +105,18 @@ Each node kind has a symmetric open/close pair:
 | `llm_call` | `llm_response` | `llm` |
 | — | `error` | any (replaces close) |
 
-The `state_update` event is freestanding — it doesn't open/close a node, it updates metadata on the nearest parent node.
+Two event types are freestanding — they don't open/close a node:
+
+- `state_update` — updates metadata on the nearest parent node (currently inert in the graph reducers).
+- `control` — an inert audit marker emitted by the server when a user pauses/resumes/stops a run (see [Control channel](#control-channel-pause--resume--stop)). It appears in the timeline (Logs) but produces **no** graph change in either reducer — a parity fixture (`control_inert.json`) asserts both reducers ignore it identically.
 
 ### Graph construction
 
 The store builds a `RunGraph` incrementally as events arrive via the shared pure function `_apply_event_to_graph(graph, event)`:
 
 - **Open event** → add `GraphNode` with `status: running`; if `parent_id` exists, add a `GraphEdge`
-- **Close event** → update the matching node's `status` to `success` or `error`, set `ended_at`, merge `data`
-- **`agent_end`** → also updates the top-level `RunGraph.status` and `RunGraph.ended_at`
+- **Close event** → update the matching node's terminal `status`, set `ended_at`, merge `data`. Status is derived by `_terminal_status(data)`: `error` in the data → `error`; else `stopped: true` in the data → `stopped` (the run was halted by user control — see [Control channel](#control-channel-pause--resume--stop)); else `success`. `error` always wins — a crash is a crash even if a stop was pending.
+- **`agent_end`** → also updates the top-level `RunGraph.status` and `RunGraph.ended_at` (same `_terminal_status` rule)
 
 This logic is extracted into a standalone pure function so both `MemoryStore` and `SqliteStore` share identical graph-building behaviour without inheritance.
 
@@ -464,6 +469,53 @@ The `sys.modules[__name__]` trick is needed because Python's import machinery cr
 
 ---
 
+## Control channel (Pause / Resume / Stop)
+
+Everything above describes a **one-directional** system: the agent talks, vapviz listens and draws. The control channel (`vapviz/control.py`) is the **return lane** — the only place data flows *back* from the UI toward the agent. It lets a user pause, resume, or stop a live **in-process** run (agent and server sharing one Python process, as in `run_dev.py`).
+
+**The one hard constraint that shapes the whole design:** vapviz observes; it does not drive. The agent's code runs in *its own* call stack — vapviz only sees it when the agent passes through the tracer's context managers. So control must be **cooperative**: the tracer checks a per-run "mailbox" at the top of every `step`/`astep` (the turnstiles the agent already walks through) and obeys what it finds. It is a polite halt at the next checkpoint, never a force-kill. An agent stuck inside one long tool call won't react until it next enters a step, and an agent with no sub-steps has no checkpoints at all — both are documented limits, surfaced honestly in the UI as "pausing…" / "stopping…".
+
+```
+   ┌────────── existing one-way event lane (unchanged) ──────────┐
+   │  agent → Tracer → RunStore → SSE → UI  (VapEvent history)   │
+   └──────────────────────────────────────────────────────────────┘
+
+   ┌────────── the return lane ───────────────────────────────────┐
+   │  UI  ──POST /runs/{id}/control {action}──►  RunStore         │
+   │        (Pause/Resume/Stop buttons)         (control latch)   │
+   │                                                  │           │
+   │  UI  ◄─GET /runs/{id}/control (poll ~1s)──  desired + acked  │
+   │        (renders "pausing…/paused/stopping…")     ▲           │
+   │                                                  │           │
+   │  Tracer checkpoint at each step/astep enter ─────┘           │
+   │        reads latch → parks, or raises VapStopped             │
+   └───────────────────────────────────────────────────────────────┘
+```
+
+**The latch (`RunControl`)** is a tiny per-run record with two fields whose *difference* is the point: `desired` (what the user asked for, written by the server) and `acked` (what the agent has actually done, written by the tracer at a checkpoint). The gap between them is the honest cooperative lag the UI renders — `desired=paused, acked=running` is "pausing…"; when they agree it's "paused".
+
+**Where the latch lives — a side channel, deliberately.** `desired`/`acked` is mutable, ephemeral state (a request about what to do *next*), a poor fit for the append-only event log. So it sits in the store as plain in-memory state guarded by the existing `self._lock`, exactly like tags: concrete methods `get_control` / `set_desired` / `set_ack` on the `RunStore` ABC, backed by a `self._control` dict in both `MemoryStore` and `SqliteStore`. It is **never fed to the graph reducers and never persisted** — even for SQLite, on purpose: a restarted server has no live agent left to control, so there is nothing meaningful to restore (and no DB migration needed).
+
+**Exactly two things do ride the event lane** (and therefore pay the dual-logic tax — see the parity-test note below):
+
+1. **The inert `control` audit event.** Each successful control action makes the server emit a `control` event (`data: {action: "pause"|"resume"|"stop"}`) through the normal `add_event` path, so "⏸ Paused by user" appears live in the Logs timeline and persists with the run. Both reducers ignore it completely (like `state_update`); the `control_inert.json` parity fixture enforces that.
+2. **The first-class `stopped` status.** A user-stopped run terminates with `agent_end` carrying `data={stopped: true, error_type: "VapStopped"}` and **no `error` key** — so both reducers derive the terminal status `stopped` (not a success, not a crash) via the shared `_terminal_status` rule, and every status-keyed surface (badges, run list, building rooms, metrics) renders it as its own neutral state. The `stopped_run.json` parity fixture enforces agreement.
+
+**Tracer checkpoints.** `_check_control` (sync) and `_acheck_control` (async) run as the *first* line of `step`/`astep`, before the child node's start event — so a pause parks the agent cleanly *between* steps (never mid-tool-call), and a stop raises before the next step ever appears. The two variants exist because parking must not freeze the wrong thing:
+
+- **Sync agent** (own thread): blocks on a per-run `threading.Event` with a `CONTROL_POLL` (0.1 s) timeout. `set_desired` `.set()`s the event so resume is effectively instant; the timeout is only a safety re-poll bounding worst-case latency if a wake is ever missed. The server's asyncio loop keeps serving throughout — only the agent's thread is parked.
+- **Async agent** (sharing the server's event loop): `await asyncio.sleep(CONTROL_POLL)` in a loop, yielding so the very Resume request that will unpause it can be served.
+
+**Stop = a real exception.** When `desired == "stopped"`, the checkpoint raises `VapStopped(run_id)` (exported as `vapviz.VapStopped`). Each open `step`/`astep` catches it, closes its node with `stopped: true` (not an error), and re-raises; `trace`/`atrace` end the run as stopped and re-raise again so the agent's own code genuinely unwinds and halts. An author who wants a graceful shutdown can `except vapviz.VapStopped:` at their top level.
+
+**Server endpoints.** `GET /runs/{id}/control` returns the latch (+ `ended: true` when the run is terminal — the UI hides the bar). `POST /runs/{id}/control` validates the action (`pause`/`resume`/`stop`, 422 otherwise), no-ops with `ended: true` on already-terminal runs, maps the action to a desired state, and emits the audit event.
+
+**UI.** `RunControlBar.tsx` (Theater tab, live runs only) polls `GET /control` every 1 s and posts actions; the branchy state table lives in the pure, unit-tested `lib/runControl.ts` (`controlUiState(desired, acked, runStatus)` → banner + buttons). This latch-side UI state is **not** part of the dual-logic rule — only the `stopped` status and the `control` event type are.
+
+**Current scope and deferred layers:** this is Layer 1 — lifecycle control of in-process agents. Deferred by design: message injection / task prompting (Layer 2, plus a `vapviz.checkpoint()` escape hatch for step-less long loops), retry/re-run (Layer 3), and cross-process control for remote-ingest agents, whose tracers cannot see the server's in-memory latch (Layer 4).
+
+---
+
 ## React UI Internals
 
 ### State management (`runStore.ts`)
@@ -486,7 +538,7 @@ applyEvent(event)
        ▼
 Zustand subscribers re-render
   ├── AgentGraph  (nodes + edges -> ReactFlow; LLM nodes show cost_usd)
-  ├── EventTimeline (events list)
+  ├── LogsView (filterable events list)
   └── RunList (run summary; total_cost_usd shown in purple when non-null)
 ```
 
@@ -599,6 +651,104 @@ useEffect(() => {
 
 Named SSE events (`event: tool_call\ndata: {...}`) are used instead of the default `message` event so each handler only receives the events it cares about.
 
+### Theater & Building (`OfficeStage.tsx`, `TheaterView.tsx`, `BuildingView.tsx`, `lib/{sprites,officeArt,officeScene,theater,building}.ts`)
+
+The Theater is a watchable renderer over the *same* derived graph the other views use — **UI-only, no
+backend change** (the Python touches are additive metadata only: the `langgraph_node` marker below,
+and the `app_id` run identity the Building groups by).
+
+- **`lib/sprites.ts` — the art-as-data sprite engine.** A sprite is hand-authored TEXT: a palette
+  (char key → color, some keys flagged recolorable) plus a char-grid (one key per pixel). The 12×16
+  worker (4-frame walk cycle) is rasterized to an offscreen canvas via `ImageData` and blitted with
+  integer-scale nearest-neighbor. An FNV-1a hash of the agent's name picks a deterministic **colorway**
+  (skin/hair/shirt/pants), so one authored sprite becomes many distinct coworkers who keep their look
+  across runs. Owned art: hand-authored, zero AI, zero third-party packs (provenance in
+  `ui/src/lib/ASSETS.md`).
+- **`lib/officeArt.ts` — the room.** Furniture (LLM desk, SEARCH shelves, FETCH racks, DATA cabinet,
+  PRINT table, home desks, plus lounge/dinner-nook decor), floor/wall tiles, and the **locked room
+  layout** (station geometry + stand-points, decor placements, the home-desk row). `homeSpots(n)`
+  places the cast's home desks: up to 6 in the locked front row, larger casts wrap into an additive
+  overflow back row on the open floor so desks never overlap (unit-tested). `bakeGround()`
+  renders the static room once per scale/cast into an offscreen canvas; `drawDecorAnim()` overlays
+  the two live props (flickering TV, bubbling water cooler) each frame. The diorama's warm palette is
+  fixed sprite data — deliberately not theme tokens.
+- **`lib/officeScene.ts` — graph → office wiring** (pure, tested). `stationForCall` routes a running
+  call to its station: LLM-kind → the LLM desk; tool calls keyword-match their label (normalized
+  snake_case → words) to SEARCH / FETCH / PRINT / DATA, with a deterministic hash fallback so unknown
+  tools still spread out. `callsByAgent` attributes every llm/tool call to the nearest cast actor up
+  the parent chain (same ownership rule as `buildScene`'s subtree walk), yielding each agent's
+  running + most-recent call. Also owns the playful per-station dialogue lines.
+- **`OfficeStage.tsx` — the canvas renderer** behind both the Theater tab and the Floor's zones.
+  Picks an integer device-pixel scale from the container (ResizeObserver), bakes the ground, and runs
+  a rAF loop: workers glide toward their target (home desk ↔ station) at **duration-adaptive speed**
+  (each trip takes ~0.55 s regardless of distance, so arrival beats any real call), legs cycle while
+  moving, the active station glows, and name tags + speech bubbles draw in canvas. Driven purely by
+  the `nodes` prop → identical for live SSE and replay. Honors `prefers-reduced-motion` (no walk/decor
+  animation). A `compact` prop renders the same room for the Floor's small tiled run-zones: station
+  label chips and speech bubbles are dropped (unreadable at zone scale), name-tag chrome keeps a
+  legible minimum size via a floored chrome unit, and the glow / walk / ✓ ! cues carry the signal.
+  Tiling-friendly by construction: canvas text widths are cached across frames/instances, and an
+  IntersectionObserver pauses the rAF loop for any stage scrolled out of view (browsers only pause
+  rAF for hidden tabs, not offscreen elements).
+- **`lib/theater.ts` — the scene model.** `buildScene(nodes)` is a pure reduction: pick the cast, then
+  decide each agent's `state` (idle/thinking/working/done/error) and which desk it's `at` (`llm`/`tool`/
+  `home`). Cast detection, by signal strength: `agent/` label prefix (CrewAI/Pydantic AI) → `langgraph_node`
+  marker minus generic wrappers (LangGraph workers) → agent-kind root → first node. Re-entered nodes
+  (LangGraph revisits `supervisor`/`math_expert`) are **grouped by name** into one character. "Linger":
+  while an agent is still active it stays at the desk of its most recently started call instead of bouncing
+  home between back-to-back calls; desks only glow for a *running* call.
+- **`TheaterView.tsx`** — the per-run view: a thin wrapper that hands the run's `shownNodes` (live or
+  replayed) to a full-size `OfficeStage`. Added as a 4th run tab in `App` (Story/Theater/Graph/Logs);
+  a tab on every run; the existing `ReplayBar` drives playback.
+- **`lib/building.ts` — the Office Building reducer** (pure, tested — like `officeScene`/`buildScene`,
+  it re-presents derived data and is NOT part of the dual-logic parity rule). `appKey(run) =
+  run.app_id ?? run.label` is THE grouping key, shared by the building and the sidebar so they can
+  never disagree. `groupApps(runs)` folds the `/runs` roster into apps and picks each app's
+  **current run** (any running run wins, most-recently-started first; else newest).
+  `buildBuilding(runs, prev, dismissed)` then places apps deterministically, in order: **stay put**
+  (a surviving app keeps its exact `{floor, room}` from `prev`) → **failures stay + surface to the
+  lounge** (an app whose current run failed keeps its room — the room turns red — AND is listed in
+  `Building.lounge`; a dismissed failed run — keyed by run id — removes the app from the building
+  until its next run) → **seat new apps on the top floor** → **descend under pressure** (a full top
+  floor sends its earliest app down: oldest *finished* preferred, else the earliest-started running
+  app, which stays live below; the cascade appends floors at the bottom — never sideways; trailing
+  empty floors are trimmed). Floors are fixed at `ROOMS_PER_FLOOR = 6`.
+- **`BuildingView.tsx`** — the global monitor (`view: "floor"`, sidebar 🎭), replacing the retired
+  `FloorView.tsx`. It **polls** `/runs` (+ `/runs/{id}/graph` per visible room, finished graphs
+  cached) every ~1.5 s rather than opening many SSE streams — frontend-only, fine for local-scale
+  concurrency — and feeds each tick through `buildBuilding` (seeded with the previous tick for room
+  stickiness). Renders the **visual building** (Phase 4b): a CSS shell (roof + `VAPVIZ` sign, floor
+  slabs, lobby) whose floors are a **2×3 grid** of `compact` `OfficeStage` rooms around a central
+  **Walk Way**, plus a **Door/Stairs** column (a floor's Stairs sit directly above the next floor's
+  Door). The top floor's east side hosts the shared **Lounge** (`LoungeStage.tsx` over the
+  hand-authored break-room diorama in `lib/loungeArt.ts`); floors below show a solid east wall +
+  windows. A failed app's room stays put and turns red (`.vt-room--error`) while the app is listed
+  in the lounge with one recolored worker idling at a distinct break-room spot (coffee / vending /
+  cooler / table / plant / pacing): click its card to inspect the failed run, or **Dismiss** it
+  (persisted in `localStorage["vapviz.dismissed"]` as failed run ids, pruned on load against the
+  live roster). Transitions animate on the **walk overlay** (`lib/walkOverlay.ts` — a sprite canvas
+  above the room grid): a descent walks room → Walk Way → Stairs (*vanish*) → Door below → room
+  (nobody is ever drawn on the stairs), and a failure walks room → lounge; rooms the overlay didn't
+  animate fall back to the FLIP glide, and `prefers-reduced-motion` snaps everything (no walkers, no
+  FLIP). **Floor life (Phase 4c, honest-only since 4d):** the same overlay also runs a *persistent*
+  layer — `WalkEngine.reconcileFloorLife(busy)`, called each poll from `BuildingView` with a fresh
+  `snapshot(el)` (capturing per-room `roomdoor:<appKey>` anchors; each room has an invisible
+  `.vt-room-door` anchor on its Walk-Way edge). It keeps one honest `Resident` (state machine
+  `in → mill → out`) per **running** room — recolored by `appKey`, milling on that floor's Walk-Way
+  lane, walking back through the door when the room finishes — and nothing else: an idle floor has
+  an empty corridor (the 4c decorative ambient stroller was deleted in 4d). Residents keep the rAF
+  loop alive, so the engine is stopped explicitly on unmount (`clearAll`); reduced-motion spawns no
+  floor life. **Floor environment (Phase 4d):** each floor also renders an environment canvas
+  *under* the rooms (`lib/floorArt.ts` + `components/FloorEnv.tsx`): from measured DOM rects it
+  draws corridor stone tiles, shared wall runs with a door threshold per room, a runner rug +
+  ceiling lights, props (plants, cooler, notice board, wall art, clock), the Door/Stairs alcove
+  icons and east-wall windows — the DOM room tiles lost their CSS card chrome and carry wall-signage
+  nameplates (`.vt-plate`: DOM text + status LED) instead. UI-only, exempt from the dual-logic rule. The lobby doubles as a live **directory board** (apps working · in the lounge · cost
+  today). Clicking a room selects the app's current run. Desks inside a room are assigned by
+  **sorted agent name** (in `OfficeStage.computeGoals`), so an agent keeps its seat across ticks and
+  re-runs. *(The interim SVG stage — `AgentStage.tsx` + `lib/avatar.ts` — was retired when the Floor
+  moved to the sprite office; the run-keyed `FloorView` was retired when the Building landed.)*
+
 ---
 
 ## Anthropic SDK Integration (`integrations/anthropic_sdk.py`)
@@ -664,6 +814,15 @@ LangChain passes a UUID `run_id` and an optional `parent_run_id` into every call
 **LLM response extraction:**
 
 `on_llm_end` receives a LangChain `LLMResult`. The handler extracts the first generation text and, if present, token usage from `LLMResult.llm_output`.
+
+**LangGraph node marker (Theater):**
+
+`on_chain_start` already labels a node from `metadata["langgraph_node"]` when present (so multi-agent
+graphs read as `supervisor` / `math_expert` rather than anonymous `chain`s — U4/LG3). It now also carries
+that name through to the node's `data` via `set_meta(langgraph_node=...)`. This is purely additive metadata
+(it rides into `node.data` through the normal `_emit` → event `data` path, so **no change to the
+event→graph reduction or its dual TS mirror**), and it lets the Theater's cast detection
+(`lib/theater.ts`) reliably distinguish a real graph agent from an anonymous sub-step.
 
 Raises `ImportError` at instantiation time if `langchain-core` is not installed.
 
@@ -998,6 +1157,18 @@ Spans follow OpenTelemetry's GenAI semantic conventions where they apply
 2. **`vapviz/tracer.py`** — add the start/end `EventType` mappings in the `_start_event` / `_end_event` helpers
 3. **`ui/src/components/AgentGraph.tsx`** — add a colour entry to `KIND_BG`
 4. **`ui/src/types/events.ts`** — add the string literal to the `NodeKind` union
+
+### Adding a new event type or node status
+
+Both are **dual-logic** touches — the Python and TypeScript halves must move together, and the parity test enforces it:
+
+1. **`vapviz/events.py`** ↔ **`ui/src/types/events.ts`** — add the `EventType` / `NodeStatus` value to both.
+2. **Both reducers** — `_apply_event_to_graph` (`vapviz/store.py`) ↔ `applyEventToGraph` (`ui/src/store/runStore.ts`): implement identical behaviour, including "deliberately inert" (an event that changes nothing, like `state_update` / `control`, still needs a fixture proving both sides ignore it). The replay scrubber's `buildGraphAt` (`ui/src/lib/replay.ts`) is a third, nodes-only copy of the reduction — the parity test replays the fixtures through it too.
+3. **A parity fixture** — drop a JSON case in `tests/fixtures/reducer_parity/`; both test halves pick it up automatically.
+3a. **The SSE listener list** — `ui/src/hooks/useRunStream.ts` registers a listener per event type (unlistened SSE named events are dropped silently); its list is `satisfies Record<EventType, …>`, so the compiler flags the omission.
+4. **For a new status:** every `Record<NodeStatus, …>` map in the UI (StatusBadge, BuildingView's dot map, AgentGraph borders, …) — the TS compiler lists them for you — plus `vapviz/metrics.py` (which counts runs by status) and the status clauses in `vapviz/summary.py` ↔ `ui/src/lib/summary.ts`.
+
+The `stopped` status added with the control channel is the worked example of this checklist. Note the boundary: the control **latch** (`RunControl`, `lib/runControl.ts`) is a side channel and UI state respectively — *not* part of the dual-logic rule; only what rides the event lane is.
 
 ### Adding a new integration
 

@@ -8,10 +8,11 @@ export type EventType =
   | "llm_call"
   | "llm_response"
   | "state_update"
+  | "control" // inert audit marker (pause/resume/stop); ignored by the reducer
   | "error";
 
 export type NodeKind = "agent" | "step" | "tool" | "llm";
-export type NodeStatus = "pending" | "running" | "success" | "error";
+export type NodeStatus = "pending" | "running" | "success" | "error" | "stopped";
 
 export interface VapEvent {
   id: string;
@@ -46,6 +47,7 @@ export interface GraphEdge {
 export interface RunGraph {
   run_id: string;
   label: string;
+  app_id?: string | null; // set at run creation from agent_start data, not by the reducer
   status: NodeStatus;
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -56,6 +58,7 @@ export interface RunGraph {
 export interface RunSummary {
   run_id: string;
   label: string;
+  app_id?: string | null; // stable pipeline id (trace(app_id=...)); grouping key = app_id ?? label
   status: NodeStatus;
   started_at: number;
   ended_at: number | null;

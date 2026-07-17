@@ -6,10 +6,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/runs": {
-        target: "http://localhost:8001",
-        changeOrigin: true,
-      },
+      // Proxy every backend route to the API server. `/metrics` and `/search`
+      // were missing, so in dev they fell through to the SPA index.html and the
+      // Analytics page hung on "Loading metrics…" (r.json() on HTML throws).
+      "/runs": { target: "http://localhost:8001", changeOrigin: true },
+      "/metrics": { target: "http://localhost:8001", changeOrigin: true },
+      "/search": { target: "http://localhost:8001", changeOrigin: true },
     },
   },
 });

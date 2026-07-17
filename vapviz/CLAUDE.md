@@ -1,0 +1,16 @@
+# vapviz/ — Python package (map, not a manual)
+
+The tracer → store → server pipeline. **Everything is an event; the graph is derived, never stored directly.** Plus one **return lane**: the control channel (below).
+
+- `tracer.py` — `trace`/`step` (sync) + `atrace`/`astep` (async) context managers; automatic parent/child nesting via the `_current_step` ContextVar. `_start_event`/`_end_event` maps live here. `trace(label, run_id=None, app_id=None)` — `app_id` is a stable pipeline identity riding in `agent_start` data (additive; surfaces as `RunSummary.app_id`, set at run creation — NOT part of the dual reducers). Control checkpoints: `_check_control`/`_acheck_control` run first thing in `step`/`astep` (pause parks between steps; stop raises `VapStopped` → nodes close with `stopped: true`, `trace`/`atrace` end the run stopped and re-raise).
+- `store.py` — `RunStore` ABC + `MemoryStore` (default); the pure `_apply_event_to_graph` builds the derived graph (`_terminal_status`: error > stopped > success); `_total_cost` sums **LLM-kind nodes only**. Also the concrete control-latch methods (`get_control`/`set_desired`/`set_ack`) over a `self._control` dict — ephemeral, lock-guarded like tags, never persisted, never reduced.
+- `backends/sqlite.py` — `SqliteStore` (WAL; replays the DB into an in-memory graph cache on startup). Control latch stays in-memory even here (a restarted server has no live agent to control).
+- `server.py` — FastAPI REST + SSE façade. Route order: `/runs/compare` before `/runs/{id}`. `GET`/`POST /runs/{id}/control` — pause/resume/stop a live in-process run; no-op (`ended: true`) on terminal runs; emits the inert `control` audit event.
+- `control.py` — `RunControl` (desired/acked latch), `VapStopped` (exported as `vapviz.VapStopped`), action/state constants. Design: `docs/ARCHITECTURE.md` → "Control channel".
+- `cost.py` — pricing table, longest-prefix match (strips `openai/` etc.).
+- `integrations/` — three patterns (monkey-patch / callback-handler / event-bus listener); all funnel into `StepContext._emit`.
+
+## Sharp edge — DUAL LOGIC (must stay in sync)
+The events→graph reduction exists **twice**: Python `_apply_event_to_graph` (here) ↔ TypeScript `applyEvent` in `ui/src/store/runStore.ts`. The event schema is dual (`events.py` ↔ `ui/src/types/events.ts`) and so is the cost reduce (`_total_cost` ↔ `runStore.ts`, both LLM-kind only). Changing an event type, node kind, node status, or cost rule means editing **all** of them — plus `KIND_BG` in `ui/src/components/AgentGraph.tsx` and the `_start_event`/`_end_event` maps in `tracer.py`. Control boundary: the `stopped` status + inert `control` event ARE dual-logic (with `stopped_run`/`control_inert` parity fixtures); the `RunControl` latch and its store/server plumbing are NOT (side channel).
+
+> Guarded by the **cross-impl parity test**: shared fixtures in `tests/fixtures/reducer_parity/*.json` are replayed through BOTH reducers — Python `tests/test_reducer_parity.py` and TS `ui/src/store/runStore.parity.test.ts` — and the normalized graphs must match. Drift fails the gate. Add a case = drop another JSON in that dir (both halves auto-pick it up); change behaviour = update the fixture's `expected` AND both reducers.

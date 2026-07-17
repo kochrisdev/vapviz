@@ -377,3 +377,40 @@ class TestTotalCost:
         # An aggregate on a non-llm node alone yields no run cost.
         g = self._graph(self._node("agent", NodeKind.AGENT, 0.00004))
         assert _total_cost(g) is None
+
+
+# ---------------------------------------------------------------------------
+# app_id — set at run creation from start-event data (not by the reducer)
+# ---------------------------------------------------------------------------
+
+class TestAppId:
+    def _start_with_app(self, run_id, app_id):
+        return _event(run_id, EventType.AGENT_START, "root", NodeKind.AGENT, "Agent",
+                      data={"label": "Agent", "app_id": app_id})
+
+    def test_memory_store_surfaces_app_id(self):
+        s = MemoryStore()
+        s.add_event(self._start_with_app("r1", "support-bot"))
+        assert s.get_run("r1").app_id == "support-bot"
+        assert s.list_runs()[0].app_id == "support-bot"
+        assert s.get_graph("r1").app_id == "support-bot"
+
+    def test_memory_store_app_id_none_when_absent(self):
+        s = MemoryStore()
+        s.add_event(_agent_start("r1"))
+        assert s.get_run("r1").app_id is None
+
+    def test_sqlite_app_id_round_trip(self, tmp_path):
+        from vapviz.backends.sqlite import SqliteStore
+
+        db = str(tmp_path / "appid.db")
+        s1 = SqliteStore(db)
+        s1.add_event(self._start_with_app("r1", "support-bot"))
+        assert s1.get_run("r1").app_id == "support-bot"
+        s1.close()
+
+        # Reopen: the startup replay must restore app_id from the persisted event.
+        s2 = SqliteStore(db)
+        assert s2.get_run("r1").app_id == "support-bot"
+        assert s2.list_runs()[0].app_id == "support-bot"
+        s2.close()

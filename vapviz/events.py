@@ -15,6 +15,7 @@ class EventType(str, Enum):
     LLM_CALL = "llm_call"
     LLM_RESPONSE = "llm_response"
     STATE_UPDATE = "state_update"
+    CONTROL = "control"  # inert audit marker (pause/resume/stop); ignored by the graph reducers
     ERROR = "error"
 
 
@@ -30,6 +31,7 @@ class NodeStatus(str, Enum):
     RUNNING = "running"
     SUCCESS = "success"
     ERROR = "error"
+    STOPPED = "stopped"  # terminal: halted by user control (not a success, not a crash)
 
 
 class VapEvent(BaseModel):
@@ -66,6 +68,7 @@ class GraphEdge(BaseModel):
 class RunSummary(BaseModel):
     run_id: str
     label: str
+    app_id: Optional[str] = None  # stable pipeline id (trace(app_id=...)); UI groups runs by it
     status: NodeStatus
     started_at: float
     ended_at: Optional[float] = None
@@ -79,6 +82,7 @@ class RunSummary(BaseModel):
 class RunGraph(BaseModel):
     run_id: str
     label: str
+    app_id: Optional[str] = None  # set at run creation from agent_start data, not by the reducer
     status: NodeStatus
     nodes: list[GraphNode] = Field(default_factory=list)
     edges: list[GraphEdge] = Field(default_factory=list)

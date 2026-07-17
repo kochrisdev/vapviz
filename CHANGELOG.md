@@ -9,7 +9,145 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **Live run control — Pause / Resume / Stop (in-process).** vapviz gains its first return
+  lane: while a run is live, an **Agent control** bar in the Theater tab (or
+  `GET`/`POST /runs/{id}/control`) can pause, resume, or stop the agent. Control is
+  **cooperative** — the tracer checks a per-run desired/acked latch at every `step`/`astep`
+  entry and obeys there: pause parks the agent *between* steps (sync agents block their own
+  thread, async agents yield to the event loop), stop raises the new `vapviz.VapStopped`
+  inside the agent so its code genuinely unwinds and halts (catchable for a graceful
+  shutdown). The UI shows the honest lag ("pausing…" until the agent actually parks). A
+  user-stopped run ends with a **first-class `stopped` status** — neither a success nor a
+  failure — rendered as a neutral ⏹ badge everywhere and excluded from the dashboard's
+  success/error rates, and every action is recorded as an inert `control` event in the run's
+  timeline ("Paused by user" in Logs). In-process agents only for this slice; remote-ingest
+  agents can't see the server's latch yet. Try `python examples/control_demo.py` (no API key).
+
+### Changed
+- **Clicking a room in the Office Building now lands on the Theater tab** (was: Story), so
+  the room you were watching opens straight onto its live office scene — where the new
+  control bar also lives. Lounge cards still open the Story view for debugging a failure.
+- **Pixel look, end to end — the app now lives in the office's world.** Square corners,
+  chunky 2px borders, hard-offset "pixel-step" shadows, a faint checkerboard ground (the
+  Building's yard tile), pixel scrollbars, and an all-pixel type system (self-hosted, OFL):
+  **Silkscreen** for display chrome (headings, tabs, badges), **Pixelify Sans** for all
+  reading text, **VT323** for code-shaped text (JSON, logs, durations). The **color tokens
+  are now derived from the sprite office's own palette** so the chrome matches the Theater
+  and Building scenes in both themes — dark is the office after hours (deep warm browns,
+  cream text, amber accent), light is the office by day (wall-cream surfaces, wood borders,
+  deep amber accent). The sidebar is topped by a VAPVIZ plate like the building's rooftop
+  sign. Backgrounds stay plain (subtle tile only — no imagery).
+- **The Simple/Technical mode toggle is gone — one adaptive UI for everyone.** Every run
+  shows the Story, Theater, Graph, and Logs tabs; tags, export, and replay are always
+  available. Depth is progressive instead of gated: runs open on the plain-language Story,
+  and raw JSON sits behind the detail panel's "Show technical details" expander (for
+  everyone now). The stored `vapviz-mode` preference is simply ignored.
+
+### Fixed
+- **Dashboard token totals now understand OpenAI-style usage keys.** `compute_metrics`
+  (behind `GET /metrics` and the Dashboard) only counted `usage.input_tokens`/
+  `output_tokens`, so runs whose usage arrived as `prompt_tokens`/`completion_tokens`
+  (the OpenAI shape, written through the public `set_output()`) showed **0 tokens** —
+  even though the node detail panel already understood those aliases. The backend now
+  accepts both shapes, and a non-numeric usage value counts as 0 instead of crashing
+  the `/metrics` endpoint.
+- **A malformed node can no longer blank the whole app.** The node-detail panel assumed
+  token usage always arrived as `usage.input_tokens`/`output_tokens`; any other shape
+  (e.g. OpenAI-style `prompt_tokens` written through the public `set_output()`) threw while
+  rendering and, with no error boundary in the tree, unmounted the entire UI to a black
+  screen. The panel now tolerates unknown usage shapes (and understands the
+  `prompt_tokens`/`completion_tokens` aliases), and the app gained error boundaries — one
+  around the whole app, one around the detail panel — so a bad node shows a friendly
+  "couldn't display this" card instead of killing the page.
+- **Graph text was unreadable in the dark theme.** ReactFlow v12 adds its own
+  `colorMode` class (default `"light"`) to the graph container, which collided with
+  vapviz's `.light` theme selector and flipped every design token inside the graph to
+  light-theme values on a dark page. The theme selector is now scoped to `html.light` and
+  the graph receives the app theme via ReactFlow's `colorMode` prop.
+- **Streamed runs showed their raw run id as the title.** The store now takes the run's
+  label from the `agent_start` event, so the run header and Story card say
+  "Research Agent", not `44bf3d452b05` (previously only the Office Building's polling
+  path set a real label). Guarded by a new unit test.
+
+### Added
+- **Office Building — the actual floor** — every floor is now drawn as one pixel-art
+  environment (a per-floor canvas under the rooms — `ui/src/lib/floorArt.ts` +
+  `ui/src/components/FloorEnv.tsx`, hand-authored owned art): stone corridor tiles, shared
+  wall runs with a drawn door opening per room, a runner rug and ceiling lights down the
+  Walk Way, plants, a water cooler, a notice board, wall art and a clock, the Door/Stairs
+  alcove, and east-wall windows. Rooms drop their CSS card chrome; each app's name + status
+  moved to a **nameplate** hung on the wall by its door (crisp text + status light). Empty
+  rooms read as unlet offices. UI-only; the locked 12×16 room diorama is untouched.
+- **Office Building — floor life / room doors** — the walk overlay
+  (`ui/src/lib/walkOverlay.ts`) grows a persistent floor-life layer (`reconcileFloorLife`,
+  driven each poll from `BuildingView`): a coworker steps out of every **running** room's
+  door and mills on that floor's Walk Way, walking back inside when the app finishes — so
+  the floor is alive while work is happening, not only during a descent/failure transition.
+  Kept honest — exactly one walker per running room, nothing decorative; a quiet floor is an
+  empty corridor. No floor life under `prefers-reduced-motion`. UI-only (re-presents the
+  derived graph).
+- **`app_id` — stable app identity for runs** — `vapviz.trace()` and `atrace()` accept an
+  optional `app_id`: a stable identifier for the pipeline ("app") a run belongs to, so every
+  invocation of the same app can be grouped. It rides in the run's `agent_start` data
+  (additive — the `langgraph_node` pattern, no event→graph change) and is surfaced as
+  `RunSummary.app_id` (+ the TS mirror). The UI groups runs by `app_id ?? label`, so
+  existing instrumentation groups sensibly with zero changes.
+
+### Changed
+- **Sidebar grouped by app** — the run list becomes an **app list** (current-run status dot,
+  ×N run count, plain-language subtitle); expanding an app shows its run history (status,
+  start time, duration, cost) where each row selects that run for inspection and replay.
+  Search, tags, compare and per-run delete are unchanged.
+- **Theater: the cozy sprite office** — the Theater tab's stage is rebuilt on hand-authored
+  12×16 "art-as-data" pixel sprites (palette + char-grid data rasterized to canvas and
+  recolored per agent — owned art, zero AI, zero third-party packs). One shared office with
+  five stations — the LLM desk plus SEARCH shelves, FETCH server racks, DATA cabinet and a
+  PRINT table — where tool calls are routed to a station by keyword-matching the tool's
+  name (unknown tools spread deterministically). Agents walk between their own home desk
+  and stations (walk speed adapts so they arrive before the call finishes), the active
+  station glows, and a playful speech bubble says what each agent is doing ("phoning the
+  API", "querying the DB", …). New: `ui/src/lib/{sprites,officeArt,officeScene}.ts` and
+  `ui/src/components/OfficeStage.tsx`. The Office building's rooms tile the **same engine in
+  a `compact` mode** (station chips + speech bubbles dropped at room scale, name tags keep a
+  legible minimum size; glow / walk / ✓ ! cues carry the signal), so both views share one
+  renderer, one art set, and one per-agent colorway — the interim SVG stage
+  (`AgentStage.tsx`, `lib/avatar.ts`) is retired. Stage polish for the tiled Floor: canvas
+  text widths are cached, a stage scrolled out of view pauses its animation loop entirely
+  (browsers only pause hidden *tabs*), and casts larger than 6 wrap their home desks into
+  an overflow back row instead of overlapping (additive — the locked furniture layout is
+  untouched).
+
+### Added
+- **Theater view** — a watchable, game-like per-run view (UI). Each agent is a deterministic
+  pixel character (built from its name) that walks to an LLM/tool desk while it's working, with
+  its name overhead; a tab on every run, driven by the existing replay/live pipeline.
+  New: `ui/src/lib/theater.ts`, `ui/src/components/TheaterView.tsx`.
+- **Office building** — a centralized monitor (`ui/src/components/BuildingView.tsx`, sidebar 🎭
+  icon) keyed to **apps**, not runs: each app owns one room shown as a live compact sprite
+  office (a re-run lights the same room back up, with an ×N run count) and each agent keeps a
+  stable desk within its room. Floors hold **6 rooms**; when the top floor fills, the earliest
+  app descends a floor (oldest finished preferred; an all-running floor sends its
+  earliest-started app down still live; floors grow downward, never sideways). Placement lives
+  in the pure, unit-tested reducer `ui/src/lib/building.ts` (`buildBuilding`); polls existing
+  endpoints — the only backend touch is the additive `app_id`. *(Supersedes the interim
+  run-keyed `FloorView.tsx`, added and retired within this unreleased window.)*
+- **The visual Office Building** — the monitor renders as an actual pixel-and-CSS building:
+  a roof with the `VAPVIZ` sign, floors as **two rows of three rooms around a central Walk
+  Way**, a **Door/Stairs** column, and a **lobby directory board** with the live tally (apps
+  working · in the lounge · spend today). When an app moves down a floor, a coworker **walks
+  the move** — across the Walk Way, into the Stairs (vanishing), out of the Door one floor
+  below (a new sprite-overlay engine, `ui/src/lib/walkOverlay.ts`). An app whose current run
+  **failed keeps its room** — the room turns red — while its agents head up to the shared
+  **Lounge**, a hand-authored break-room diorama on the top floor's east side
+  (`ui/src/lib/loungeArt.ts`, `ui/src/components/LoungeStage.tsx`; owned art, zero AI): each
+  waiting agent does something different (coffee, vending machine, water cooler, lunch,
+  watering the plants, pacing). Click a lounge card to inspect the failed run or **Dismiss**
+  it until the app's next run (dismissals key on the failed run id, persist in
+  `localStorage`, and are pruned against the live run roster). All motion respects
+  `prefers-reduced-motion` (walkers and glides are skipped; the building snaps).
+- LangChain integration now carries the `langgraph_node` name through to node data (additive
+  metadata), so multi-agent LangGraph runs show their real cast (supervisor / workers) in Theater.
 
 ## [1.1.0]
 

@@ -192,6 +192,51 @@ class TestCostAndModels:
         m = compute_metrics([_run(nodes=[node])])
         assert m.by_model[0].model == "claude-3-5-sonnet"
 
+    def test_openai_style_usage_aliases_counted(self):
+        # prompt_tokens/completion_tokens (the OpenAI shape, written through the
+        # public set_output()) must count like the canonical keys.
+        node = GraphNode(
+            id=uuid.uuid4().hex[:12],
+            kind=NodeKind.LLM,
+            label="llm/gpt-4o",
+            status=NodeStatus.SUCCESS,
+            data={"output": {"usage": {"prompt_tokens": 120, "completion_tokens": 30}}},
+        )
+        m = compute_metrics([_run(nodes=[node])])
+        assert m.total_tokens.input == 120
+        assert m.total_tokens.output == 30
+        assert m.by_model[0].input_tokens == 120
+        assert m.by_model[0].output_tokens == 30
+
+    def test_canonical_usage_keys_win_over_aliases(self):
+        node = GraphNode(
+            id=uuid.uuid4().hex[:12],
+            kind=NodeKind.LLM,
+            label="llm/gpt-4o",
+            status=NodeStatus.SUCCESS,
+            data={"output": {"usage": {"input_tokens": 10, "prompt_tokens": 999,
+                                       "output_tokens": 5, "completion_tokens": 999}}},
+        )
+        m = compute_metrics([_run(nodes=[node])])
+        assert m.total_tokens.input == 10
+        assert m.total_tokens.output == 5
+
+    def test_malformed_usage_never_crashes(self):
+        # usage comes from arbitrary user data — strings, None, bools, NaN must
+        # count as 0, not 500 the /metrics endpoint.
+        node = GraphNode(
+            id=uuid.uuid4().hex[:12],
+            kind=NodeKind.LLM,
+            label="llm/gpt-4o",
+            status=NodeStatus.SUCCESS,
+            data={"output": {"usage": {"input_tokens": "lots", "output_tokens": None,
+                                       "prompt_tokens": True, "completion_tokens": float("nan")}}},
+        )
+        m = compute_metrics([_run(nodes=[node])])
+        assert m.total_tokens.input == 0
+        assert m.total_tokens.output == 0
+        assert m.total_llm_calls == 1
+
 
 # ---------------------------------------------------------------------------
 # Cost over time

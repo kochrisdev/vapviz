@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { useRunStore } from "../store/runStore";
-import type { VapEvent } from "../types/events";
+import type { EventType, VapEvent } from "../types/events";
 
 export type StreamStatus = "connected" | "reconnecting";
 
-const EVENT_TYPES = [
-  "agent_start",
-  "agent_end",
-  "step_start",
-  "step_end",
-  "tool_call",
-  "tool_result",
-  "llm_call",
-  "llm_response",
-  "state_update",
-  "error",
-] as const;
+// SSE named events are silently dropped without a listener, so EVERY VapEvent
+// type must appear here. The `satisfies Record<EventType, …>` makes tsc reject
+// this file whenever a new EventType is added but not listed.
+const EVENT_TYPES = Object.keys({
+  agent_start: true,
+  agent_end: true,
+  step_start: true,
+  step_end: true,
+  tool_call: true,
+  tool_result: true,
+  llm_call: true,
+  llm_response: true,
+  state_update: true,
+  control: true,
+  error: true,
+} satisfies Record<EventType, true>) as EventType[];
 
 // The server emits a "ping" event every 30 s when idle. If neither a ping
 // nor a real event arrives within this window, the connection is presumed

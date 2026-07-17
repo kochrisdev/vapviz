@@ -168,6 +168,26 @@ class TestVapCallbackHandlerChain:
             )
             assert handler._contexts[run_uuid].label == "math_expert"
 
+    def test_chain_marks_langgraph_node_in_metadata(self):
+        # The marker rides into node.data (via _emit) so the Theater view's cast
+        # detection can tell a real graph agent from an anonymous sub-step.
+        with _TraceHandle() as h:
+            handler = VapCallbackHandler(h.run)
+            run_uuid = uuid4()
+            handler.on_chain_start(
+                {"name": "RunnableSequence"}, {},
+                run_id=run_uuid, parent_run_id=None,
+                metadata={"langgraph_node": "supervisor"},
+            )
+            assert handler._contexts[run_uuid]._metadata.get("langgraph_node") == "supervisor"
+
+    def test_chain_no_langgraph_marker_without_metadata(self):
+        with _TraceHandle() as h:
+            handler = VapCallbackHandler(h.run)
+            run_uuid = uuid4()
+            handler.on_chain_start({"name": "MyChain"}, {}, run_id=run_uuid)
+            assert "langgraph_node" not in handler._contexts[run_uuid]._metadata
+
     def test_chain_label_falls_back_when_no_langgraph_node(self):
         with _TraceHandle() as h:
             handler = VapCallbackHandler(h.run)

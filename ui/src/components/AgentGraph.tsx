@@ -81,7 +81,7 @@ function VapNode({ data, selected }: NodeProps) {
 
       {/* Kind badge with icon (error icon takes over on failure) */}
       <div
-        className="flex items-center gap-1 text-[10px] uppercase tracking-wider mb-1"
+        className="flex items-center gap-1 text-[10px] px-display mb-1"
         style={{ color: `rgb(var(${isError ? "--status-error" : kindVar}))` }}
       >
         {isError ? <AlertTriangle size={10} /> : <Icon size={9} />}
@@ -209,6 +209,7 @@ export function AgentGraph({ graphNodes, graphEdges, simplified = true }: Props)
       fitView
       fitViewOptions={{ padding: 0.25 }}
       minZoom={0.15}
+      colorMode={theme}
       proOptions={{ hideAttribution: true }}
     >
       <Background variant={BackgroundVariant.Dots} color={chrome.dots} gap={20} size={1.5} />

@@ -9,17 +9,19 @@ knowledge needed. If you can open a web page, you can use this.
 
 ---
 
-## The two modes: Simple and Technical
+## One app for everyone
 
-At the top-left of the app there's a switch:
+There's no "beginner mode" to pick — everyone sees the same app, and depth is
+opt-in where you need it. A run always opens on its plain-language **Story**;
+the **Theater**, **Graph**, and **Logs** tabs sit right next to it when you
+want to go deeper; and raw JSON stays tucked behind a *"Show technical
+details"* link inside the detail panel until you ask for it. Nothing is
+hidden, nothing is forced on you.
 
-| Mode | Who it's for | What you see |
-|------|--------------|--------------|
-| **Simple** *(default)* | Anyone — PMs, support, stakeholders | A plain-language story of the run. Each step explained in words. |
-| **Technical** | Developers / debugging | Everything in Simple **plus** the visual graph, the raw event log, and the underlying JSON data. |
-
-Your choice is remembered the next time you open the app. Switching modes never changes
-your data — it only changes how much detail is shown.
+> The app wears vapviz's pixel-office look, end to end: chunky borders, square
+> corners, pixel typefaces throughout, and a warm palette taken straight from
+> the pixel office itself — so the app and its little animated scenes feel like
+> one world, in both light and dark themes.
 
 ---
 
@@ -27,7 +29,8 @@ your data — it only changes how much detail is shown.
 
 The left sidebar lists every run, newest first. Each entry shows:
 
-- A **coloured dot** for status — green = finished, red = failed, amber (pulsing) = still running.
+- A **coloured dot** for status — green = finished, red = failed, amber (pulsing) = still running,
+  grey = stopped by you (see *Pause, resume, stop* below).
 - The run's **name**.
 - A **one-line summary** of what happened, e.g.
   *"Weather agent answered 'What's the weather in Paris?' — 2 model calls (gpt-4o-mini),
@@ -53,7 +56,7 @@ icon in the sidebar header to come back.
 
 ---
 
-## Reading a run in Simple mode
+## Reading a run — the Story tab
 
 Opening a run shows its **Story** — a summary card at the top, then a collapsible list of
 what the agent did:
@@ -73,7 +76,7 @@ English, plus:
 - **Tokens** used and the **cost** (for AI-model steps).
 - The full **conversation** with the model, shown as chat bubbles (who said what).
 - A **"Show technical details"** link — click it if you want to peek at the raw data
-  behind the step. (In Technical mode this is always shown.)
+  behind the step.
 
 Sensitive values like API keys are automatically hidden.
 
@@ -81,12 +84,91 @@ Press **Esc** to close the detail panel.
 
 ---
 
-## Technical mode extras
+## Theater — watch your agents work
 
-Switching to **Technical** keeps everything above and adds three tabs at the top of a run:
+The **Theater** tab turns a run into a cozy pixel office — a tab at the top of every run.
 
-### Story
-The same narrative as Simple mode.
+- **Each agent is a little pixel worker** with its **name floating above its head**. The same
+  agent always gets the same hair, shirt and skin colours, so you learn to recognise your cast —
+  the nametag is what identifies who's who. Every agent also has its **own home desk** along the
+  bottom of the room.
+- **They walk to a station to work.** When an agent is talking to the AI model it walks to the
+  **LLM desk**; when it runs a tool it heads for the station that matches the tool — the **SEARCH**
+  bookshelves, the **FETCH** server racks, the **DATA** filing cabinet or the **PRINT** table. The
+  active station glows, and a speech bubble says what the agent is up to ("phoning the API",
+  "querying the DB", …). If something failed, the agent sits at its desk saying it **hit a snag**.
+- **Watch it live or replay it.** For a run that's still going, the characters move in real time. For
+  a finished run it opens calm (everyone at their desk); press **▶** in the bar at the bottom to
+  replay from the start, or drag the slider to step through any moment.
+
+> Multi-agent runs (a CrewAI crew, a LangGraph supervisor + workers) are where this shines — you can
+> literally see which agent is doing what.
+
+### Pause, resume, stop — the Agent control bar
+
+While a run is **live**, the Theater tab shows an **Agent control** bar with **Pause** and
+**Stop** buttons (it disappears once the run ends). This isn't just for show — it really
+controls the agent:
+
+- **Pause** asks the agent to hold on. Agents are polite, not instant: the bar says
+  **"pausing…"** until the agent finishes the step it's on and actually parks, then
+  **"paused"** with a **Resume** button. Think of asking a colleague to stop — they finish
+  their sentence first.
+- **Stop** ends the run at the agent's next opportunity. A stopped run gets a neutral grey
+  **⏹ Stopped** badge — it didn't succeed and it didn't fail; *you* ended it — and it doesn't
+  count against your success rate on the Dashboard.
+- Every pause/resume/stop is written into the run's **Logs** ("Paused by user"), so the
+  record stays honest.
+
+> This works for agents running in the same process as the vapviz server (like the demos).
+> Agents that report over the network can't be controlled yet.
+
+## The Office Building — monitor everything at once
+
+Click the **🎭 masks icon** at the top of the sidebar for the **Office building**: every **app**
+(pipeline) gets its own room, shown as **the same pixel office in miniature** — its own desks,
+stations and walking workers (the tiny rooms skip the station labels and speech bubbles, but the
+glow, the walking and the ✓ / ! name-tag marks still tell you what's happening). It's the
+control-room view — glance at it to see all your agents working across all your apps.
+
+How the building works:
+
+- **A room belongs to an app, not a run.** Re-running an app lights the *same* room back up —
+  the ×N badge counts its runs. (Give your pipeline a stable identity with
+  `vapviz.trace("My app", app_id="my-app")`; without one, runs group by exact label.)
+- **Each agent keeps its desk** across re-runs, so the room always looks familiar.
+- **Floors hold six rooms** — two rows of three around a central **Walk Way**. When the top
+  floor is full, the app that's been sitting there longest moves down a floor (still fully
+  live and animating) — the building grows downward, new activity stays on top. You'll see a
+  coworker **walk** the move: across the Walk Way, into the **Stairs**, then out of the
+  **Door** on the floor below.
+- **Every floor is drawn as a real place** — stone corridor tiles, shared walls with a door
+  opening for every room, a runner rug and ceiling lights down the Walk Way, plants, a water
+  cooler, a notice board, wall art and a clock. Each room's **nameplate** hangs on the wall by
+  its door, with a status light. Empty rooms read as unlet offices.
+- **The floor is alive while work runs** — a coworker steps out of any **running** room's door
+  to mill on that floor's corridor, heading back inside when the app finishes. A walker on the
+  corridor always means real work: exactly one per running room, nothing decorative. A quiet
+  floor is an empty corridor. (No floor motion if your system is set to reduce motion.)
+- **Failures gather in the Lounge** — the break room at the building's top-right. A failing
+  app's room **stays where it is and turns red** (so you can't miss it), while its agents
+  head up to the lounge to wait — each doing something different (coffee, vending machine,
+  water cooler, lunch…). **Click its lounge card to inspect** the failed run, or press
+  **Dismiss** to clear it until that app runs again (a *new* failure always re-flags, even
+  after a dismissal — dismissals survive page reloads).
+- **The lobby board** at the base keeps the live tally: apps working, agents in the lounge,
+  spend today.
+- **Click any room** to drop into that app's current run — it opens straight onto the
+  **Theater** tab, so you land in the live office scene (with the control bar if it's running).
+
+The sidebar mirrors the building: it lists **apps**, not individual runs — expand one (▸) to see
+its full run history and click any past run to inspect and replay it.
+
+---
+
+## Going deeper — the Graph and Logs tabs
+
+Next to Story and Theater, every run also has:
 
 ### Graph
 A visual diagram (flow chart) of the run:
@@ -115,7 +197,7 @@ Your choice is remembered. Everything — including the graph — re-themes toge
 
 ## Exporting & sharing
 
-In Technical mode, the **Export** button (top-right of a run) lets you download the run as
+The **Export** button (top-right of a run) lets you download the run as
 **JSON** (the full data) or a **PNG** image of the graph — handy for sharing or attaching
 to a report.
 
@@ -133,10 +215,15 @@ AI-model calls. `$0` means no billable model calls were recorded.
 
 | I want to… | Do this |
 |------------|---------|
-| See plain-language explanations | Stay in **Simple** mode |
-| See the visual graph or raw data | Switch to **Technical** mode |
+| See plain-language explanations | Open a run — it starts on **Story** |
+| See the visual graph or raw event log | The **Graph** / **Logs** tabs |
 | Understand one step | Click its box → read the detail panel |
 | See the raw JSON for a step | Click **"Show technical details"** |
+| Watch a run as a pixel "office" | Open the **Theater** tab |
+| Pause / resume / stop a live run | The **Agent control** bar (Theater tab, while running) |
+| Monitor all apps working at once | Open the **Office building** (🎭 masks icon, sidebar) |
+| See an app's past runs | Expand the app in the sidebar (▸) → click a run |
+| Clear a failed app from the building | **Dismiss** it in the lounge (returns on its next run) |
 | Compare all runs at a glance | Open the **Dashboard** (chart icon, sidebar) |
 | Hide framework plumbing in the graph | Use the **Simplified** toggle (Graph tab) |
 | Watch a run play out | Use **Replay** (Graph tab) |

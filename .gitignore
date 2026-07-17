@@ -7,8 +7,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.venv/
-venv/
+.venv
+venv
 env/
 .env
 *.egg
@@ -47,3 +47,14 @@ vapviz.db-wal
 *.db-wal
 .vap_server.out
 .vap_server.err
+
+# Local working areas — never committed (moved here from .git/info/exclude so the
+# boundary travels with the repo and is visible, not hidden in a local-only file)
+scratch/
+docs/notes/
+
+# Claude Code personal settings (shared config lives in .claude/settings.json)
+.claude/settings.local.json
+
+# TypeScript incremental build artifact
+*.tsbuildinfo

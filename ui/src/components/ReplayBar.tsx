@@ -40,7 +40,7 @@ export function ReplayBar({ events, startedAt, index, setIndex, playing, setPlay
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-t border-border bg-surface shrink-0">
-      <span className="text-[10px] uppercase tracking-wider text-accent font-semibold shrink-0">
+      <span className="text-[10px] px-display text-accent font-semibold shrink-0">
         Replay
       </span>
 

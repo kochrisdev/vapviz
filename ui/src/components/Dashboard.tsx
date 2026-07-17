@@ -53,7 +53,7 @@ function StatCard({
 }) {
   return (
     <div className="bg-surface border border-border rounded-xl px-4 py-3 flex flex-col gap-1">
-      <div className="flex items-center gap-1.5 text-content-faint text-[11px] uppercase tracking-wider">
+      <div className="flex items-center gap-1.5 text-content-faint text-[11px] px-display">
         {icon}
         {label}
       </div>
@@ -71,7 +71,7 @@ function CostChart({ data }: { data: Metrics["cost_over_time"] }) {
 
   return (
     <div className="bg-surface border border-border rounded-xl px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wider text-content-faint mb-3">Cost over time</div>
+      <div className="text-[11px] px-display text-content-faint mb-3">Cost over time</div>
       {data.length === 0 ? (
         <div className="text-content-faint text-sm py-6 text-center">No runs yet</div>
       ) : (
@@ -107,13 +107,13 @@ function CostChart({ data }: { data: Metrics["cost_over_time"] }) {
 function ModelTable({ models }: { models: Metrics["by_model"] }) {
   return (
     <div className="bg-surface border border-border rounded-xl px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wider text-content-faint mb-3">By model</div>
+      <div className="text-[11px] px-display text-content-faint mb-3">By model</div>
       {models.length === 0 ? (
         <div className="text-content-faint text-sm py-6 text-center">No LLM calls recorded</div>
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-[10px] uppercase tracking-wider text-content-faint text-left">
+            <tr className="text-[10px] px-display text-content-faint text-left">
               <th className="font-medium pb-2">Model</th>
               <th className="font-medium pb-2 text-right">Calls</th>
               <th className="font-medium pb-2 text-right">Tokens</th>
@@ -152,13 +152,13 @@ function KindBreakdown({ counts, total }: { counts: Metrics["by_kind"]; total: n
 
   return (
     <div className="bg-surface border border-border rounded-xl px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wider text-content-faint mb-3">Nodes by kind</div>
+      <div className="text-[11px] px-display text-content-faint mb-3">Nodes by kind</div>
       <div className="flex flex-col gap-2.5">
         {rows.map(({ kind, count }) => {
           const pct = total > 0 ? (count / total) * 100 : 0;
           return (
             <div key={kind} className="flex items-center gap-3">
-              <span className="text-xs text-content-muted w-12 capitalize">{kind}</span>
+              <span className="text-xs text-content-muted w-12">{kind === "llm" ? "LLM" : kind[0].toUpperCase() + kind.slice(1)}</span>
               <div className="flex-1 h-2.5 bg-surface-inset rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all"
@@ -204,7 +204,7 @@ export function Dashboard() {
     <div className="flex-1 flex flex-col min-w-0">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-surface shrink-0">
-        <span className="font-semibold text-content">Analytics</span>
+        <span className="px-display text-xs text-content">Analytics</span>
         {metrics && (
           <span className="text-xs text-content-faint">
             across {metrics.run_count} run{metrics.run_count === 1 ? "" : "s"}

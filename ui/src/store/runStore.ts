@@ -11,17 +11,11 @@ export interface RunState {
   events: VapEvent[];
 }
 
-export type View = "runs" | "dashboard";
+export type View = "runs" | "dashboard" | "floor";
 
-// Audience mode: Simple = plain-language narrative only; Technical = graph,
-// logs, and raw JSON unlocked. Persisted across sessions.
-export type AppMode = "simple" | "technical";
-
-const MODE_KEY = "vapviz-mode";
-function initialMode(): AppMode {
-  if (typeof window === "undefined") return "simple";
-  return window.localStorage.getItem(MODE_KEY) === "technical" ? "technical" : "simple";
-}
+/** Per-run tabs inside the run viewer (App.tsx). Lives here so callers of
+ *  `selectRun` (e.g. the floor view) can request which tab to land on. */
+export type RunTab = "story" | "theater" | "graph" | "logs";
 
 interface Store {
   runs: RunSummary[];
@@ -30,11 +24,12 @@ interface Store {
   selectedNodeId: string | null;
   compareRunId: string | null;
   view: View;
-  mode: AppMode;
+  // Which per-run tab to open on the next run selection ("story" unless a
+  // caller asked otherwise, e.g. a floor-view room click → "theater").
+  entryTab: RunTab;
 
   setRuns: (runs: RunSummary[]) => void;
-  setMode: (mode: AppMode) => void;
-  selectRun: (runId: string | null) => void;
+  selectRun: (runId: string | null, tab?: RunTab) => void;
   selectNode: (nodeId: string | null) => void;
   applyEvent: (event: VapEvent) => void;
   setRunGraph: (runId: string, nodes: GraphNode[], edges: GraphEdge[], label: string, status: NodeStatus, started_at: number, ended_at: number | null) => void;
@@ -46,6 +41,79 @@ interface Store {
 const START_TYPES = new Set(["agent_start", "step_start", "tool_call", "llm_call"]);
 const END_TYPES = new Set(["agent_end", "step_end", "tool_result", "llm_response"]);
 
+// ── DUAL LOGIC ──────────────────────────────────────────────────────────────
+// `applyEventToGraph` + `totalLlmCost` are the events→graph reduction. They MUST
+// stay byte-for-byte equivalent to Python `_apply_event_to_graph` / `_total_cost`
+// in vapviz/store.py. The cross-impl parity test (tests/fixtures/reducer_parity/,
+// tests/test_reducer_parity.py, runStore.parity.test.ts) fails the gate on drift.
+// See ui/src/CLAUDE.md.
+
+export interface GraphState {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  status: NodeStatus;
+  ended_at: number | null;
+}
+
+/** Pure: fold one event into the graph state, returning fresh arrays. */
+export function applyEventToGraph(prev: GraphState, event: VapEvent): GraphState {
+  let nodes = [...prev.nodes];
+  let edges = [...prev.edges];
+  let status = prev.status;
+  let ended_at = prev.ended_at;
+
+  if (START_TYPES.has(event.type)) {
+    const exists = nodes.find((n) => n.id === event.node_id);
+    if (!exists) {
+      nodes.push({
+        id: event.node_id,
+        kind: event.node_kind,
+        label: event.node_label,
+        status: "running",
+        parent_id: event.parent_id,
+        started_at: event.timestamp,
+        ended_at: null,
+        data: event.data,
+      });
+    }
+    if (event.parent_id) {
+      const edgeId = `${event.parent_id}→${event.node_id}`;
+      if (!edges.find((e) => e.id === edgeId)) {
+        edges.push({ id: edgeId, source: event.parent_id, target: event.node_id, kind: "execution" });
+      }
+    }
+  } else if (END_TYPES.has(event.type)) {
+    // DUAL-LOGIC: mirrors `_terminal_status` in vapviz/store.py. `error` wins
+    // over `stopped`; a user-stopped node/run carries `stopped` and no `error`.
+    const terminal: NodeStatus = event.data.error ? "error" : event.data.stopped ? "stopped" : "success";
+    nodes = nodes.map((n) =>
+      n.id === event.node_id
+        ? { ...n, status: terminal, ended_at: event.timestamp, data: { ...n.data, ...event.data } }
+        : n
+    );
+    if (event.type === "agent_end") {
+      status = terminal;
+      ended_at = event.timestamp;
+    }
+  } else if (event.type === "error") {
+    nodes = nodes.map((n) =>
+      n.id === event.node_id ? { ...n, status: "error", ended_at: event.timestamp, data: { ...n.data, ...event.data } } : n
+    );
+  }
+
+  return { nodes, edges, status, ended_at };
+}
+
+/** Pure: run total = sum of cost_usd over LLM-kind nodes only (null if none priced). */
+export function totalLlmCost(nodes: GraphNode[]): number | null {
+  const total = nodes.reduce((sum, n) => {
+    if (n.kind !== "llm") return sum;
+    const cost = (n.data?.output as Record<string, unknown> | undefined)?.cost_usd as number | undefined;
+    return cost != null ? sum + cost : sum;
+  }, 0);
+  return total > 0 ? Number(total.toFixed(8)) : null;
+}
+
 export const useRunStore = create<Store>((set) => ({
   runs: [],
   selectedRunId: null,
@@ -55,18 +123,14 @@ export const useRunStore = create<Store>((set) => ({
   // The global analytics Dashboard is the default landing view — the first
   // thing users see. Selecting a run switches to the per-run view.
   view: "dashboard",
-  mode: initialMode(),
+  entryTab: "story",
 
   setRuns: (runs) => set({ runs }),
 
-  setMode: (mode) =>
-    set(() => {
-      if (typeof window !== "undefined") window.localStorage.setItem(MODE_KEY, mode);
-      return { mode };
-    }),
-
-  // Selecting a run always returns to the run (graph) view
-  selectRun: (runId) => set({ selectedRunId: runId, selectedNodeId: null, compareRunId: null, view: "runs" }),
+  // Selecting a run switches to the per-run view. `tab` picks the landing tab
+  // (default "story"); the run viewer reads `entryTab` on the run change.
+  selectRun: (runId, tab = "story") =>
+    set({ selectedRunId: runId, selectedNodeId: null, compareRunId: null, view: "runs", entryTab: tab }),
 
   selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
@@ -101,61 +165,24 @@ export const useRunStore = create<Store>((set) => ({
       // (re)connect, so a reconnect would otherwise double the timeline.
       if (prev.events.some((e) => e.id === event.id)) return s;
 
-      let nodes = [...prev.nodes];
-      let edges = [...prev.edges];
-      let status = prev.status;
-      let ended_at = prev.ended_at;
+      const { nodes, edges, status, ended_at } = applyEventToGraph(
+        { nodes: prev.nodes, edges: prev.edges, status: prev.status, ended_at: prev.ended_at },
+        event
+      );
 
-      if (START_TYPES.has(event.type)) {
-        const exists = nodes.find((n) => n.id === event.node_id);
-        if (!exists) {
-          nodes.push({
-            id: event.node_id,
-            kind: event.node_kind,
-            label: event.node_label,
-            status: "running",
-            parent_id: event.parent_id,
-            started_at: event.timestamp,
-            ended_at: null,
-            data: event.data,
-          });
-        }
-        if (event.parent_id) {
-          const edgeId = `${event.parent_id}→${event.node_id}`;
-          if (!edges.find((e) => e.id === edgeId)) {
-            edges.push({ id: edgeId, source: event.parent_id, target: event.node_id, kind: "execution" });
-          }
-        }
-      } else if (END_TYPES.has(event.type)) {
-        nodes = nodes.map((n) =>
-          n.id === event.node_id
-            ? { ...n, status: event.data.error ? "error" : "success", ended_at: event.timestamp, data: { ...n.data, ...event.data } }
-            : n
-        );
-        if (event.type === "agent_end") {
-          status = event.data.error ? "error" : "success";
-          ended_at = event.timestamp;
-        }
-      } else if (event.type === "error") {
-        nodes = nodes.map((n) =>
-          n.id === event.node_id ? { ...n, status: "error", ended_at: event.timestamp, data: { ...n.data, ...event.data } } : n
-        );
-      }
+      // The run's human label arrives with agent_start; until then (and for
+      // runs whose history starts mid-stream) the run id is the placeholder.
+      const label = event.type === "agent_start" ? event.node_label : prev.label;
 
       return {
         runStates: {
           ...s.runStates,
-          [event.run_id]: { ...prev, nodes, edges, status, ended_at, events: [...prev.events, event] },
+          [event.run_id]: { ...prev, label, nodes, edges, status, ended_at, events: [...prev.events, event] },
         },
         runs: (() => {
           // Recompute total cost from llm nodes only — some integrations also
           // attach an aggregate cost_usd to the parent agent node (would double-count).
-          const totalCostUsd = nodes.reduce((sum, n) => {
-            if (n.kind !== "llm") return sum;
-            const cost = (n.data?.output as Record<string, unknown> | undefined)?.cost_usd as number | undefined;
-            return cost != null ? sum + cost : sum;
-          }, 0);
-          const costForRun = totalCostUsd > 0 ? totalCostUsd : null;
+          const costForRun = totalLlmCost(nodes);
 
           return s.runs.some((r) => r.run_id === event.run_id)
             ? s.runs.map((r) =>
@@ -167,6 +194,7 @@ export const useRunStore = create<Store>((set) => ({
                 {
                   run_id: event.run_id,
                   label: event.node_label,
+                  app_id: (event.data.app_id as string | undefined) ?? null,
                   status,
                   started_at: prev.started_at ?? event.timestamp,
                   ended_at,

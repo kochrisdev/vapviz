@@ -8,7 +8,13 @@ A lightweight Python + React framework for **tracing and visualizing AI agent pi
 
 Instrument your agent with a single context manager. Every step, tool call, and LLM invocation appears instantly as a live interactive graph in the browser — with inputs, outputs, durations, and error states.
 
-![vapviz demo screenshot](docs/screenshot.png)
+![vapviz — live interactive graph of an agent run](docs/screenshot.png)
+
+*The graph view — every step, tool call, and LLM invocation as a live, interactive DAG.*
+
+![vapviz — Theater view](docs/screenshot-theater.png)
+
+*Theater view — watch each agent as a pixel character working in a shared office, live or replayed.*
 
 ---
 
@@ -30,12 +36,15 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Agent evals & scoring** — `eval_run(run, [checks...])` asserts cost/latency/output/custom/LLM-judge checks — regression testing for agents
 - **Search & tagging** — full-text search across run contents (`GET /search`) plus persistent per-run tags, surfaced in the UI
 - **Trace replay** — scrub a run event-by-event in the UI; the graph fills in node by node as it happened
+- **Theater view** — watch a run as a cozy pixel office: each agent is a hand-drawn sprite that walks from its home desk to the LLM desk or a tool station (SEARCH / FETCH / DATA / PRINT, picked from the tool's name), speech bubble overhead — live or replayed
+- **Office building** — a centralized monitor keyed to **apps**, drawn as a real pixel building: each app owns a room (a re-run lights the same room back up), floors hold six rooms around a Walk Way with the earliest app **walking down the stairs** when the top floor fills, and a failing app's room turns red while its agents wait it out in the rooftop **lounge** (inspect or dismiss). A coworker steps out of every **running** room to mill on the Walk Way, so the floor is alive exactly while work is happening — watch all your agents work across every app on one screen
+- **Live run control** — **Pause / Resume / Stop** a running in-process agent from the UI (Theater tab) or `POST /runs/{id}/control`. Cooperative: the tracer obeys at each step boundary — pause parks the agent *between* steps, stop raises `vapviz.VapStopped` so the code genuinely halts, and the run ends with a first-class neutral `stopped` status
 - **Persistent storage** — `vapviz.configure(db="vapviz.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vapviz serve --db vapviz.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
 - **Interactive graph** — ReactFlow DAG with dagre auto-layout, zoom/pan, minimap
 - **Node detail panel** — click any node to inspect its inputs, outputs, token usage, duration, and errors
-- **Event timeline** — chronological log of all 10 event types with millisecond timestamps
+- **Logs view** — a clean, full-width, filterable event log of all event types with millisecond timestamps
 - **Remote ingest** — push events via HTTP from any process or language (`POST /runs/{id}/events`)
 - **Run comparison** — diff any two runs side by side: node diff (only A / only B / common), duration Δ, and cost Δ
 - **Export** — download any run as JSON (`GET /runs/{id}/export`) or PNG (html2canvas capture)
@@ -48,7 +57,7 @@ New to vapviz? The **[step-by-step tutorial](docs/TUTORIAL.md)** walks you from 
 fully instrumented agent — covering tracing, async, error handling, cost tracking, the OpenAI /
 Anthropic / LangGraph / CrewAI / Pydantic AI / LlamaIndex / AutoGen integrations, remote ingest, run
 comparison, export, the analytics dashboard, OpenTelemetry export, budgets, evals, search & tagging,
-and trace replay.
+trace replay, and live run control (pause / resume / stop).
 
 ---
 
@@ -575,6 +584,7 @@ The FastAPI server (`http://localhost:8001`) exposes:
 | `GET` | `/runs/{id}/events` | **SSE stream** — replays history then pushes live |
 | `GET` | `/runs/compare?a={id}&b={id}` | Return two run graphs for comparison |
 | `POST` | `/runs/{id}/events` | Ingest an event from a remote process |
+| `GET` / `POST` | `/runs/{id}/control` | Read / send live run control (pause / resume / stop, in-process agents) |
 | `DELETE` | `/runs` | Clear all runs from store |
 | `DELETE` | `/runs/{id}` | Delete a single run |
 
@@ -590,6 +600,7 @@ step_start   step_end
 tool_call    tool_result
 llm_call     llm_response
 state_update
+control
 error
 ```
 
@@ -610,6 +621,7 @@ vapviz/                          Python package
 ├── budgets.py                Cost/latency budgets — check_budget(), enable_budget_alerts()
 ├── evals.py                  Agent evals — eval_run(), checks, scoring
 ├── search.py                 Run search — run_matches() predicate
+├── control.py                Live run control — RunControl latch, VapStopped
 ├── backends/
 │   ├── __init__.py
 │   └── sqlite.py             SqliteStore — WAL-mode SQLite persistence
@@ -628,17 +640,28 @@ ui/src/                       Vite + React + TypeScript
 ├── components/
 │   ├── AgentGraph.tsx        ReactFlow DAG with dagre auto-layout
 │   ├── Dashboard.tsx         Cross-run analytics view (GET /metrics)
-│   ├── EventTimeline.tsx     Chronological event log
+│   ├── LogsView.tsx          Full-width, filterable event log
 │   ├── ExportMenu.tsx        Export dropdown (JSON download + PNG capture)
 │   ├── NodeDetail.tsx        Selected-node inspector
 │   ├── RunComparison.tsx     Side-by-side diff of two runs
-│   ├── RunList.tsx           Sidebar run list with search, tags, compare + dashboard toggle
+│   ├── RunList.tsx           App-grouped sidebar (expand → run history) with search, tags, compare + dashboard toggle
 │   ├── TagEditor.tsx         Inline per-run tag editor
-│   └── ReplayBar.tsx         Time-travel scrubber (play/step over a run's events)
+│   ├── ReplayBar.tsx         Time-travel scrubber (play/step over a run's events)
+│   ├── OfficeStage.tsx       Sprite office — canvas room + walking cast (Theater full-size, Building compact)
+│   ├── TheaterView.tsx       Per-run Theater tab (wraps OfficeStage)
+│   ├── BuildingView.tsx      Office Building — every app's room across stacked floors + walk overlay
+│   └── LoungeStage.tsx       The shared rooftop lounge (break-room diorama + idling agents)
 ├── hooks/
 │   └── useRunStream.ts       SSE hook — subscribes to /runs/{id}/events
 ├── lib/
-│   └── replay.ts             buildGraphAt() — rebuild the graph as of event N
+│   ├── replay.ts             buildGraphAt() — rebuild the graph as of event N
+│   ├── building.ts           buildBuilding() — apps → rooms/floors/lounge placement
+│   ├── sprites.ts            Art-as-data sprite engine (12×16 worker, per-agent recolor)
+│   ├── officeArt.ts          Room furniture + the locked office layout (owned pixel art)
+│   ├── loungeArt.ts          Break-room diorama + door/stair icons (owned pixel art)
+│   ├── walkOverlay.ts        Cross-floor walk engine (descend the stairs, walk to the lounge)
+│   ├── officeScene.ts        Tool→station routing + per-agent call lookup + dialogue
+│   └── theater.ts            buildScene() — graph → who's where / doing what
 ├── store/
 │   └── runStore.ts           Zustand store — builds graph state from events
 └── types/
@@ -750,6 +773,16 @@ python examples/remote_ingest_demo.py --agent-only --server-url http://localhost
 Demonstrates the HTTP ingest pattern: the "agent" process uses only `urllib.request` (no `vapviz` import)
 and POSTs `VapEvent` JSON payloads directly to `POST /runs/{run_id}/events`. Useful for polyglot
 architectures where the agent runs in a different language or on a separate machine.
+
+### Live run control demo (no API key)
+
+```bash
+python examples/control_demo.py
+```
+
+Starts the server on `:8001` and a slow synthetic agent, then prints the `curl` commands (and the UI
+path) to pause, resume, and stop it live. Shows the cooperative contract end-to-end: "pausing…" until
+the next step boundary, `vapviz.VapStopped` unwinding the agent, and the run ending as **⏹ Stopped**.
 
 ### Anthropic demo
 
@@ -937,6 +970,47 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **`buildGraphAt(events, n)`** — pure client-side reducer that rebuilds the graph as of event *n* (mirrors the store's event→graph logic)
 - [x] **`ReplayBar.tsx`** + a Replay toggle in the run header; resets when the selected run changes
 
+### Phase 15 — Theater & Live Floor (complete)
+- [x] **Theater view** — a watchable per-run view: each agent is a deterministic pixel character (built from its name) that walks to an LLM/tool desk while working, name overhead; live or replayed. A 4th run tab
+- [x] **Pixel-character engine** (`lib/avatar.ts`) + **scene model** (`lib/theater.ts`) + shared **`AgentStage.tsx`** room/walking renderer
+- [x] **Live Floor** (`FloorView.tsx`, sidebar 🎭) — every active/recent run as a soft zone on one office floor, each a live `AgentStage`; polls existing endpoints, no backend change
+- [x] **LangGraph cast** — additive `langgraph_node` marker in the LangChain integration so multi-agent graphs show their real agents (supervisor / workers)
+
+### Phase 16 — Theater sprite office (complete)
+- [x] **Art-as-data sprites** — the Theater stage rebuilt on hand-authored 12×16 pixel sprites (palette + char-grid data, rasterized to canvas, recolored deterministically per agent; owned art, zero AI, zero third-party packs): `lib/sprites.ts` + the locked room layout in `lib/officeArt.ts`
+- [x] **Tool→station routing** — five stations (LLM desk, SEARCH shelves, FETCH racks, DATA cabinet, PRINT table); a running tool call keyword-matches to its station (`lib/officeScene.ts`), agents walk with duration-adaptive speed and say what they're doing in a speech bubble
+- [x] **`OfficeStage.tsx`** — the canvas renderer behind the Theater tab; the Live Floor keeps the compact SVG `AgentStage` for its zones
+
+### Phase 17 — One stage engine (complete)
+- [x] **Live Floor on the sprite office** — `FloorView`'s run-zones now tile `OfficeStage` in a new `compact` mode (station chips + speech bubbles dropped at zone scale, name tags keep a legible floor; glow / walk / ✓ ! cues carry the signal)
+- [x] **Interim SVG stage retired** — `AgentStage.tsx` + `lib/avatar.ts` (and their CSS) deleted; Theater and Floor share one renderer, one art set, one per-agent colorway
+
+### Phase 18 — Office Building & app identity (complete)
+- [x] **`app_id`** — optional `vapviz.trace(label, app_id=…)` / `atrace(…)` pipeline identity; rides in the run's start-event data (additive — no event→graph change) and surfaces as `RunSummary.app_id`
+- [x] **Office Building** (`BuildingView.tsx`, replaces `FloorView.tsx`) — the Floor re-keyed from run instances to **apps** (grouping key `app_id ?? label`): app = room reused across re-runs, agent = stable desk, **6 rooms per floor** with the earliest app descending when the top floor fills (finished preferred; floors grow downward only), and a top-floor **incident hall** for failing apps (inspect + **dismiss**; dismissals key on the failed run id, persist in `localStorage`, and are pruned against the live roster). Rooms glide to new positions (FLIP), disabled under reduced motion
+- [x] **`lib/building.ts`** — pure `buildBuilding(runs, prev, dismissed)` placement reducer (stay put → incidents → seat new → descend cascade), unit-tested like the other scene reducers
+- [x] **App-grouped sidebar** — `RunList` groups runs into apps (current-run status dot, ×N run count, plain-language subtitle); expand an app for its run history, click a run to inspect and replay it
+
+### Phase 19 — The visual Office Building (complete)
+- [x] **The building shell** — roof + `VAPVIZ` sign, floor slabs, each floor a **2×3 room grid around a central Walk Way**, a **Door/Stairs** descent column, a solid east wall + windows, and a **lobby directory board** with the live tally (apps working · in the lounge · spend today)
+- [x] **The Lounge** — the incident hall reimagined as a shared rooftop break room (hand-authored diorama: coffee machine, vending machine, kitchen counter, water cooler, fridge, table, plants). A failing app's room now **stays in place and turns red** while the app surfaces to the lounge — inspect + dismiss unchanged; each waiting agent idles differently (`lib/loungeArt.ts`, `LoungeStage.tsx`)
+- [x] **The walk overlay** (`lib/walkOverlay.ts`) — a sprite layer above the rooms: a descending app's coworker walks the Walk Way, enters the Stairs (vanishing), and emerges from the Door one floor below; a failing app's coworker walks up to the lounge. FLIP glide is the fallback; `prefers-reduced-motion` snaps everything
+
+### Phase 20 — Floor life / room doors (complete)
+- [x] **Room doors** — each room gains a door on its Walk-Way-facing edge (drawn by the floor environment since Phase 21); the locked 12×16 room diorama is untouched
+- [x] **Living floor** — the walk overlay grows a persistent layer (`reconcileFloorLife`, driven each poll): a coworker steps out of every **running** room and mills on that floor's Walk Way, going back inside when the app finishes — so the floor is alive while work is happening, not just during a transition
+- [x] **Honest by design** — a walker on the corridor means real work: exactly one per running room, nothing decorative (the interim ambient stroll was removed in Phase 21); a quiet floor is an empty corridor. `prefers-reduced-motion` → no floor life
+
+### Phase 21 — The actual floor (complete)
+- [x] **Floor environment canvas** — each floor drawn as one pixel scene from measured DOM rects (`lib/floorArt.ts`, `FloorEnv.tsx`): stone corridor tiles, shared wall runs with a drawn door threshold per room, the Door/Stairs alcove, and east-wall windows — hand-authored owned art, zero AI
+- [x] **Props** — runner rug + ceiling lights down the Walk Way, plants, water cooler, cork notice board, framed wall art, wall clock; empty rooms read as unlet offices
+- [x] **Nameplates** — rooms drop their CSS card chrome; each app's name + status LED hangs on the wall by its door (crisp DOM text on art-styled signage)
+
+### Phase 22 — Agent control, Layer 1 (complete)
+- [x] **Pause / Resume / Stop a live run** — the return lane: an **Agent control** bar in the Theater tab (and `GET`/`POST /runs/{id}/control`) drives a per-run desired/acked latch in the store; the tracer obeys **cooperatively** at each `step`/`astep` entry (pause parks between steps, stop raises `vapviz.VapStopped` so the agent's code unwinds). In-process agents only for now
+- [x] **First-class `stopped` status** — a user-stopped run is neither a success nor a failure: new `NodeStatus` value through **both** graph reducers (+ parity fixtures), badges, building rooms, metrics (excluded from success/error rates)
+- [x] **Control audit trail** — every pause/resume/stop is recorded as an inert `control` event in the run's timeline ("Paused by user" in Logs), persisted with the run
+
 ---
 
 ## Dependencies
@@ -968,6 +1042,7 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 | `zustand` | Client-side state management |
 | `tailwindcss` | Utility CSS |
 | `lucide-react` | Icons |
+| `@fontsource/silkscreen` · `@fontsource/pixelify-sans` · `@fontsource/vt323` | Self-hosted pixel typefaces (display · body · mono; OFL) |
 
 ---
 
@@ -979,7 +1054,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide. Quick sta
 # Install with all integration + dev dependencies
 pip install -e ".[dev]"
 
-# Run the Python test suite (269 tests; integration tests skip if the
+# Run the Python test suite (333 unit tests; integration tests skip if the
 # corresponding framework isn't installed)
 pytest -q
 

@@ -77,7 +77,13 @@ function primaryInput(state: RunState): string | null {
 }
 
 function statusClause(status: NodeStatus): string {
-  return status === "success" ? "succeeded" : status === "error" ? "failed" : "running";
+  return status === "success"
+    ? "succeeded"
+    : status === "error"
+      ? "failed"
+      : status === "stopped"
+        ? "stopped"
+        : "running";
 }
 
 function clip(s: string, n: number): string {

@@ -15,7 +15,21 @@ const EVENT_LABEL: Record<string, string> = {
   llm_response: "LLM response",
   error: "Error",
   state_update: "State update",
+  control: "Control",
 };
+
+// A `control` event's specific meaning lives in data.action (pause/resume/stop).
+const CONTROL_LABEL: Record<string, string> = {
+  pause: "Paused by user",
+  resume: "Resumed by user",
+  stop: "Stopped by user",
+};
+
+/** Event label, resolving `control` events to their specific action. */
+function eventLabel(ev: VapEvent): string {
+  if (ev.type === "control") return CONTROL_LABEL[String(ev.data?.action)] ?? "Control";
+  return EVENT_LABEL[ev.type] ?? ev.type;
+}
 
 const EVENT_DOT: Record<string, string> = {
   agent_start: "--kind-agent",
@@ -28,6 +42,7 @@ const EVENT_DOT: Record<string, string> = {
   llm_response: "--kind-llm",
   error: "--status-error",
   state_update: "--content-faint",
+  control: "--status-stopped",
 };
 
 interface Props {
@@ -45,9 +60,7 @@ export function LogsView({ events, startedAt }: Props) {
     const q = filter.trim().toLowerCase();
     if (!q) return events;
     return events.filter(
-      (e) =>
-        (EVENT_LABEL[e.type] ?? e.type).toLowerCase().includes(q) ||
-        e.node_label.toLowerCase().includes(q)
+      (e) => eventLabel(e).toLowerCase().includes(q) || e.node_label.toLowerCase().includes(q)
     );
   }, [events, filter]);
 
@@ -78,7 +91,7 @@ export function LogsView({ events, startedAt }: Props) {
 
         {/* Table */}
         <div className="rounded-xl border border-border bg-surface overflow-hidden">
-          <div className="grid grid-cols-[80px_1fr_1.4fr] gap-3 px-4 py-2 border-b border-border text-[10px] uppercase tracking-wider text-content-faint">
+          <div className="grid grid-cols-[80px_1fr_1.4fr] gap-3 px-4 py-2 border-b border-border text-[10px] px-display text-content-faint">
             <span className="text-right">Time</span>
             <span>Event</span>
             <span>Node</span>
@@ -101,7 +114,7 @@ export function LogsView({ events, startedAt }: Props) {
                     className="h-1.5 w-1.5 rounded-full shrink-0"
                     style={{ background: `rgb(var(${EVENT_DOT[ev.type] ?? "--content-faint"}))` }}
                   />
-                  <span className="text-xs text-content truncate">{EVENT_LABEL[ev.type] ?? ev.type}</span>
+                  <span className="text-xs text-content truncate">{eventLabel(ev)}</span>
                 </span>
                 <span className="text-xs text-content-muted truncate" title={ev.node_label}>
                   {formatLabel({ kind: ev.node_kind, label: ev.node_label })}

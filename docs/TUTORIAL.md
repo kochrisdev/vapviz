@@ -33,7 +33,9 @@ the last, so work through them in order. No prior vapviz knowledge required.
 24. [Agent Evals & Scoring](#24-agent-evals--scoring)
 25. [Search & Tagging](#25-search--tagging)
 26. [Trace Replay](#26-trace-replay)
-27. [What's Next?](#27-whats-next)
+27. [Theater & the Office Building](#27-theater--the-office-building)
+28. [Controlling a Live Run (Pause / Resume / Stop)](#28-controlling-a-live-run-pause--resume--stop)
+29. [What's Next?](#29-whats-next)
 
 ---
 
@@ -139,6 +141,12 @@ python my_agent.py
 - The right panel shows the run ID, start time, duration, and status.
 
 That single indigo node is the **agent root node**, created automatically by `vapviz.trace()`.
+
+> **Tip — give your app one home.** If you'll run this script many times, pass a stable
+> `app_id`: `vapviz.trace("Hello vapviz", app_id="hello-vapviz")`. Every run of the same
+> `app_id` groups into **one sidebar entry** (expand it for the run history) and **one room**
+> in the Office building view, instead of piling up as separate entries. Without an
+> `app_id`, runs group by their exact label.
 
 ---
 
@@ -318,8 +326,7 @@ asyncio.run(main())
 **What you'll see:**
 
 The three `fetch/*` nodes appear as siblings. Because they overlap in real time their start times
-are very close — you can confirm this in the **Event Timeline** tab (the chronological log at the
-bottom of the detail panel).
+are very close — you can confirm this in the **Logs** tab (the full-width chronological event log).
 
 > **Tip:** `ContextVar` is coroutine-local, so concurrent `asyncio.gather` tasks each get their
 > own parent-tracking context. The nesting is correct even when tasks are truly concurrent.
@@ -1333,7 +1340,121 @@ and reads the events already streamed for the run, so it works on live and histo
 
 ---
 
-## 27. What's Next?
+## 27. Theater & the Office Building
+
+Where the graph is the analytical view, the **Theater** is the *watchable* one — it turns a run into a
+little pixel "office". Select a run and open the **Theater** tab.
+
+- Each agent is a **hand-drawn pixel worker**, recolored deterministically from its name (same
+  name → same hair/shirt/skin, every run), with its **name floating overhead** — that's what
+  identifies who's who. Every agent has its own **home desk**.
+- A character **walks to the LLM desk** when one of its model calls is running, and to the tool
+  station that matches the tool's name — **SEARCH** shelves, **FETCH** racks, **DATA** cabinet or
+  **PRINT** table. The active station glows and a speech bubble says what the agent is doing
+  ("phoning the API", "querying the DB"). Idle or finished agents sit at their desk; an errored
+  agent says it **hit a snag**.
+- It's driven by the same events as everything else, so it animates **live** as a run executes, and a
+  finished run can be **replayed** with the bar at the bottom (open static, press play, or scrub).
+
+Multi-agent runs are where it shines — a CrewAI crew shows `Researcher` and `Writer`; a LangGraph
+supervisor shows `supervisor` + its workers — so you can see which agent is doing what.
+
+### The Office Building
+
+Click the **🎭 masks icon** at the top of the sidebar for the **Office building**: the control-room
+view where every **app** (grouping key: `app_id ?? label` — see the `app_id` tip in §3) owns a
+miniature office room. Re-running an app lights **the same room** back up (the ×N badge counts its
+runs) and each agent keeps its desk. Floors hold **six rooms** (two rows of three around a Walk
+Way); when the top floor fills, the app that's been there longest moves down a floor — still
+live — and a coworker walks the move: across the Walk Way, into the Stairs, out of the Door one
+floor below. Every room has a **door** on the Walk Way, and while an app is **running** a coworker
+steps out of its room to mill on that floor's corridor (back inside when it finishes) — so a walker
+on the corridor **always** means real work is happening; a fully-idle floor is an empty corridor
+(nothing moves under reduced-motion). Each floor is drawn as one pixel scene — stone corridor,
+shared walls with a door opening per room, rug, lights, plants and props — and every app's name +
+status light hangs on a **nameplate** by its door. An app whose latest run **failed** keeps its room — it just **turns red** — while
+its agents head up to the shared **Lounge** (the break room at the top-right) to wait: click the
+app's lounge card to inspect the failed run, or **Dismiss** it until that app runs again. The
+lobby board at the base tallies apps working, agents in the lounge, and spend today. Click any
+room to drop into that app's current run; the sidebar lists the same apps, and expanding one
+shows its full run history for inspection and replay.
+
+Both views are pure UI over the event stream — the only instrumentation that helps is passing a
+stable `app_id` to `trace()`. See the [UI Guide](UI_GUIDE.md) for the non-technical walkthrough.
+
+---
+
+## 28. Controlling a Live Run (Pause / Resume / Stop)
+
+Everything so far has been one-directional: your agent talks, vapviz listens. The **control bar**
+is the return lane — while a run is live, you can pause it, resume it, or stop it from the UI.
+
+Select a running run and open the **Theater** tab (clicking a room in the Office Building lands
+there too). While the run is live you'll see an **Agent control** bar with **Pause** and **Stop**
+buttons:
+
+- **Pause** — the agent finishes the step it's in, then parks *between* steps. The bar shows
+  "pausing…" until it actually parks, then "paused" with a **Resume** button.
+- **Resume** — the agent picks up where it left off, usually instantly.
+- **Stop** — the agent halts at its next step boundary and the run ends with a neutral
+  **⏹ Stopped** status: not a success, not a failure — *you* ended it. Stopped runs are excluded
+  from the dashboard's success and error rates.
+
+Every action is also recorded in the run's timeline (the Logs tab shows "Paused by user",
+"Resumed by user", "Stopped by user"), so a trace you look at next week still tells the whole story.
+
+**How it works — and the honest fine print.** vapviz *watches* your agent; it doesn't run it. So
+control is **cooperative**: the tracer checks for pending commands each time your code enters a
+`step`/`astep`, and obeys there. Think of it like asking a colleague to stop — you don't yank
+their keyboard away; they finish their current sentence first. In practice:
+
+- Pause/Stop take effect **at the next step boundary**. An agent inside one long tool or LLM call
+  reacts when that call's step finishes — the "pausing…" / "stopping…" banner is telling you the
+  truth, not being slow.
+- A run with **no sub-steps has no checkpoints** and can't be paused mid-flight.
+- This works for **in-process** agents (agent + server in one Python process, like `run_dev.py`).
+  Remote-ingest agents (§17) don't obey control yet — their tracer can't see the server's control
+  state.
+
+**Stopping raises `vapviz.VapStopped` in your agent** — that's what actually unwinds your code so
+it genuinely halts (otherwise "stop" would just be a label while your agent kept burning tokens).
+If you want to shut down gracefully, catch it:
+
+```python
+import vapviz
+
+try:
+    with vapviz.trace("my agent") as run:
+        for task in tasks:
+            with run.step(task.name) as step:   # ← control checkpoint on every entry
+                do_work(task)
+except vapviz.VapStopped:
+    print("Run stopped from the UI — cleaning up.")
+```
+
+The run still ends with status `stopped` either way; catching it just lets you run your own
+cleanup instead of unwinding to the top.
+
+Over HTTP (or from a script), the same controls are two endpoints:
+
+```bash
+curl -X POST http://localhost:8001/runs/{run_id}/control \
+  -H "Content-Type: application/json" -d '{"action": "pause"}'   # pause | resume | stop
+
+curl http://localhost:8001/runs/{run_id}/control
+# → {"desired": "paused", "acked": "paused", "updated_at": ..., "ended": false}
+```
+
+`desired` is what you asked for; `acked` is what the agent has actually done at its last
+checkpoint — the gap between them is the cooperative lag the UI renders as "pausing…".
+
+> **Try it with no API key:** `python examples/control_demo.py` starts a server + a slow synthetic
+> agent and walks you through pausing, resuming, and stopping it — from the UI or straight from
+> the printed `curl` commands.
+
+---
+
+## 29. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -1351,6 +1472,7 @@ python examples/autogen_demo.py       # offline agents — requires pip install 
 python examples/otel_demo.py          # console OTel export — requires pip install "vapviz[otel]"
 python examples/budgets_demo.py       # cost/latency budget alerting
 python examples/evals_demo.py         # agent evals / assertions
+python examples/control_demo.py       # pause/resume/stop a live run
 
 # Requires an API key:
 python examples/openai_demo.py

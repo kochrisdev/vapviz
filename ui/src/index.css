@@ -10,27 +10,33 @@
  *
  * :root holds the DARK theme (default). `.light` on <html> overrides to light.
  * Toggling that class re-themes the entire app, including the graph.
+ *
+ * Scoped to html.light on purpose: ReactFlow v12 puts its own colorMode class
+ * ("light"/"dark") on the .react-flow container, and a bare `.light` selector
+ * would let that flip our tokens inside the graph independently of the theme.
  */
 :root {
-  /* surfaces / elevation */
-  --bg:             9 11 17;
-  --surface:        17 20 28;
-  --surface-hover:  26 31 43;
-  --surface-inset:  13 16 23;
+  /* surfaces / elevation — the sprite office after hours: every value is
+     drawn from the diorama's own palette (officeArt.ts) so the chrome and
+     the pixel scenes read as one world. #241a14 is the art's outline ink. */
+  --bg:             26 19 14;
+  --surface:        36 26 20;
+  --surface-hover:  50 37 28;
+  --surface-inset:  30 22 16;
 
   /* borders */
-  --border:         38 44 58;
-  --border-strong:  55 63 82;
+  --border:         74 55 38;
+  --border-strong:  110 82 55;
 
-  /* text */
-  --content:           233 237 245;
-  --content-muted:     160 170 190;
-  --content-faint:     107 117 137;
-  --content-on-accent: 255 255 255;
+  /* text — chip/paper creams from the diorama */
+  --content:           243 234 217;
+  --content-muted:     206 188 156;
+  --content-faint:     158 138 108;
+  --content-on-accent: 26 19 14;
 
-  /* accent (primary action + selection) */
-  --accent:        99 102 241;
-  --accent-hover:  129 140 248;
+  /* accent — warm office-lamp amber (dark text on it) */
+  --accent:        224 164 74;
+  --accent-hover:  240 184 100;
 
   /* node kinds */
   --kind-agent:  129 140 248;
@@ -43,24 +49,30 @@
   --status-running:  245 158  11;
   --status-success:   34 197  94;
   --status-error:    239  68  68;
+  --status-stopped:  161 161 170;  /* halted by user — neutral zinc, not a failure */
+
+  /* pixel-step shadow ink (hard offsets, no blur — see tailwind.config.ts) */
+  --shadow: 0 0 0;
 }
 
-.light {
-  --bg:             246 247 250;
-  --surface:        255 255 255;
-  --surface-hover:  240 242 246;
-  --surface-inset:  240 242 246;
+html.light {
+  /* The office by day: wall cream + paper surfaces, wood borders. */
+  --bg:             238 227 205;
+  --surface:        246 241 230;
+  --surface-hover:  231 216 191;
+  --surface-inset:  241 234 216;
 
-  --border:         224 228 236;
-  --border-strong:  198 206 219;
+  --border:         202 168 116;
+  --border-strong:  156 102 54;
 
-  --content:           24 30 44;
-  --content-muted:     82 92 110;
-  --content-faint:    130 140 158;
-  --content-on-accent: 255 255 255;
+  --content:           58 44 32;
+  --content-muted:     106 84 62;
+  --content-faint:    145 120 94;
+  --content-on-accent: 246 241 230;
 
-  --accent:        79 70 229;
-  --accent-hover:  67 56 202;
+  /* deep amber so the accent still pops on cream */
+  --accent:        158 94 26;
+  --accent-hover:  128 74 18;
 
   --kind-agent:  79 70 229;
   --kind-step:    2 132 199;
@@ -71,6 +83,9 @@
   --status-running:  217 119   6;
   --status-success:   22 163  74;
   --status-error:    220  38  38;
+  --status-stopped:  113 113 122;  /* halted by user — neutral zinc, not a failure */
+
+  --shadow: 156 122 84;
 }
 
 * {
@@ -79,7 +94,288 @@
 
 body {
   margin: 0;
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  background: rgb(var(--bg));
+  /* All text is pixel-family: Pixelify Sans for reading text, VT323 for mono
+     (below), Silkscreen for display chrome (.px-display/.px-brand). */
+  font-family: "Pixelify Sans", ui-sans-serif, system-ui, sans-serif;
+  /* Faint checkerboard — the same "yard tile" material as the Office Building,
+     one notch subtler, so the whole app sits on the pixel world's ground. */
+  background:
+    repeating-conic-gradient(rgb(var(--surface-inset) / 0.5) 0% 25%, transparent 0% 50%) 0 0 / 28px 28px,
+    rgb(var(--bg));
   color: rgb(var(--content));
 }
+
+/* ── Pixel chrome (2026-07 reskin) ──────────────────────────────────────────
+ * Hybrid rule: chrome is pixel (Silkscreen display face, square corners,
+ * hard 2px borders + offset shadows, LED squares) — DATA text stays a crisp
+ * sans so traces remain legible. Radius/shadow scales live in tailwind.config. */
+
+/* Display face is uppercase + tracked by definition — one class, used for
+   tabs, headings, badges, section labels. Never for run data. */
+.px-display {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 400;
+}
+
+/* Square, chunky keyboard focus — visible in both themes. */
+:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 1px;
+  border-radius: 0;
+}
+
+/* Pixel scrollbars (WebKit) — square track, blocky thumb. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: rgb(var(--surface-inset)); }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-strong));
+  border: 2px solid rgb(var(--surface-inset));
+}
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--content-faint)); }
+
+::selection { background: rgb(var(--accent) / 0.35); }
+
+/* Pixel terminal face for code-shaped text. VT323 draws small for its em
+   size, so it gets a nudge up to stay readable at the app's text-xs scale. */
+pre, code, kbd, .font-mono {
+  font-family: "VT323", ui-monospace, monospace;
+  font-size: 1.16em;
+  line-height: 1.35;
+}
+
+/* The sidebar brand plate — same idea as the building's rooftop VAPVIZ sign. */
+.px-brand {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em; /* recenters tracked text */
+  color: rgb(var(--accent));
+}
+
+/* ── Theater + Floor (Phase 3, §4-F) — the sprite office ──────────────────
+ * Pixel canvases (OfficeStage) render nearest-neighbor via .sprite. */
+.sprite { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+
+/* Sprite office (OfficeStage — Theater tab full-size, Floor zones compact) —
+ * the canvas diorama is its own fixed warm palette (owned art, deliberately
+ * not re-themed); the chrome around it themes normally. */
+.office-stage { position: relative; height: 100%; overflow: hidden; display: grid; place-items: center; background: rgb(var(--surface-inset)); }
+.office-stage--compact { background: none; } /* zone letterboxing shows the zone's own surface */
+
+.vt-empty { position: absolute; inset: 0; display: grid; place-items: center; color: rgb(var(--content-faint)); font-size: 14px; }
+
+/* ── Office Building view (§4-J) — the *visual* building ───────────────────
+ * Hybrid render: CSS/vector chrome here (walls, roof, floor slabs, Walk Way,
+ * Door/Stairs frames, east wall, lobby), hand-authored pixel art for the
+ * lounge/props/icons (pixel-art-set), and the locked 12×16 diorama for room
+ * interiors (compact OfficeStage). Layout = Nick's scratch/Floor Layout.jpg:
+ * 6 rooms in two rows of 3 around a central Walk Way; a Door (top-right) and
+ * Stairs (bottom-right) column; the shared Lounge on the top floor's right,
+ * solid east wall + windows below it; a lobby directory board at the base. */
+
+/* The "yard" the building sits on — a tiled ground, scrolls if narrow. */
+.vt-yard {
+  background:
+    repeating-conic-gradient(rgb(var(--surface-hover)) 0% 25%, rgb(var(--surface-inset)) 0% 50%) 0 0 / 44px 44px,
+    rgb(var(--bg));
+  padding: 24px;
+}
+
+/* The building shell — exterior walls + rounded roofline; the lobby closes the base. */
+.vt-building {
+  position: relative; /* anchors the walk overlay */
+  min-width: 1000px;
+  max-width: 1180px;
+  margin: 0 auto;
+  border: 2px solid rgb(var(--border-strong));
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  background: rgb(var(--surface) / .4);
+  overflow: hidden;
+  box-shadow: 0 20px 44px -26px rgb(0 0 0 / .55);
+}
+
+/* The walk overlay — a sprite layer ABOVE the room canvases (§4-J): descending
+ * or failing coworkers walk across it; it never intercepts clicks. */
+.vt-walk-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Roof + VAPVIZ sign. */
+.vt-roof {
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(rgb(var(--surface-hover)), rgb(var(--surface) / .35));
+  border-bottom: 2px solid rgb(var(--border-strong));
+}
+.vt-sign { font-size: 12px; font-weight: 800; letter-spacing: .24em; color: rgb(var(--accent)); }
+
+/* One floor: a 2×3 room grid around a central Walk Way, with a Door/Stairs
+ * column and the east column (lounge on the top floor, wall below). The
+ * building never grows sideways — 6 rooms/floor, floors stack downward. */
+.vt-floor {
+  display: grid;
+  grid-template-columns: 22px repeat(3, minmax(168px, 1fr)) 46px 208px;
+  grid-template-rows: auto 30px auto;
+  grid-template-areas:
+    "tag r0  r1  r2  door   east"
+    "tag way way way way    east"
+    "tag r3  r4  r5  stairs east";
+  gap: 10px; /* floorArt.ts WALL_G is half this gap — keep them in sync */
+  padding: 16px;
+  border-bottom: 3px solid rgb(var(--border-strong)); /* floor slab */
+  position: relative;
+}
+/* The floor-environment canvas (§4-L) — corridor tiles, walls + door openings,
+ * props — drawn under the rooms (first child → paints below its siblings). */
+.vt-floor-env {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.vt-floor-tag {
+  grid-area: tag;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  display: grid;
+  place-items: center;
+  color: rgb(var(--content-faint));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+
+/* Rooms (§4-L): no card chrome — the FloorEnv canvas draws the walls around
+ * each room rect; the tile itself is just the diorama stage + interactions. */
+.vt-room {
+  position: relative;
+  transition: filter .2s;
+}
+.vt-room:hover .vt-room-stage { box-shadow: 0 0 0 2px rgb(var(--accent) / .55); }
+/* A failed app's home room stays put and turns red (its agents walk to the
+ * lounge) — a red ring + tint over the stage; the plate's siren-red LED and
+ * the lounge card carry the state beyond color. */
+.vt-room--error .vt-room-stage {
+  box-shadow: 0 0 0 2px rgb(var(--status-error) / .7);
+  background: rgb(var(--status-error) / .1);
+}
+.vt-room--error:hover .vt-room-stage { box-shadow: 0 0 0 2px rgb(var(--status-error)); }
+/* Room stage keeps the office's 13:8 native aspect (208×128 px room), fluid width. */
+.vt-room-stage { position: relative; width: 100%; aspect-ratio: 13 / 8; border-radius: 4px; overflow: hidden; }
+
+/* Door anchor on the room's Walk-Way-facing edge (§4-K floor life): its centre
+ * is the walker spawn/return point. Invisible since §4-L — the opening itself
+ * (threshold, posts) is drawn by the FloorEnv canvas. */
+.vt-room-door {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 10px;
+  pointer-events: none;
+}
+.vt-room-door--bottom { bottom: -5px; }
+.vt-room-door--top { top: -5px; }
+
+/* Nameplate (§4-L) — signage on the corridor wall beside the room's door.
+ * Fixed warm hexes: this chip sits ON the drawn diorama wall, so it keeps the
+ * art's palette in both themes (the locked pixel-art exemption, 2026-07-01 —
+ * same family as officeArt's CHROME chrome set). */
+.vt-plate {
+  position: absolute;
+  left: 8px;
+  max-width: calc(50% - 26px);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 13px;
+  border-radius: 3px;
+  background: #2e2419;
+  border: 1px solid #241a14;
+  box-shadow: inset 0 1px 0 rgba(246, 241, 230, .12);
+  color: #efe7da;
+  z-index: 3;
+  pointer-events: none;
+}
+.vt-plate--bottom { bottom: -13px; }
+.vt-plate--top { top: -13px; }
+.vt-plate-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vt-plate-n { color: #cbbfa8; font-size: 9px; font-variant-numeric: tabular-nums; }
+.vt-led { width: 6px; height: 6px; border-radius: 9999px; flex-shrink: 0; }
+
+/* Walk Way / Door / Stairs / east wall — pure layout anchors since §4-L; the
+ * corridor (rug, lights, props), alcove icons, and windows are all drawn by
+ * the FloorEnv canvas. A floor's Stairs sit directly above the next floor's
+ * Door, so descent reads as walking down. */
+.vt-walkway { grid-area: way; }
+.vt-door { grid-area: door; align-self: start; min-height: 60px; }
+.vt-stairs { grid-area: stairs; align-self: end; min-height: 60px; }
+.vt-eastwall { grid-area: east; }
+
+/* The shared Lounge — top floor's right column, one floor tall. Failures from
+ * any floor gather here (state never color-only: siren icon + Dismiss). */
+.vt-lounge {
+  grid-area: east;
+  border-left: 2px solid rgb(var(--border-strong));
+  background: rgb(var(--surface-inset) / .75);
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 6px;
+  overflow: hidden;
+  position: relative;
+}
+.vt-lounge-head {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: rgb(var(--content-muted));
+  padding: 1px 2px;
+}
+/* the break-room diorama fills the middle; the failed-app strip sits below it */
+.vt-lounge-stage {
+  flex: 1; min-height: 0;
+  display: grid; place-items: center;
+  overflow: hidden; border-radius: 8px;
+}
+.vt-lounge-stage canvas { max-width: 100%; max-height: 100%; }
+.vt-lounge-cards {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 42%; overflow-y: auto; padding-top: 2px;
+}
+.vt-lounge-card {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid rgb(var(--status-error) / .45);
+  background: rgb(var(--status-error) / .1);
+  border-radius: 8px;
+  padding: 4px 6px;
+  transition: border-color .2s, background .2s;
+}
+.vt-lounge-card:hover { border-color: rgb(var(--status-error) / .7); background: rgb(var(--status-error) / .15); }
+.vt-lounge-card .vt-lounge-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; text-align: left; }
+
+/* Lobby — building base + live directory board (also the empty-state home). */
+.vt-lobby {
+  border-top: 3px solid rgb(var(--border-strong));
+  background: linear-gradient(rgb(var(--surface) / .5), rgb(var(--surface-hover)));
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.vt-directory {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 12px; color: rgb(var(--content-muted));
+  font-variant-numeric: tabular-nums;
+}
+.vt-directory b { color: rgb(var(--content)); font-weight: 700; }
+.vt-directory .vt-dir-sep { color: rgb(var(--content-faint)); }

@@ -12,10 +12,12 @@ It reads the same node-data shape every integration produces:
 * LLM node label  ──  ``llm/{model}``
 * ``node.data["input"]["model"]``           ── model name
 * ``node.data["output"]["usage"]``          ── ``{input_tokens, output_tokens}``
+  (the OpenAI-style aliases ``prompt_tokens``/``completion_tokens`` are accepted too)
 * ``node.data["output"]["cost_usd"]``       ── float
 """
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Optional
@@ -99,6 +101,23 @@ def _day(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
 
 
+def _usage_tokens(usage: dict, *keys: str) -> int:
+    """First finite numeric value among *keys*, else 0.
+
+    Usage dicts come from arbitrary user/integration data (`set_output()` takes
+    anything), so the shape can't be trusted: accept the canonical key plus its
+    OpenAI-style alias, and never crash on a non-numeric value. Mirrors the
+    tolerant reads in NodeDetail.tsx.
+    """
+    for k in keys:
+        v = usage.get(k)
+        if isinstance(v, bool):  # bool is an int subclass — not a count
+            continue
+        if isinstance(v, (int, float)) and math.isfinite(v):
+            return int(v)
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -119,6 +138,8 @@ def compute_metrics(graphs: list[RunGraph]) -> Metrics:
             m.success_count += 1
         elif g.status == NodeStatus.ERROR:
             m.error_count += 1
+        elif g.status == NodeStatus.STOPPED:
+            pass  # terminal, but neither a success nor a failure — not "running"
         else:
             m.running_count += 1
 
@@ -163,8 +184,8 @@ def compute_metrics(graphs: list[RunGraph]) -> Metrics:
 
             usage = output.get("usage")
             if isinstance(usage, dict):
-                in_tok = int(usage.get("input_tokens") or 0)
-                out_tok = int(usage.get("output_tokens") or 0)
+                in_tok = _usage_tokens(usage, "input_tokens", "prompt_tokens")
+                out_tok = _usage_tokens(usage, "output_tokens", "completion_tokens")
                 m.total_tokens.input += in_tok
                 m.total_tokens.output += out_tok
                 stat.input_tokens += in_tok

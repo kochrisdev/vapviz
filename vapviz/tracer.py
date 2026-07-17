@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, AsyncIterator, Generator, Iterator, Optional
 
+from .control import CONTROL_POLL, PAUSED, RUNNING, STOPPED, VapStopped
 from .events import EventType, NodeKind, VapEvent
 
 if TYPE_CHECKING:
@@ -119,6 +121,50 @@ def _end_event(node_kind: NodeKind) -> EventType:
 
 
 # ---------------------------------------------------------------------------
+# Cooperative control checkpoint (Pause / Resume / Stop)
+# ---------------------------------------------------------------------------
+# Called at the top of every step/astep — the "turnstiles" the agent already
+# passes through. Reads the run's control latch from the store and obeys it:
+# park while paused, raise VapStopped while stopped. In-process only for now
+# (the tracer reads the store's in-memory latch directly). A polite halt at the
+# next checkpoint, never a force-kill. See docs/notes/DESIGN-agent-control.md.
+
+
+def _check_control(run_id: str, store: "RunStore") -> None:
+    """Sync checkpoint: parks the calling *thread* while paused (safe — the
+    agent runs on its own thread; the server keeps serving), raises VapStopped
+    while stopped, and acks the run's actual state so the UI can show the lag."""
+    while True:
+        c = store.get_control(run_id)
+        if c.desired == STOPPED:
+            store.set_ack(run_id, STOPPED)
+            raise VapStopped(run_id)
+        if c.desired != PAUSED:
+            store.set_ack(run_id, RUNNING)
+            return
+        store.set_ack(run_id, PAUSED)
+        ev = store._control_wake_for(run_id)  # woken immediately by set_desired…
+        ev.wait(timeout=CONTROL_POLL)         # …else re-poll (bounds resume latency)
+        ev.clear()
+
+
+async def _acheck_control(run_id: str, store: "RunStore") -> None:
+    """Async checkpoint: ``await``s instead of blocking, so a paused async agent
+    yields to the shared event loop (letting the Resume request be served)
+    rather than freezing it."""
+    while True:
+        c = store.get_control(run_id)
+        if c.desired == STOPPED:
+            store.set_ack(run_id, STOPPED)
+            raise VapStopped(run_id)
+        if c.desired != PAUSED:
+            store.set_ack(run_id, RUNNING)
+            return
+        store.set_ack(run_id, PAUSED)
+        await asyncio.sleep(CONTROL_POLL)
+
+
+# ---------------------------------------------------------------------------
 # RunContext — top-level context for a single agent run
 # ---------------------------------------------------------------------------
 
@@ -126,13 +172,23 @@ def _end_event(node_kind: NodeKind) -> EventType:
 class RunContext:
     """Top-level context for a single agent run."""
 
-    def __init__(self, label: str, store: "RunStore", run_id: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        label: str,
+        store: "RunStore",
+        run_id: Optional[str] = None,
+        app_id: Optional[str] = None,
+    ) -> None:
         self.run_id = run_id or _uid()
         self.label = label
+        self.app_id = app_id
         self._store = store
         self._root_node_id = _uid()
 
     def _start(self) -> None:
+        data: dict[str, Any] = {"label": self.label}
+        if self.app_id:  # empty string counts as absent — the UI would group all "" apps together
+            data["app_id"] = self.app_id
         self._store.add_event(
             VapEvent(
                 id=_uid(),
@@ -143,7 +199,7 @@ class RunContext:
                 node_kind=NodeKind.AGENT,
                 node_label=self.label,
                 parent_id=None,
-                data={"label": self.label},
+                data=data,
             )
         )
         self._root_ctx = StepContext(
@@ -156,9 +212,13 @@ class RunContext:
         )
         self._token = _current_step.set(self._root_ctx)
 
-    def _end(self, error: Optional[Exception] = None) -> None:
+    def _end(self, error: Optional[Exception] = None, stopped: bool = False) -> None:
         extra: dict[str, Any] = {}
-        if error:
+        if stopped:
+            # First-class 'stopped' status (no 'error' key → not a crash).
+            extra["stopped"] = True
+            extra["error_type"] = "VapStopped"
+        elif error:
             extra["error"] = str(error)
             extra["error_type"] = type(error).__name__
         self._store.add_event(
@@ -191,19 +251,29 @@ class RunContext:
     @contextmanager
     def step(self, label: str, kind: str = "step") -> Iterator[StepContext]:
         """Open a synchronous child step within this run."""
+        _check_control(self.run_id, self._store)  # obey pause/stop between steps
         ctx = _make_step_ctx(self.run_id, label, kind, self._store)
         ctx._emit(_start_event(ctx.node_kind))
         token = _current_step.set(ctx)
         error: Optional[Exception] = None
+        stopped = False
         try:
             yield ctx
+        except VapStopped:
+            # A nested checkpoint stopped the run; close this open node as
+            # 'stopped' (not an error) and keep propagating so the run unwinds.
+            stopped = True
+            raise
         except Exception as exc:
             error = exc
             ctx._emit(EventType.ERROR, {"error": str(exc), "error_type": type(exc).__name__})
             raise
         finally:
             _current_step.reset(token)
-            if not error:
+            if stopped:
+                ctx._emit(_end_event(ctx.node_kind),
+                          {"input": ctx._input, "output": ctx._output, "stopped": True})
+            elif not error:
                 ctx._emit(_end_event(ctx.node_kind), {"input": ctx._input, "output": ctx._output})
 
     # ------------------------------------------------------------------
@@ -217,19 +287,27 @@ class RunContext:
         ContextVar propagates into asyncio.Task children automatically (PEP 567),
         so concurrent tasks each see their own correct parent without any extra work.
         """
+        await _acheck_control(self.run_id, self._store)  # obey pause/stop between steps
         ctx = _make_step_ctx(self.run_id, label, kind, self._store)
         ctx._emit(_start_event(ctx.node_kind))
         token = _current_step.set(ctx)
         error: Optional[Exception] = None
+        stopped = False
         try:
             yield ctx
+        except VapStopped:
+            stopped = True
+            raise
         except Exception as exc:
             error = exc
             ctx._emit(EventType.ERROR, {"error": str(exc), "error_type": type(exc).__name__})
             raise
         finally:
             _current_step.reset(token)
-            if not error:
+            if stopped:
+                ctx._emit(_end_event(ctx.node_kind),
+                          {"input": ctx._input, "output": ctx._output, "stopped": True})
+            elif not error:
                 ctx._emit(_end_event(ctx.node_kind), {"input": ctx._input, "output": ctx._output})
 
 
@@ -260,26 +338,43 @@ class Tracer:
     # ------------------------------------------------------------------
 
     @contextmanager
-    def trace(self, label: str, run_id: Optional[str] = None) -> Iterator[RunContext]:
-        """Start a synchronous agent run trace."""
-        run = RunContext(label=label, store=self._store, run_id=run_id)
+    def trace(
+        self, label: str, run_id: Optional[str] = None, app_id: Optional[str] = None
+    ) -> Iterator[RunContext]:
+        """Start a synchronous agent run trace.
+
+        ``app_id`` is a stable identifier for the pipeline ("app") this run
+        belongs to; runs sharing an ``app_id`` are grouped in the UI. Falls
+        back to exact-label grouping when omitted.
+        """
+        run = RunContext(label=label, store=self._store, run_id=run_id, app_id=app_id)
         run._start()
         error: Optional[Exception] = None
+        stopped = False
         try:
             yield run
+        except VapStopped:
+            # User stopped the run; end it cleanly as 'stopped' and re-raise so
+            # the agent's own code unwinds and actually halts.
+            stopped = True
+            raise
         except Exception as exc:
             error = exc
             raise
         finally:
-            run._end(error=error)
+            run._end(error=error, stopped=stopped)
 
     # ------------------------------------------------------------------
     # Asynchronous trace
     # ------------------------------------------------------------------
 
     @asynccontextmanager
-    async def atrace(self, label: str, run_id: Optional[str] = None) -> AsyncIterator[RunContext]:
+    async def atrace(
+        self, label: str, run_id: Optional[str] = None, app_id: Optional[str] = None
+    ) -> AsyncIterator[RunContext]:
         """Start an asynchronous agent run trace.
+
+        ``app_id`` groups runs of the same pipeline, as in :meth:`trace`.
 
         Example::
 
@@ -289,16 +384,20 @@ class Tracer:
                     data = await fetch(url)
                     step.set_output({"bytes": len(data)})
         """
-        run = RunContext(label=label, store=self._store, run_id=run_id)
+        run = RunContext(label=label, store=self._store, run_id=run_id, app_id=app_id)
         run._start()
         error: Optional[Exception] = None
+        stopped = False
         try:
             yield run
+        except VapStopped:
+            stopped = True
+            raise
         except Exception as exc:
             error = exc
             raise
         finally:
-            run._end(error=error)
+            run._end(error=error, stopped=stopped)
 
     def get_current_step(self) -> Optional[StepContext]:
         return _current_step.get()
