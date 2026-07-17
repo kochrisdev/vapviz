@@ -45,6 +45,13 @@ For the detailed per-release notes (APIs, fixes, internals), see the
   everyone now). The stored `vapviz-mode` preference is simply ignored.
 
 ### Fixed
+- **Dashboard token totals now understand OpenAI-style usage keys.** `compute_metrics`
+  (behind `GET /metrics` and the Dashboard) only counted `usage.input_tokens`/
+  `output_tokens`, so runs whose usage arrived as `prompt_tokens`/`completion_tokens`
+  (the OpenAI shape, written through the public `set_output()`) showed **0 tokens** —
+  even though the node detail panel already understood those aliases. The backend now
+  accepts both shapes, and a non-numeric usage value counts as 0 instead of crashing
+  the `/metrics` endpoint.
 - **A malformed node can no longer blank the whole app.** The node-detail panel assumed
   token usage always arrived as `usage.input_tokens`/`output_tokens`; any other shape
   (e.g. OpenAI-style `prompt_tokens` written through the public `set_output()`) threw while

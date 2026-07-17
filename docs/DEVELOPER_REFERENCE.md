@@ -302,7 +302,7 @@ vapviz.compute_metrics(graphs: list[RunGraph]) -> Metrics
 | `total_duration_ms` / `avg_duration_ms` | `float` / `float \| None` | Wall-clock totals; the average is over completed runs with a measurable duration. |
 | `total_nodes` | `int` | Node count across all graphs. |
 | `total_llm_calls` | `int` | Number of `llm` nodes. |
-| `total_tokens` | `TokenTotals` | `{input, output}` token sums. |
+| `total_tokens` | `TokenTotals` | `{input, output}` token sums. Reads `usage.input_tokens`/`output_tokens`, accepting the OpenAI-style `prompt_tokens`/`completion_tokens` aliases; non-numeric values count as 0. |
 | `by_model` | `list[ModelStat]` | `{model, calls, cost_usd, input_tokens, output_tokens}` per model, sorted by cost then calls. |
 | `by_kind` | `KindCounts` | `{agent, step, tool, llm}` node counts. |
 | `cost_over_time` | `list[DailyCost]` | `{date, cost_usd, run_count}` per UTC day, chronological. |

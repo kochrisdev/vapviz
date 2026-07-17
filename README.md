@@ -1054,7 +1054,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide. Quick sta
 # Install with all integration + dev dependencies
 pip install -e ".[dev]"
 
-# Run the Python test suite (330 unit tests; integration tests skip if the
+# Run the Python test suite (333 unit tests; integration tests skip if the
 # corresponding framework isn't installed)
 pytest -q
 

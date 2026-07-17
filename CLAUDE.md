@@ -22,8 +22,8 @@ cd ui && npm install
 
 # Tests / the gate
 make check                                                   # THE GATE: fast unit tests + UI typecheck (also blocks commits)
-.venv/bin/python -m pytest -m "not integration"              # fast/free Python unit tests (330 pass)
-.venv/bin/python -m pytest                                   # everything incl. real-LLM integration (336 collected)
+.venv/bin/python -m pytest -m "not integration"              # fast/free Python unit tests (333 pass)
+.venv/bin/python -m pytest                                   # everything incl. real-LLM integration (339 collected)
 .venv/bin/python -m pytest tests/test_tracer.py::TestNesting::test_auto_parent   # one test
 cd ui && npm test                                            # UI unit tests (vitest) — incl. dual-reducer parity
 # tests/*_integration.py are auto-marked `integration` (tests/conftest.py): they hit OpenRouter
