@@ -45,6 +45,18 @@ For the detailed per-release notes (APIs, fixes, internals), see the
   everyone now). The stored `vapviz-mode` preference is simply ignored.
 
 ### Fixed
+- **`configure(db=...)` → `create_app()` no longer serves an empty store (M3).**
+  `create_app()` used to freeze an import-time copy of the default store, so building an
+  in-process server after `vapviz.configure(db=...)` silently served a blank in-memory
+  store while the SQLite file grew — the UI showed zero runs. It now resolves the default
+  store when called, matching the tracer's behavior, so configure-then-build just works
+  (guarded by a regression test). Note the prebuilt `vapviz.app` is still constructed at
+  import and cannot follow a later `configure` — build your own app with `create_app()`.
+- **Dashboard's "cost by model" no longer splits one model into two rows.** The by-model
+  breakdown grouped raw model strings, so `gpt-4o-mini` (CrewAI listener) and
+  `openai/gpt-4o-mini` (patched OpenAI client) appeared as separate models. Model names
+  are now normalized with the same provider-prefix stripping the pricing table uses, so
+  both count as one model. Costs were always correct; only the grouping was split.
 - **Dashboard token totals now understand OpenAI-style usage keys.** `compute_metrics`
   (behind `GET /metrics` and the Dashboard) only counted `usage.input_tokens`/
   `output_tokens`, so runs whose usage arrived as `prompt_tokens`/`completion_tokens`

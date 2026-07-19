@@ -256,6 +256,19 @@ Available via `from vapviz.cost import calculate_cost` or directly as `vapviz.ca
 
 ---
 
+#### `vapviz.cost.normalize_model(model)`
+
+Strip any `provider/` prefixes from a model id (`"openrouter/openai/gpt-4o-mini"` → `"gpt-4o-mini"`).
+
+```python
+from vapviz.cost import normalize_model
+normalize_model(model: str) -> str
+```
+
+The shared rule behind both the pricing lookup (`calculate_cost`) and the `/metrics` `by_model` grouping, so the same model reported with different provider spellings prices and groups as one. Module-level only (not re-exported as `vapviz.normalize_model`).
+
+---
+
 #### `vapviz.format_cost(cost_usd)`
 
 Format a USD cost value for human display.
@@ -303,7 +316,7 @@ vapviz.compute_metrics(graphs: list[RunGraph]) -> Metrics
 | `total_nodes` | `int` | Node count across all graphs. |
 | `total_llm_calls` | `int` | Number of `llm` nodes. |
 | `total_tokens` | `TokenTotals` | `{input, output}` token sums. Reads `usage.input_tokens`/`output_tokens`, accepting the OpenAI-style `prompt_tokens`/`completion_tokens` aliases; non-numeric values count as 0. |
-| `by_model` | `list[ModelStat]` | `{model, calls, cost_usd, input_tokens, output_tokens}` per model, sorted by cost then calls. |
+| `by_model` | `list[ModelStat]` | `{model, calls, cost_usd, input_tokens, output_tokens}` per model, sorted by cost then calls. Model names are normalized with `vapviz.cost.normalize_model` (provider prefixes stripped), so `gpt-4o-mini` and `openai/gpt-4o-mini` count as one model. |
 | `by_kind` | `KindCounts` | `{agent, step, tool, llm}` node counts. |
 | `cost_over_time` | `list[DailyCost]` | `{date, cost_usd, run_count}` per UTC day, chronological. |
 
@@ -447,7 +460,7 @@ vapviz.create_app(store: RunStore | None = None) -> FastAPI
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `store` | `RunStore \| None` | `None` | Store backend to use. Defaults to `vapviz.store.default_store`. |
+| `store` | `RunStore \| None` | `None` | Store backend to use. Defaults to `vapviz.store.default_store`, resolved when `create_app()` is called — so it follows an earlier `vapviz.configure(db=...)`. (The prebuilt `vapviz.app` does not: it was constructed at import.) |
 
 Returns a `FastAPI` instance. Use with any ASGI server:
 

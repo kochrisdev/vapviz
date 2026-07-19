@@ -192,6 +192,23 @@ class TestCostAndModels:
         m = compute_metrics([_run(nodes=[node])])
         assert m.by_model[0].model == "claude-3-5-sonnet"
 
+    def test_provider_prefixed_model_groups_with_bare_name(self):
+        # L10: the CrewAI listener reports "gpt-4o-mini" while patch_openai (via
+        # OpenRouter) reports "openai/gpt-4o-mini" — one model, one by_model row.
+        run = _run(nodes=[
+            _llm_node("gpt-4o-mini", 100, 50, 0.001),
+            _llm_node("openai/gpt-4o-mini", 200, 100, 0.002),
+            _llm_node("openrouter/openai/gpt-4o-mini", 10, 5, 0.0001),
+        ])
+        m = compute_metrics([run])
+        assert len(m.by_model) == 1
+        stat = m.by_model[0]
+        assert stat.model == "gpt-4o-mini"
+        assert stat.calls == 3
+        assert stat.cost_usd == pytest.approx(0.0031)
+        assert stat.input_tokens == 310
+        assert stat.output_tokens == 155
+
     def test_openai_style_usage_aliases_counted(self):
         # prompt_tokens/completion_tokens (the OpenAI shape, written through the
         # public set_output()) must count like the canonical keys.

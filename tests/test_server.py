@@ -274,3 +274,65 @@ class TestCompareRuns:
         client, _ = app_client
         r = client.get("/runs/compare?a=only_a")
         assert r.status_code == 422  # FastAPI validation error
+
+
+# ---------------------------------------------------------------------------
+# M3 regression: create_app() must follow configure(db=...)
+# ---------------------------------------------------------------------------
+
+class TestCreateAppFollowsConfigure:
+    """configure(db=...) then create_app() must serve the configured store,
+    not a stale MemoryStore frozen at import time (footgun M3)."""
+
+    def test_configure_then_create_app_serves_configured_store(self, tmp_path):
+        import vapviz
+
+        try:
+            vapviz.configure(db=str(tmp_path / "m3.db"))
+            _seed_run(vapviz.store.default_store, "Persisted Run")
+
+            app = vapviz.create_app()  # no explicit store — the M3 pattern
+            with TestClient(app) as client:
+                labels = [r["label"] for r in client.get("/runs").json()]
+            assert labels == ["Persisted Run"]
+        finally:
+            vapviz.configure(db=None)  # restore the in-memory default
+
+    def test_explicit_store_still_wins(self, app_client):
+        import vapviz.store as _sm
+
+        client, store = app_client
+        assert _sm.default_store is not store
+        _seed_run(store, "Explicit Run")
+        labels = [r["label"] for r in client.get("/runs").json()]
+        assert labels == ["Explicit Run"]
+
+    def test_no_module_freezes_default_store_at_import(self):
+        """Guard against the M3 bug class: `from .store import default_store`
+        copies the reference at import time, so a later configure(db=...) is
+        silently ignored. Only vapviz/__init__.py may import it by value
+        (configure() rewrites that binding through sys.modules); every other
+        module must read `store.default_store` at call time."""
+        import ast
+        from pathlib import Path
+
+        import vapviz
+
+        pkg = Path(vapviz.__file__).parent
+        offenders: list[str] = []
+        for path in pkg.rglob("*.py"):
+            if path == pkg / "__init__.py":
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.ImportFrom)
+                    and node.module is not None
+                    and (node.module == "store" or node.module.endswith(".store"))
+                    and any(a.name == "default_store" for a in node.names)
+                ):
+                    offenders.append(f"{path.relative_to(pkg)}:{node.lineno}")
+        assert offenders == [], (
+            f"import default_store by value (M3 footgun) in: {offenders}; "
+            "read store.default_store at call time instead"
+        )

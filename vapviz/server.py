@@ -18,7 +18,8 @@ from .evals import EvalResult, run_checks
 from .events import EventType, NodeKind, NodeStatus, RunGraph, RunSummary, VapEvent
 from .metrics import Metrics, compute_metrics
 from .search import run_matches
-from .store import RunStore, default_store
+from . import store as _sm
+from .store import RunStore
 
 # Terminal run statuses — control is a no-op once a run has ended.
 _TERMINAL = {NodeStatus.SUCCESS, NodeStatus.ERROR, NodeStatus.STOPPED}
@@ -40,7 +41,10 @@ class RunControlOut(BaseModel):
 
 
 def create_app(store: RunStore | None = None, static_dir: str | None = None) -> FastAPI:
-    _store = store or default_store
+    # Resolve the default store at CALL time, not import time (M3): a frozen
+    # `from .store import default_store` would ignore an earlier
+    # `vapviz.configure(db=...)` and silently serve an empty MemoryStore.
+    _store = store or _sm.default_store
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -329,5 +333,7 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
     return app
 
 
-# Default ASGI app (in-memory store, used by run_dev.py and tests)
+# Default ASGI app (in-memory store, used by run_dev.py and tests).
+# Built at import, so it snapshots default_store NOW — configure(db=...) after
+# this import does not retarget it; call create_app() yourself in that case.
 app = create_app()

@@ -56,6 +56,19 @@ PRICING: dict[str, tuple[float, float]] = {
 # Public API
 # ---------------------------------------------------------------------------
 
+def normalize_model(model: str) -> str:
+    """Bare model id with any ``provider/`` prefixes stripped.
+
+    LiteLLM / OpenRouter prefix the provider(s) onto the model id
+    (``"openrouter/openai/gpt-4o-mini"`` → ``"gpt-4o-mini"``). Used both for
+    pricing lookups and for grouping, so the same model doesn't split into
+    per-provider-spelling rows. The UI's display formatter applies the same
+    last-segment rule independently (``ui/src/lib/format.ts``, the ``llm/``
+    branch) — display-only, keep the rules matching by hand.
+    """
+    return model.rsplit("/", 1)[-1]
+
+
 def calculate_cost(
     model: str,
     input_tokens: int,
@@ -82,9 +95,8 @@ def calculate_cost(
     Returns:
         Cost in USD as a ``float``, or ``None`` if the model is unknown.
     """
-    # LiteLLM / OpenRouter prefix the provider(s) onto the model id; the
-    # pricing table keys never contain "/", so price by the bare name.
-    model = model.rsplit("/", 1)[-1]
+    # The pricing table keys never contain "/", so price by the bare name.
+    model = normalize_model(model)
 
     pricing = PRICING.get(model)
 
