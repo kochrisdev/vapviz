@@ -8,13 +8,19 @@ A lightweight Python + React framework for **tracing and visualizing AI agent pi
 
 Instrument your agent with a single context manager. Every step, tool call, and LLM invocation appears instantly as a live interactive graph in the browser — with inputs, outputs, durations, and error states.
 
-![vapviz — live interactive graph of an agent run](docs/screenshot.png)
+**🔗 Live site: [vapviz-website.vercel.app](https://vapviz-website.vercel.app)** — the guided tour, screenshots, and demo video.
+
+![vapviz — live interactive graph of an agent run](docs/graph.png)
 
 *The graph view — every step, tool call, and LLM invocation as a live, interactive DAG.*
 
-![vapviz — Theater view](docs/screenshot-theater.png)
+![vapviz — Theater view](docs/theater.png)
 
 *Theater view — watch each agent as a pixel character working in a shared office, live or replayed.*
+
+![vapviz — Office Building live floor view](docs/building.png)
+
+*Office Building — the live floor view: every app owns a room, a running room sends a coworker out to the corridor, and a failed app's agents wait it out in the rooftop lounge. Watch all your agents work across every app on one screen.*
 
 ---
 
@@ -231,6 +237,7 @@ Options:
   --db PATH         SQLite database path for persistence (default: in-memory)
   --reload          Enable auto-reload for development
   --log-level TEXT  Uvicorn log level (default: warning)
+  --static-dir PATH Serve a built UI (e.g. ui/dist) from the same process
 ```
 
 ---
@@ -673,6 +680,7 @@ examples/
 ├── error_handling_demo.py    Three error scenarios — leaf, nested, partial failure
 ├── cost_tracking_demo.py     Simulated LLM cost overlay — no API key needed
 ├── remote_ingest_demo.py     HTTP POST ingest from a separate process (stdlib only)
+├── control_demo.py           Live Pause / Resume / Stop of a running agent — no API key needed
 ├── anthropic_demo.py         Real Claude API calls with auto-tracing
 ├── openai_demo.py            OpenAI chat.completions with auto-tracing
 ├── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
@@ -688,6 +696,7 @@ docs/
 ├── TUTORIAL.md               Step-by-step learning guide (start here)
 ├── ARCHITECTURE.md           Internal design — event flow, store, React state machine
 ├── DEVELOPER_REFERENCE.md    Complete Python API, CLI, REST, SSE, TypeScript types
+├── UI_GUIDE.md               The web UI, tab by tab — Graph, Theater, Building, Logs, Replay
 └── DEPLOYMENT.md             Docker, Nginx, cloud platforms, security
 
 tests/
@@ -758,7 +767,7 @@ python examples/cost_tracking_demo.py
 
 Simulates three LLM pipelines (gpt-4o-mini, gpt-4o, mixed-model) using `vapviz.calculate_cost()` to attach
 `cost_usd` to each node. Shows per-node cost labels (purple) in the graph and per-run totals in the
-sidebar. Select two runs and click ⊕ to compare costs side by side.
+sidebar. Select two runs and click ⇄ to compare costs side by side.
 
 ### Remote ingest demo (no API key, no vapviz import in agent)
 
@@ -910,7 +919,7 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **Run comparison** — diff two runs side by side; stats header (duration Δ, cost Δ, node diff), side-by-side ReactFlow graphs
 - [x] **Export** — download run as JSON (`GET /runs/{id}/export`) or PNG (html2canvas capture of the graph canvas)
 - [x] **`GET /runs/compare?a={id}&b={id}`** — server endpoint returning both graphs in one request
-- [x] **Compare mode in sidebar** — hover any run to see the ⊕ compare button; amber highlight + banner when active
+- [x] **Compare mode in sidebar** — hover any run to see the ⇄ compare button; amber highlight + banner when active
 
 ### v0.6.0 — Phase 5 (complete)
 - [x] **CrewAI integration** — `VapCrewAIListener` hooks into CrewAI's native `BaseEventListener` event bus; traces Crews, Tasks, Agent executions, Tool calls, and LLM round-trips automatically
@@ -1073,7 +1082,7 @@ package on every push and pull request to `main`.
 **Releasing** — bump `version` in [`pyproject.toml`](pyproject.toml), then push a matching tag:
 
 ```bash
-git tag v0.8.0 && git push origin v0.8.0
+git tag v1.2.0 && git push origin v1.2.0
 ```
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) builds the distribution, verifies

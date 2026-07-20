@@ -3,6 +3,9 @@
 A plain-language guide to reading your agent runs in the vapviz web app. No coding
 knowledge needed. If you can open a web page, you can use this.
 
+> Want to see it first? The **[live site](https://vapviz-website.vercel.app)** has a
+> guided tour, screenshots, and a short demo video of everything below.
+
 > **What is a "run"?** Every time you trace an AI agent, vapviz records it as a *run* —
 > a timeline of everything the agent did: the questions it sent to the AI model, the
 > tools it called, what came back, how long it took, and how much it cost.

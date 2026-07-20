@@ -7,7 +7,7 @@ All notable changes to vapviz are documented here. The format is based on
 For the detailed per-release notes (APIs, fixes, internals), see the
 [Developer Reference changelog](docs/DEVELOPER_REFERENCE.md#changelog).
 
-## [Unreleased]
+## [1.2.0] - 2026-07-20
 
 ### Added
 - **Live run control — Pause / Resume / Stop (in-process).** vapviz gains its first return
@@ -255,7 +255,7 @@ This release adds no new tracing/integration features beyond 0.15.0 — it marks
 ### Added
 - Initial release: sync tracer, in-memory store, FastAPI + SSE server, ReactFlow UI, Anthropic SDK integration.
 
-[Unreleased]: https://github.com/kochrisdev/vapviz/compare/v1.1.0...HEAD
+[1.2.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.2.0
 [1.1.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.1.0
 [1.0.1]: https://github.com/kochrisdev/vapviz/releases/tag/v1.0.1
 [1.0.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.0.0

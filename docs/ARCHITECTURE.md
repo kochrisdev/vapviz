@@ -563,7 +563,7 @@ After every `applyEvent` call, `total_cost_usd` is recomputed by summing `node.d
 4. Two `ReactFlowProvider` / `AgentGraph` pairs render side by side, each with a coloured label strip (sky-blue for A, amber for B).
 
 **UX flow in RunList:**
-- A hover-revealed `⊕` (GitCompare) icon appears on every non-selected run row.
+- A hover-revealed `⇄` (GitCompare) icon appears on every non-selected run row.
 - Clicking it sets `compareRunId` in the store → `App.tsx` switches to `RunComparison`.
 - An amber "Comparison mode active" banner appears at the bottom of the sidebar.
 - The `✕` icon on the active comparison run clears `compareRunId`; so does selecting any new primary run.

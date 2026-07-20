@@ -33,7 +33,7 @@ pip install -e ".[anthropic]"       # + Anthropic SDK integration
 pip install -e ".[openai]"          # + OpenAI SDK integration
 pip install -e ".[langchain]"       # + LangGraph/LangChain integration
 pip install -e ".[crewai]"          # + CrewAI integration
-pip install -e ".[all]"             # + all four integrations
+pip install -e ".[all]"             # + all integrations (OpenAI, Anthropic, LangChain, CrewAI, Pydantic AI, LlamaIndex, AutoGen, OTel)
 pip install -e ".[dev]"             # + pytest, httpx, pytest-asyncio, all integrations
 ```
 
@@ -747,7 +747,7 @@ The atomic unit of tracing. Every action emits one or two events (open + close).
 | `node_label` | `str` | Human-readable node name. |
 | `parent_id` | `str \| None` | Parent node ID; `None` for the root agent node. |
 | `data` | `dict[str, Any]` | Arbitrary payload (inputs, outputs, errors, metadata). |
-| `schema_version` | `int` | Always `1` in v0.2.0. Bumped on breaking schema changes. |
+| `schema_version` | `int` | Always `1` (current wire format). Bumped on breaking schema changes. |
 
 ---
 
@@ -777,7 +777,7 @@ A directed edge in the run graph.
 | `id` | `str` | `"{source}→{target}"` |
 | `source` | `str` | Parent node ID. |
 | `target` | `str` | Child node ID. |
-| `kind` | `str` | Always `"execution"` in v0.2.0. |
+| `kind` | `str` | Always `"execution"`. |
 
 ---
 
@@ -1844,7 +1844,7 @@ interface RunGraph {
 
 ## Changelog
 
-### Unreleased
+### v1.2.0 — 2026-07-20
 
 - **Live run control (Pause / Resume / Stop, in-process)** — new `vapviz/control.py` (`RunControl` latch, `VapStopped`, action/state constants); concrete `get_control` / `set_desired` / `set_ack` methods on the `RunStore` ABC (ephemeral in-memory latch, never persisted); cooperative tracer checkpoints at every `step`/`astep` entry (`_check_control` sync / `_acheck_control` async — pause parks between steps, stop raises `VapStopped`, open nodes close with `stopped: true`); `GET`/`POST /runs/{id}/control` endpoints (422 on bad action, no-op + `ended: true` on terminal runs, emits an inert `control` audit event); new `EventType.CONTROL` and **first-class `NodeStatus.STOPPED`** through both graph reducers (`_terminal_status`: error > stopped > success; parity fixtures `stopped_run.json` + `control_inert.json`); stopped runs excluded from metrics' success/error counts; UI `RunControlBar.tsx` (Theater tab, polls the latch ~1 s) with the pure `lib/runControl.ts` state table; Logs renders control events ("Paused by user"). `vapviz.VapStopped` exported. In-process agents only.
 - **Room click → Theater** — `selectRun(runId, tab?)` gains an optional landing-tab parameter (stored as `entryTab` in the Zustand store); the Office Building's room tiles pass `"theater"` so clicking a room opens the live office scene (lounge cards still open Story).
