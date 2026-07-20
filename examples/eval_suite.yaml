@@ -1,0 +1,31 @@
+# Example vapviz eval suite.
+#
+# Run it against a persisted store, a single exported run, or a folder of runs:
+#
+#   vapviz eval --suite examples/eval_suite.yaml --db vapviz.db --latest
+#   vapviz eval --suite examples/eval_suite.yaml --run vapviz-<id>.json
+#   vapviz eval --suite examples/eval_suite.yaml --runs-dir runs/
+#
+# Exit code is 0 when every run passes, 1 when any run fails — so it gates CI.
+name: support-agent
+description: Guardrails for the support agent
+
+checks:
+  # Cost ceiling per run (USD).
+  - type: max_cost
+    value: 0.02
+
+  # Wall-clock ceiling per run (seconds).
+  - type: max_latency
+    value: 5.0
+
+  # Total prompt + completion tokens per run.
+  - type: max_tokens
+    value: 20000
+
+  # No node ended in an error state.
+  - type: no_errors
+
+  # Some node's output mentions a ticket (case-insensitive by default).
+  - type: output_contains
+    value: ticket

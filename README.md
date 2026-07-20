@@ -40,6 +40,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **OpenTelemetry export** — `enable_otel_export(...)` mirrors every run into OTLP spans for Jaeger / Grafana Tempo / Datadog
 - **Cost & latency budgets** — `enable_budget_alerts(Budget(...))` flags and alerts on runs that exceed cost / duration / token limits
 - **Agent evals & scoring** — `eval_run(run, [checks...])` asserts cost/latency/output/custom/LLM-judge checks — regression testing for agents
+- **Evals as a CI gate** — bundle checks into an eval suite and gate CI with `vapviz eval` + the `vapviz-eval` GitHub Action; a regression fails the build
 - **Search & tagging** — full-text search across run contents (`GET /search`) plus persistent per-run tags, surfaced in the UI
 - **Trace replay** — scrub a run event-by-event in the UI; the graph fills in node by node as it happened
 - **Theater view** — watch a run as a cozy pixel office: each agent is a hand-drawn sprite that walks from its home desk to the LLM desk or a tool station (SEARCH / FETCH / DATA / PRINT, picked from the tool's name), speech bubble overhead — live or replayed
@@ -546,6 +547,40 @@ curl -X POST http://localhost:8001/runs/{run_id}/eval \
 
 Try it with no API key: `python examples/evals_demo.py`.
 
+### Evals as a CI gate
+
+Bundle checks into an **eval suite** and gate CI on them. Define the suite once (YAML or JSON):
+
+```yaml
+# evals.yaml
+name: support-agent
+checks:
+  - { type: max_cost, value: 0.02 }
+  - { type: no_errors }
+  - { type: output_contains, value: ticket }
+```
+
+Then run `vapviz eval` — it exits non-zero when any run fails, so a regression fails the build:
+
+```bash
+vapviz eval --suite evals.yaml --db runs.db --latest      # newest run in a persisted store
+vapviz eval --suite evals.yaml --run vapviz-<id>.json      # an exported run
+vapviz eval --suite evals.yaml --runs-dir runs/            # a folder of exported runs
+```
+
+Drop it into GitHub Actions with the bundled composite action (`--github-summary` posts a table to
+the job summary automatically):
+
+```yaml
+- uses: kochrisdev/vapviz@v1.3.0
+  with:
+    suite: evals.yaml
+    db: runs.db
+    latest: "true"
+```
+
+Try it with no API key: `python examples/evals_ci_demo.py`.
+
 ---
 
 ## Search & Tagging
@@ -622,11 +657,12 @@ vapviz/                          Python package
 ├── store.py                  RunStore ABC + MemoryStore + thread-safe pub/sub
 ├── tracer.py                 trace/atrace context managers, ContextVar nesting
 ├── server.py                 FastAPI app — REST + SSE endpoints
-├── cli.py                    vapviz serve command
+├── cli.py                    vapviz serve + eval (CI gate) commands
 ├── cost.py                   Token cost — 20+ model pricing table, calculate_cost()
 ├── metrics.py                Cross-run analytics — compute_metrics() aggregation
 ├── budgets.py                Cost/latency budgets — check_budget(), enable_budget_alerts()
 ├── evals.py                  Agent evals — eval_run(), checks, scoring
+├── evalsuite.py              Eval suites & CI gate — EvalSuite, run_suite(), load_runs()
 ├── search.py                 Run search — run_matches() predicate
 ├── control.py                Live run control — RunControl latch, VapStopped
 ├── backends/
@@ -690,7 +726,9 @@ examples/
 ├── autogen_demo.py           AutoGen multi-agent chat with VapAutoGen — no API key needed
 ├── otel_demo.py              OpenTelemetry export to the console — no API key needed
 ├── budgets_demo.py           Cost/latency budget alerting — no API key needed
-└── evals_demo.py             Agent evals / assertions — no API key needed
+├── evals_demo.py             Agent evals / assertions — no API key needed
+├── evals_ci_demo.py          Eval suite as a CI gate — no API key needed
+└── eval_suite.yaml           Example eval suite for `vapviz eval`
 
 docs/
 ├── TUTORIAL.md               Step-by-step learning guide (start here)
@@ -1019,6 +1057,16 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **Pause / Resume / Stop a live run** — the return lane: an **Agent control** bar in the Theater tab (and `GET`/`POST /runs/{id}/control`) drives a per-run desired/acked latch in the store; the tracer obeys **cooperatively** at each `step`/`astep` entry (pause parks between steps, stop raises `vapviz.VapStopped` so the agent's code unwinds). In-process agents only for now
 - [x] **First-class `stopped` status** — a user-stopped run is neither a success nor a failure: new `NodeStatus` value through **both** graph reducers (+ parity fixtures), badges, building rooms, metrics (excluded from success/error rates)
 - [x] **Control audit trail** — every pause/resume/stop is recorded as an inert `control` event in the run's timeline ("Paused by user" in Logs), persisted with the run
+
+### v1.1.0 (complete)
+- [x] **Budget alert channels** — built-in `webhook_alert` / `slack_alert` / `otel_alert` sinks for `enable_budget_alerts`; `on_alert` accepts a list (fan-out). HTTP delivery is non-blocking and best-effort
+
+### v1.3.0 (complete)
+- [x] **Evals as a CI gate** — declarative `EvalSuite` (YAML/JSON), `run_suite()` → `SuiteReport`, and the **`vapviz eval`** CLI that exits non-zero on failure
+- [x] **`vapviz-eval` GitHub Action** (`action.yml`) — installs vapviz and runs the gate, with a Markdown job-summary table
+- [x] **17-test suite** — `tests/test_evalsuite.py`; suite/runner/loader API exported from `vapviz`
+
+For the full release history see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

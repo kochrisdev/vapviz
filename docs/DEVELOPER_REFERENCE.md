@@ -450,6 +450,58 @@ specs (`{"type": "max_cost", "value": 0.02}`, `{"type": "output_contains", "valu
 
 ---
 
+#### Eval suites & the CI gate *(v1.2.0)*
+
+An **eval suite** bundles the same declarative checks and applies them to one or more runs, so agent
+regressions can **fail a CI build**. Import from `vapviz` or `vapviz.evalsuite`.
+
+**`EvalSuite`** — a Pydantic model: `name`, `description`, `checks: list[dict]` (the same specs
+`run_checks` understands). `suite.build_checks()` materialises them, raising `ValueError` on a bad
+spec (fail-fast, before any run is evaluated).
+
+**`load_suite(path) -> EvalSuite`** — load a suite from a `.yaml` / `.yml` (needs PyYAML) or `.json`
+file.
+
+**`load_runs(*, db=None, run_file=None, runs_dir=None, run_id=None, label=None, tag=None,
+latest=False) -> list[RunGraph]`** — collect the runs to evaluate from exactly one source: a SQLite
+`db` (narrowed by the `run_id` / `label` / `tag` / `latest` filters), a single exported `run_file`
+(the `GET /runs/{id}/export` format), or a `runs_dir` of `*.json` exports.
+
+**`run_suite(suite, graphs) -> SuiteReport`** — evaluate every graph. The report `passed` only if
+**every** run passed **and at least one run was evaluated** (an empty set is a failure, so a
+mis-pointed job can't pass by evaluating nothing). `SuiteReport.summary()` gives a terminal report;
+`.to_markdown()` gives a GitHub step-summary table.
+
+```python
+from vapviz import load_suite, load_runs, run_suite
+
+suite = load_suite("evals.yaml")
+report = run_suite(suite, load_runs(db="runs.db", latest=True))
+assert report.passed, report.summary()
+```
+
+**CLI** — `vapviz eval` is the gate; it exits `0` when every run passes, `1` on any failure, `2` on a
+usage/loading error:
+
+```bash
+vapviz eval --suite evals.yaml --db runs.db --latest
+vapviz eval --suite evals.yaml --run vapviz-<id>.json --json
+vapviz eval --suite evals.yaml --runs-dir runs/ --github-summary
+```
+
+`--github-summary` appends a Markdown table to `$GITHUB_STEP_SUMMARY`. A composite **`vapviz-eval`
+GitHub Action** (`action.yml`) wraps install + gate:
+
+```yaml
+- uses: kochrisdev/vapviz@v1.3.0
+  with:
+    suite: evals.yaml
+    db: runs.db
+    latest: "true"
+```
+
+---
+
 #### `vapviz.create_app(store=None)`
 
 Create a new FastAPI application instance.
@@ -1224,6 +1276,36 @@ vapviz serve --db runs.db --port 9000 --log-level info
 vapviz serve --db dev.db --reload --log-level debug
 ```
 
+```
+vapviz eval --suite PATH (--db PATH | --run PATH | --runs-dir DIR) [OPTIONS]
+```
+
+Run an eval suite against traced runs and **exit non-zero on failure** — the CI gate *(v1.2.0)*.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `--suite` | `PATH` | *(required)* | Eval suite file (YAML or JSON). |
+| `--db` | `PATH` | *(none)* | SQLite store to load runs from. |
+| `--run` | `PATH` | *(none)* | A single exported run JSON file. |
+| `--runs-dir` | `DIR` | *(none)* | A directory of exported run JSON files (`*.json`). |
+| `--run-id` | `str` | *(none)* | Only evaluate this run id (with `--db`). |
+| `--label` | `str` | *(none)* | Only evaluate runs with this label (with `--db`). |
+| `--tag` | `str` | *(none)* | Only evaluate runs carrying this tag (with `--db`). |
+| `--latest` | flag | off | Only evaluate the most recent matching run (with `--db`). |
+| `--json` | flag | off | Print the `SuiteReport` as JSON. |
+| `--github-summary` | flag | off | Append a Markdown table to `$GITHUB_STEP_SUMMARY`. |
+
+Exactly one of `--db` / `--run` / `--runs-dir` is required. Exit codes: `0` all runs passed, `1` a
+run failed (or no runs matched), `2` a usage / loading error.
+
+```bash
+# Gate CI on the latest run in a persisted store
+vapviz eval --suite evals.yaml --db runs.db --latest
+
+# Evaluate an exported run, machine-readable output
+vapviz eval --suite evals.yaml --run vapviz-<id>.json --json
+```
+
 When `--db` is supplied the CLI:
 1. Creates a `SqliteStore` pointing at the file
 2. Sets `vapviz.store.default_store` to it (so in-process traces land there too)
@@ -1843,6 +1925,10 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v1.3.0
+
+- **Evals as a CI gate** — a declarative `EvalSuite` (loaded from YAML/JSON) bundles the existing checks; `run_suite(suite, graphs)` returns a `SuiteReport` (`.summary()` / `.to_markdown()`), and `load_runs(...)` collects runs from a SQLite store (with `run_id`/`label`/`tag`/`latest` filters), an exported run file, or a directory. New **`vapviz eval`** CLI exits `0`/`1`/`2` (pass / fail / error) so agent regressions fail a build; `--github-summary` writes a Markdown table to `$GITHUB_STEP_SUMMARY`. A composite **`vapviz-eval` GitHub Action** (`action.yml`) wraps install + gate. An empty run set is treated as a failure. Exports: `vapviz.EvalSuite` / `SuiteReport` / `RunEval` / `load_suite` / `load_runs` / `run_suite`; `examples/eval_suite.yaml` + `examples/evals_ci_demo.py`.
 
 ### v1.2.0 — 2026-07-20
 

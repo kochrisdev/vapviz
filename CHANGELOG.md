@@ -7,6 +7,24 @@ All notable changes to vapviz are documented here. The format is based on
 For the detailed per-release notes (APIs, fixes, internals), see the
 [Developer Reference changelog](docs/DEVELOPER_REFERENCE.md#changelog).
 
+## [Unreleased]
+
+_Nothing yet._
+
+## [1.3.0]
+
+### Added
+- **Evals as a CI gate.** A declarative **eval suite** (`EvalSuite`, loaded from YAML/JSON) bundles
+  the existing checks; `run_suite(suite, graphs)` returns a `SuiteReport`, and the new
+  **`vapviz eval`** CLI turns a failing report into a **non-zero exit code** so agent regressions can
+  fail a build.
+- `vapviz eval --suite S` loads runs from a SQLite store (`--db`, with `--run-id` / `--label` /
+  `--tag` / `--latest` filters), a single exported run (`--run`), or a directory (`--runs-dir`);
+  `--json` and `--github-summary` (writes a Markdown table to `$GITHUB_STEP_SUMMARY`).
+- A composite **`vapviz-eval` GitHub Action** (`action.yml`) that installs vapviz and runs the gate.
+- New exports: `vapviz.EvalSuite` / `SuiteReport` / `RunEval` / `load_suite` / `load_runs` /
+  `run_suite`; `examples/eval_suite.yaml` and `examples/evals_ci_demo.py`.
+
 ## [1.2.0] - 2026-07-20
 
 ### Added
@@ -161,6 +179,20 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 - LangChain integration now carries the `langgraph_node` name through to node data (additive
   metadata), so multi-agent LangGraph runs show their real cast (supervisor / workers) in Theater.
 
+## [1.2.0]
+
+### Added
+- **Evals as a CI gate.** A declarative **eval suite** (`EvalSuite`, loaded from YAML/JSON) bundles
+  the existing checks; `run_suite(suite, graphs)` returns a `SuiteReport`, and the new
+  **`vapviz eval`** CLI turns a failing report into a **non-zero exit code** so agent regressions can
+  fail a build.
+- `vapviz eval --suite S` loads runs from a SQLite store (`--db`, with `--run-id` / `--label` /
+  `--tag` / `--latest` filters), a single exported run (`--run`), or a directory (`--runs-dir`);
+  `--json` and `--github-summary` (writes a Markdown table to `$GITHUB_STEP_SUMMARY`).
+- A composite **`vapviz-eval` GitHub Action** (`action.yml`) that installs vapviz and runs the gate.
+- New exports: `vapviz.EvalSuite` / `SuiteReport` / `RunEval` / `load_suite` / `load_runs` /
+  `run_suite`; `examples/eval_suite.yaml` and `examples/evals_ci_demo.py`.
+
 ## [1.1.0]
 
 ### Added
@@ -255,6 +287,8 @@ This release adds no new tracing/integration features beyond 0.15.0 — it marks
 ### Added
 - Initial release: sync tracer, in-memory store, FastAPI + SSE server, ReactFlow UI, Anthropic SDK integration.
 
+[Unreleased]: https://github.com/kochrisdev/vapviz/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.3.0
 [1.2.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.2.0
 [1.1.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.1.0
 [1.0.1]: https://github.com/kochrisdev/vapviz/releases/tag/v1.0.1

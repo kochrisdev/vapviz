@@ -21,9 +21,9 @@ High value, mostly small, leverages existing features.
   **Theater** (each agent a pixel character that walks to a model/tool desk, name overhead) and a
   centralized **Live Floor** that monitors every active run's cast at once. Pure UI over the existing
   event stream — no backend change.
-- **Evals as a CI gate** *(medium, differentiating)* — an `eval-suite` concept (checks + expected
-  runs) plus a **`vapviz-eval` GitHub Action** that runs evals and fails the build on regressions —
-  turning agent evals into real CI quality-gating.
+- ✅ **Evals as a CI gate** *(shipped in v1.3.0)* — a declarative **eval suite** (`EvalSuite`) plus
+  the **`vapviz eval`** CLI and a **`vapviz-eval` GitHub Action** that run evals and fail the build on
+  regressions — agent evals as real CI quality-gating.
 - **Scale hygiene** *(small–medium)* — `/runs` **pagination + filtering**, and a **retention policy**
   (prune/archive old runs) so the store doesn't grow unbounded.
 - **More integrations** *(small each)* — e.g. **Google ADK**, **DSPy**, **Semantic Kernel**,
@@ -56,10 +56,10 @@ High value, mostly small, leverages existing features.
 
 ## Where we'd start
 
-**v1.1** is the best impact-per-effort: budget alert channels and the evals CI Action are
-differentiators that build directly on 1.0 features, and pagination/retention are cheap insurance.
-The **JS/TS SDK** is the highest-*reach* item long-term, but big enough to warrant a deliberate 2.0
-push.
+The two **v1.1 differentiators — budget alert channels and the evals CI gate — have shipped**
+(v1.1.0 and v1.2.0). Next up in the near-term band: **scale hygiene** (pagination/retention, cheap
+insurance) and **more integrations**. The **JS/TS SDK** is the highest-*reach* item long-term, but
+big enough to warrant a deliberate 2.0 push.
 
 Have a request or want to weigh in on priorities? Open an
 [issue](https://github.com/kochrisdev/vapviz/issues).

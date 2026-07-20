@@ -1293,6 +1293,52 @@ curl -X POST http://localhost:8001/runs/{run_id}/eval \
 > **Try it with no API key:** `python examples/evals_demo.py` traces a fake support agent and asserts
 > five checks against it — the exact shape you'd use in a test.
 
+### Evals as a CI gate
+
+Once you have checks, you can turn them into a **build gate**. Bundle them into an **eval suite** —
+a YAML (or JSON) file of the same declarative specs:
+
+```yaml
+# evals.yaml
+name: support-agent
+description: Guardrails for the support agent
+checks:
+  - { type: max_cost, value: 0.02 }
+  - { type: max_latency, value: 5.0 }
+  - { type: no_errors }
+  - { type: output_contains, value: ticket }
+```
+
+Then run `vapviz eval`. It loads the runs to check from a persisted store, a single exported run, or
+a directory of exports, and **exits non-zero if any run fails** — so a regression fails CI:
+
+```bash
+vapviz eval --suite evals.yaml --db runs.db --latest     # newest run in a persisted store
+vapviz eval --suite evals.yaml --run vapviz-<id>.json     # one exported run (GET /runs/{id}/export)
+vapviz eval --suite evals.yaml --runs-dir runs/           # a folder of exported runs
+```
+
+Filters (`--run-id`, `--label`, `--tag`, `--latest`) narrow which runs in a `--db` are evaluated.
+Exit codes are `0` (all passed), `1` (a run failed, or none matched), `2` (usage/loading error). An
+**empty run set is a failure** on purpose — a mis-pointed job can't pass by evaluating nothing.
+
+In GitHub Actions, use the bundled composite action (it installs vapviz, runs the gate, and posts a
+Markdown table to the job summary):
+
+```yaml
+- uses: kochrisdev/vapviz@v1.3.0
+  with:
+    suite: evals.yaml
+    db: runs.db
+    latest: "true"
+```
+
+Prefer Python? `run_suite(load_suite("evals.yaml"), load_runs(db="runs.db"))` returns a
+`SuiteReport` you can assert on directly.
+
+> **Try it with no API key:** `python examples/evals_ci_demo.py` traces a clean run and a failing one,
+> then reports the exit code the gate would use.
+
 ---
 
 ## 25. Search & Tagging
@@ -1476,6 +1522,7 @@ python examples/otel_demo.py          # console OTel export — requires pip ins
 python examples/budgets_demo.py       # cost/latency budget alerting
 python examples/evals_demo.py         # agent evals / assertions
 python examples/control_demo.py       # pause/resume/stop a live run
+python examples/evals_ci_demo.py      # eval suite as a CI gate
 
 # Requires an API key:
 python examples/openai_demo.py

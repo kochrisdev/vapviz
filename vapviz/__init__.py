@@ -30,6 +30,14 @@ from .evals import (
     custom,
     judge,
 )
+from .evalsuite import (
+    EvalSuite,
+    SuiteReport,
+    RunEval,
+    load_suite,
+    load_runs,
+    run_suite,
+)
 
 
 def configure(db: str | None = None) -> None:
@@ -106,6 +114,13 @@ __all__ = [
     "output_contains",
     "custom",
     "judge",
+    # Eval suites / CI gate
+    "EvalSuite",
+    "SuiteReport",
+    "RunEval",
+    "load_suite",
+    "load_runs",
+    "run_suite",
     # Configuration
     "configure",
 ]

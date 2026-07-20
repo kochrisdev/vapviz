@@ -1,0 +1,82 @@
+name: vapviz-eval
+description: >-
+  Run a vapviz eval suite against traced agent runs and fail the build on
+  regressions. Point it at a SQLite store, a single exported run file, or a
+  directory of exported runs.
+author: kochrisdev
+branding:
+  icon: check-circle
+  color: purple
+
+inputs:
+  suite:
+    description: Path to the eval suite file (YAML or JSON).
+    required: true
+  db:
+    description: SQLite store to load runs from (mutually exclusive with run / runs-dir).
+    required: false
+    default: ""
+  run:
+    description: A single exported run JSON file (GET /runs/{id}/export format).
+    required: false
+    default: ""
+  runs-dir:
+    description: A directory of exported run JSON files (*.json).
+    required: false
+    default: ""
+  run-id:
+    description: Only evaluate this run id (with db).
+    required: false
+    default: ""
+  label:
+    description: Only evaluate runs with this label (with db).
+    required: false
+    default: ""
+  tag:
+    description: Only evaluate runs carrying this tag (with db).
+    required: false
+    default: ""
+  latest:
+    description: Only evaluate the most recent matching run (with db).
+    required: false
+    default: "false"
+  version:
+    description: >-
+      vapviz version spec to install, e.g. "1.2.0" or ">=1.2,<2". Empty installs
+      the latest release.
+    required: false
+    default: ""
+  python-version:
+    description: Python version to set up.
+    required: false
+    default: "3.12"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install vapviz
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          python -m pip install "vapviz==${{ inputs.version }}"
+        else
+          python -m pip install vapviz
+        fi
+
+    - name: Run eval suite
+      shell: bash
+      run: |
+        args=(--suite "${{ inputs.suite }}" --github-summary)
+        if [ -n "${{ inputs.db }}" ];       then args+=(--db "${{ inputs.db }}"); fi
+        if [ -n "${{ inputs.run }}" ];      then args+=(--run "${{ inputs.run }}"); fi
+        if [ -n "${{ inputs.runs-dir }}" ]; then args+=(--runs-dir "${{ inputs.runs-dir }}"); fi
+        if [ -n "${{ inputs.run-id }}" ];   then args+=(--run-id "${{ inputs.run-id }}"); fi
+        if [ -n "${{ inputs.label }}" ];    then args+=(--label "${{ inputs.label }}"); fi
+        if [ -n "${{ inputs.tag }}" ];      then args+=(--tag "${{ inputs.tag }}"); fi
+        if [ "${{ inputs.latest }}" = "true" ]; then args+=(--latest); fi
+        vapviz eval "${args[@]}"
