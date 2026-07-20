@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>vapviz — watch your AI agents work</title>
+    <meta
+      name="description"
+      content="vapviz is a self-hostable tracer and visualizer for AI agent pipelines. One context manager in, and every step, tool call, and model call appears live — as an interactive graph and a pixel office you can actually watch."
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <header class="site-head">
+      <div class="wrap">
+        <a class="brand" href="#top">vapviz</a>
+        <nav class="site-nav" aria-label="Sections">
+          <a href="#why">Why</a>
+          <a href="#quickstart">Quickstart</a>
+          <a href="#tour">Tour</a>
+          <a href="https://github.com/kochrisdev/vapviz">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ── Hero ─────────────────────────────────────────────────────── -->
+      <section class="hero">
+        <div class="wrap">
+          <h1>Watch your <span class="amber">AI&nbsp;agents</span> work.</h1>
+          <p class="hero-sub">
+            vapviz is a self-hostable tracer &amp; visualizer for AI agent
+            pipelines. One line in your code, and every step, tool call, and
+            model call shows up live — as an interactive graph, and as a pixel
+            office where your agents actually walk around and do the work.
+          </p>
+          <div class="hero-ctas">
+            <a class="btn btn--accent" href="#quickstart">Get started</a>
+            <a class="btn" href="https://github.com/kochrisdev/vapviz">Star on GitHub</a>
+          </div>
+          <div class="hero-pip">
+            <code id="pip-cmd">pip install vapviz</code>
+            <button class="copy-btn" data-copy="pip install vapviz" aria-label="Copy install command">Copy</button>
+          </div>
+
+          <figure class="hero-building" aria-label="The vapviz Office Building view, recorded live">
+            <div class="hero-roof"><span>vapviz</span></div>
+            <div class="hero-screen">
+              <video
+                id="hero-video"
+                poster="/shots/building.png"
+                autoplay
+                muted
+                loop
+                playsinline
+                aria-label="Recording of the Office Building monitor: pixel agents working in their rooms, live"
+              >
+                <source src="/hero.webm" type="video/webm" />
+                <source src="/hero.mp4" type="video/mp4" />
+              </video>
+            </div>
+            <div class="hero-lobby">
+              <span><b>Every app</b> gets a room</span>
+              <span><b>Every agent</b> gets a desk</span>
+              <span><b>Every run</b> is on the record</span>
+            </div>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ── Why ──────────────────────────────────────────────────────── -->
+      <section id="why">
+        <div class="wrap">
+          <p class="sec-label">Why vapviz</p>
+          <h2>Your agents are working. Can you see them?</h2>
+          <p class="sec-intro">
+            Agent pipelines are invisible by default — a wall of logs at best.
+            vapviz turns them into something you can watch, inspect, and
+            control. Local-first: your traces stay on your machine.
+          </p>
+          <div class="props">
+            <div class="prop">
+              <h3><span class="led led--step" aria-hidden="true"></span>See everything, live</h3>
+              <p>
+                Every step, tool call, and model call streams into an
+                interactive graph as it happens — with inputs, outputs,
+                durations, token usage, and errors on every node.
+              </p>
+            </div>
+            <div class="prop">
+              <h3><span class="led led--llm" aria-hidden="true"></span>Know what it costs</h3>
+              <p>
+                Per-call and per-run cost, computed from a built-in pricing
+                table, plus a cross-run dashboard: spend by model, tokens,
+                success rate. No more surprise bills.
+              </p>
+            </div>
+            <div class="prop">
+              <h3><span class="led led--run" aria-hidden="true"></span>Stay in control</h3>
+              <p>
+                Pause, resume, or stop a running agent from the UI. Cooperative
+                and safe: pause parks it between steps, stop ends the run with
+                an honest "stopped" — not a fake error.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Quickstart ───────────────────────────────────────────────── -->
+      <section id="quickstart">
+        <div class="wrap">
+          <p class="sec-label">Quickstart</p>
+          <h2>Tracing in five minutes</h2>
+          <p class="sec-intro">
+            No SDK ceremony, no cloud account. Install the package, wrap your
+            agent in one context manager, open the browser.
+          </p>
+          <div class="steps">
+            <div class="step">
+              <div class="step-head"><span class="step-num">1</span><h3>Install</h3></div>
+              <p>The published wheel ships the UI — no Node, no build step.</p>
+              <pre><span class="p">$</span> pip install vapviz</pre>
+            </div>
+            <div class="step">
+              <div class="step-head"><span class="step-num">2</span><h3>Trace your agent</h3></div>
+              <p>
+                One context manager for the run, one per step. Nesting is
+                automatic — no manual IDs, ever.
+              </p>
+              <pre><span class="k">import</span> vapviz
+
+<span class="k">with</span> vapviz.<span class="f">trace</span>(<span class="s">"My Agent"</span>) <span class="k">as</span> run:
+    <span class="k">with</span> run.<span class="f">step</span>(<span class="s">"fetch_data"</span>, kind=<span class="s">"tool"</span>) <span class="k">as</span> step:
+        step.<span class="f">set_input</span>({<span class="s">"url"</span>: <span class="s">"https://api.example.com/data"</span>})
+        data = <span class="f">fetch</span>()
+        step.<span class="f">set_output</span>({<span class="s">"rows"</span>: <span class="f">len</span>(data)})</pre>
+            </div>
+            <div class="step">
+              <div class="step-head"><span class="step-num">3</span><h3>Watch it work</h3></div>
+              <p>
+                Start the server and open the browser — the graph draws itself
+                while your agent runs. Add <code>--db</code> and every run is
+                kept.
+              </p>
+              <pre><span class="p">$</span> vapviz serve --db vapviz.db
+<span class="c"># UI + API at http://localhost:8001</span></pre>
+            </div>
+            <div class="step">
+              <div class="step-head"><span class="step-num">4</span><h3>Or auto-instrument</h3></div>
+              <p>
+                Already on OpenAI, Anthropic, LangChain/LangGraph, CrewAI,
+                Pydantic AI, LlamaIndex, or AutoGen? One call hooks the whole
+                framework.
+              </p>
+              <pre>client = OpenAI()
+vapviz.<span class="f">patch_openai</span>(client)   <span class="c"># every model call, traced</span></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Feature tour ─────────────────────────────────────────────── -->
+      <section id="tour">
+        <div class="wrap">
+          <p class="sec-label">The tour</p>
+          <h2>One tracer, four ways to look at it</h2>
+          <p class="sec-intro">
+            The same event stream drives every view — pick the altitude:
+            the whole fleet, one run as theater, the raw graph, or the numbers.
+          </p>
+          <div class="tour">
+            <div class="feature">
+              <div class="feature-copy">
+                <h3><span class="led led--agent" aria-hidden="true"></span>The Office Building</h3>
+                <p>
+                  Your whole fleet on one screen. Every app owns a room in a
+                  pixel office building — a re-run lights the same room back
+                  up, a failing app turns its room red and its agents wait it
+                  out in the rooftop lounge. If someone's milling about on the
+                  corridor, work is happening — the building never lies.
+                </p>
+              </div>
+              <figure class="feature-shot">
+                <img src="/shots/building.png" alt="The Office Building view: a pixel building with six rooms per floor, agents at work, a lobby directory at the base" loading="lazy" />
+                <figcaption>The fleet monitor — every app is a room.</figcaption>
+              </figure>
+            </div>
+            <div class="feature">
+              <div class="feature-copy">
+                <h3><span class="led led--tool" aria-hidden="true"></span>The Theater</h3>
+                <p>
+                  One run, up close. Each agent is a hand-drawn sprite at its
+                  own desk; it walks to the LLM desk to think and to a tool
+                  station to work, speech bubble overhead. Live, or replayed
+                  event-by-event with the scrubber.
+                </p>
+              </div>
+              <figure class="feature-shot">
+                <img src="/shots/theater.png" alt="The Theater view: pixel agents at desks in a cozy office, one walking to a tool station" loading="lazy" />
+                <figcaption>The Theater — a run you can actually watch.</figcaption>
+              </figure>
+            </div>
+            <div class="feature">
+              <div class="feature-copy">
+                <h3><span class="led led--step" aria-hidden="true"></span>The graph</h3>
+                <p>
+                  The engineer's view: a live DAG of the run. Node color is the
+                  kind of work, the border is its status; click any node for
+                  inputs, outputs, token usage, duration, and the exact error.
+                  Compare any two runs side by side.
+                </p>
+              </div>
+              <figure class="feature-shot">
+                <img src="/shots/graph.png" alt="The graph view: an interactive DAG of agent steps, tool calls and LLM calls with a detail panel" loading="lazy" />
+                <figcaption>The graph — every node inspectable.</figcaption>
+              </figure>
+            </div>
+            <div class="feature">
+              <div class="feature-copy">
+                <h3><span class="led led--llm" aria-hidden="true"></span>The dashboard</h3>
+                <p>
+                  Cross-run analytics: total spend, tokens in and out, success
+                  rate, cost by model, cost over time. Budgets flag the runs
+                  that blow their limits; evals score them like regression
+                  tests.
+                </p>
+              </div>
+              <figure class="feature-shot">
+                <img src="/shots/dashboard.png" alt="The dashboard: cost, token and success-rate metrics across runs, with a by-model breakdown" loading="lazy" />
+                <figcaption>The dashboard — the numbers behind the pixels.</figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Integrations ─────────────────────────────────────────────── -->
+      <section id="integrations">
+        <div class="wrap">
+          <p class="sec-label">Plays well with</p>
+          <h2>Your stack, already covered</h2>
+          <p class="sec-intro">
+            Auto-instrumentation for the major agent frameworks and SDKs —
+            or use the plain <code>trace</code>/<code>step</code> API anywhere,
+            and push events over HTTP from any language.
+          </p>
+          <div class="integrations">
+            <span class="chip">OpenAI SDK</span>
+            <span class="chip">Anthropic SDK</span>
+            <span class="chip">LangChain</span>
+            <span class="chip">LangGraph</span>
+            <span class="chip">CrewAI</span>
+            <span class="chip">Pydantic AI</span>
+            <span class="chip">LlamaIndex</span>
+            <span class="chip">AutoGen</span>
+            <span class="chip">OpenTelemetry export</span>
+            <span class="chip">HTTP remote ingest</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-foot">
+      <div class="wrap">
+        <span>vapviz — MIT licensed, self-hosted, local-first.</span>
+        <nav aria-label="Footer">
+          <a href="https://github.com/kochrisdev/vapviz">GitHub</a>
+          <a href="https://github.com/kochrisdev/vapviz/blob/main/docs/TUTORIAL.md">Tutorial</a>
+          <a href="https://github.com/kochrisdev/vapviz/blob/main/docs/DEPLOYMENT.md">Deployment</a>
+          <a href="https://pypi.org/project/vapviz/">PyPI</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

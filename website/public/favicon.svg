@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8" shape-rendering="crispEdges">
+  <!-- hand-placed pixel V — office amber on after-hours brown (site palette) -->
+  <rect width="8" height="8" fill="#241a14"/>
+  <rect x="1" y="1" width="1" height="3" fill="#e0a44a"/>
+  <rect x="6" y="1" width="1" height="3" fill="#e0a44a"/>
+  <rect x="2" y="4" width="1" height="2" fill="#e0a44a"/>
+  <rect x="5" y="4" width="1" height="2" fill="#e0a44a"/>
+  <rect x="3" y="6" width="2" height="1" fill="#f0b864"/>
+</svg>
