@@ -467,6 +467,8 @@ def configure(db: str | None = None) -> None:
 
 The `sys.modules[__name__]` trick is needed because Python's import machinery creates a binding in `vapviz.__init__` at import time (`from .store import default_store`). Simply reassigning `_sm.default_store` would leave the `vapviz.default_store` name pointing at the old object. Writing through `sys.modules` updates both bindings atomically from the caller's perspective.
 
+Every consumer of the default store resolves it **at call time** for the same reason: `Tracer._store` is a property, and `create_app()` reads `vapviz.store.default_store` when it is called (fixed 2026-07-18 — it previously froze an import-time copy, so `configure(db=...)` → `create_app()` silently served an empty `MemoryStore`). The one deliberate exception is the prebuilt `vapviz.app` at the bottom of `server.py`: it is constructed at import, so it snapshots whatever store exists then. If you use `configure`, build your own app with `create_app()` afterwards rather than reusing `vapviz.app`.
+
 ---
 
 ## Control channel (Pause / Resume / Stop)
@@ -561,7 +563,7 @@ After every `applyEvent` call, `total_cost_usd` is recomputed by summing `node.d
 4. Two `ReactFlowProvider` / `AgentGraph` pairs render side by side, each with a coloured label strip (sky-blue for A, amber for B).
 
 **UX flow in RunList:**
-- A hover-revealed `⊕` (GitCompare) icon appears on every non-selected run row.
+- A hover-revealed `⇄` (GitCompare) icon appears on every non-selected run row.
 - Clicking it sets `compareRunId` in the store → `App.tsx` switches to `RunComparison`.
 - An amber "Comparison mode active" banner appears at the bottom of the sidebar.
 - The `✕` icon on the active comparison run clears `compareRunId`; so does selecting any new primary run.

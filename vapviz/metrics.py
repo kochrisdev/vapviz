@@ -24,6 +24,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from .cost import normalize_model
 from .events import NodeKind, NodeStatus, RunGraph
 
 
@@ -84,17 +85,20 @@ class Metrics(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _model_of(node) -> str:
-    """Best-effort model name for an LLM node."""
+    """Best-effort model name for an LLM node.
+
+    Normalized via the pricing table's provider-prefix strip so the same model
+    reported as e.g. ``gpt-4o-mini`` and ``openai/gpt-4o-mini`` (different
+    integrations spell it differently) groups as ONE by_model row.
+    """
     data = node.data or {}
     inp = data.get("input")
-    if isinstance(inp, dict):
-        model = inp.get("model")
-        if model:
-            return str(model)
-    # Fallback: strip the "llm/" label prefix
-    if node.label.startswith("llm/"):
-        return node.label[4:]
-    return node.label or "unknown"
+    model = inp.get("model") if isinstance(inp, dict) else None
+    if not model:
+        # Fallback: strip the "llm/" label prefix
+        model = node.label[4:] if node.label.startswith("llm/") else node.label
+    # Single exit so every current and future source gets normalized.
+    return normalize_model(str(model)) if model else "unknown"
 
 
 def _day(ts: float) -> str:

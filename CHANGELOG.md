@@ -7,7 +7,7 @@ All notable changes to vapviz are documented here. The format is based on
 For the detailed per-release notes (APIs, fixes, internals), see the
 [Developer Reference changelog](docs/DEVELOPER_REFERENCE.md#changelog).
 
-## [Unreleased]
+## [1.2.0] - 2026-07-20
 
 ### Added
 - **Live run control — Pause / Resume / Stop (in-process).** vapviz gains its first return
@@ -45,6 +45,18 @@ For the detailed per-release notes (APIs, fixes, internals), see the
   everyone now). The stored `vapviz-mode` preference is simply ignored.
 
 ### Fixed
+- **`configure(db=...)` → `create_app()` no longer serves an empty store (M3).**
+  `create_app()` used to freeze an import-time copy of the default store, so building an
+  in-process server after `vapviz.configure(db=...)` silently served a blank in-memory
+  store while the SQLite file grew — the UI showed zero runs. It now resolves the default
+  store when called, matching the tracer's behavior, so configure-then-build just works
+  (guarded by a regression test). Note the prebuilt `vapviz.app` is still constructed at
+  import and cannot follow a later `configure` — build your own app with `create_app()`.
+- **Dashboard's "cost by model" no longer splits one model into two rows.** The by-model
+  breakdown grouped raw model strings, so `gpt-4o-mini` (CrewAI listener) and
+  `openai/gpt-4o-mini` (patched OpenAI client) appeared as separate models. Model names
+  are now normalized with the same provider-prefix stripping the pricing table uses, so
+  both count as one model. Costs were always correct; only the grouping was split.
 - **Dashboard token totals now understand OpenAI-style usage keys.** `compute_metrics`
   (behind `GET /metrics` and the Dashboard) only counted `usage.input_tokens`/
   `output_tokens`, so runs whose usage arrived as `prompt_tokens`/`completion_tokens`
@@ -243,7 +255,7 @@ This release adds no new tracing/integration features beyond 0.15.0 — it marks
 ### Added
 - Initial release: sync tracer, in-memory store, FastAPI + SSE server, ReactFlow UI, Anthropic SDK integration.
 
-[Unreleased]: https://github.com/kochrisdev/vapviz/compare/v1.1.0...HEAD
+[1.2.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.2.0
 [1.1.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.1.0
 [1.0.1]: https://github.com/kochrisdev/vapviz/releases/tag/v1.0.1
 [1.0.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.0.0

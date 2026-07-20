@@ -17,6 +17,10 @@ env/
 ui/node_modules/
 ui/dist/
 ui/.vite/
+website/node_modules/
+website/dist/
+website/.vite/
+website/.vercel/
 
 # Bundled UI copied into the package at build time
 vapviz/_static/

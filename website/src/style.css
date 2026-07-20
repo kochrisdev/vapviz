@@ -1,0 +1,417 @@
+/*
+ * vapviz marketing site — one page, the office's world.
+ *
+ * Palette is the app's dark theme verbatim (ui/src/index.css :root — the
+ * sprite office after hours, tokens derived from officeArt.ts). The site is
+ * dark-only on purpose: it advertises the diorama, so it wears the diorama's
+ * night palette. Same token names, space-separated RGB channels.
+ *
+ * Type: Silkscreen (display) / Pixelify Sans (body) / VT323 (code) —
+ * self-hosted via @fontsource imports in main.ts. Never a non-pixel face.
+ * Form: square corners, hard-offset shadows, no blurs. Backgrounds simple.
+ */
+
+:root {
+  --bg:             26 19 14;
+  --surface:        36 26 20;
+  --surface-hover:  50 37 28;
+  --surface-inset:  30 22 16;
+
+  --border:         74 55 38;
+  --border-strong:  110 82 55;
+
+  --content:           243 234 217;
+  --content-muted:     206 188 156;
+  --content-faint:     158 138 108;
+  --content-on-accent: 26 19 14;
+
+  --accent:        224 164 74;
+  --accent-hover:  240 184 100;
+
+  --kind-agent:  129 140 248;
+  --kind-step:    56 189 248;
+  --kind-tool:    52 211 153;
+  --kind-llm:    192 132 252;
+
+  --status-running:  245 158 11;
+  --status-success:   34 197 94;
+  --status-error:    239 68 68;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+body {
+  margin: 0;
+  font-family: "Pixelify Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.6;
+  /* The app's faint checkerboard ground — the pixel world's yard tile. */
+  background:
+    repeating-conic-gradient(rgb(var(--surface-inset) / 0.5) 0% 25%, transparent 0% 50%) 0 0 / 28px 28px,
+    rgb(var(--bg));
+  color: rgb(var(--content));
+}
+
+/* Display face — uppercase + tracked, same rule as the app's .px-display. */
+.px-display {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 400;
+}
+
+pre, code, kbd {
+  font-family: "VT323", ui-monospace, monospace;
+  font-size: 1.16em;
+  line-height: 1.35;
+}
+
+:focus-visible {
+  outline: 2px solid rgb(var(--accent));
+  outline-offset: 1px;
+  border-radius: 0;
+}
+
+::selection { background: rgb(var(--accent) / 0.35); }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: rgb(var(--surface-inset)); }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-strong));
+  border: 2px solid rgb(var(--surface-inset));
+}
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--content-faint)); }
+
+a { color: rgb(var(--accent)); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+a:hover { color: rgb(var(--accent-hover)); }
+
+img, video, canvas { max-width: 100%; display: block; }
+
+/* ── Layout shell ─────────────────────────────────────────────────────── */
+
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+section { padding: 72px 0; }
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+
+.site-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgb(var(--bg) / 0.92);
+  border-bottom: 2px solid rgb(var(--border));
+  backdrop-filter: none; /* pixel UIs don't blur */
+}
+.site-head .wrap {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 54px;
+}
+.brand {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  color: rgb(var(--accent));
+  font-size: 15px;
+  text-decoration: none;
+}
+.brand:hover { color: rgb(var(--accent-hover)); }
+.site-nav { margin-left: auto; display: flex; gap: 18px; }
+.site-nav a {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: rgb(var(--content-muted));
+  text-decoration: none;
+  padding: 4px 2px;
+}
+.site-nav a:hover { color: rgb(var(--content)); }
+/* Phones: tighten the header so brand + 4 links fit without side-scroll. */
+@media (max-width: 480px) {
+  .site-head .wrap { gap: 10px; padding: 0 12px; }
+  .brand { font-size: 12px; letter-spacing: 0.18em; text-indent: 0.18em; }
+  .site-nav { gap: 10px; }
+  .site-nav a { font-size: 10px; letter-spacing: 0.03em; }
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  padding: 12px 18px;
+  border: 2px solid rgb(var(--border-strong));
+  background: rgb(var(--surface));
+  color: rgb(var(--content));
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 0 rgb(0 0 0 / 0.55); /* hard pixel step, no blur */
+}
+.btn:hover { background: rgb(var(--surface-hover)); color: rgb(var(--content)); }
+.btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 0 rgb(0 0 0 / 0.55); }
+.btn--accent {
+  background: rgb(var(--accent));
+  border-color: rgb(var(--accent));
+  color: rgb(var(--content-on-accent));
+}
+.btn--accent:hover { background: rgb(var(--accent-hover)); border-color: rgb(var(--accent-hover)); color: rgb(var(--content-on-accent)); }
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+
+.hero { padding: 84px 0 64px; text-align: center; }
+.hero h1 {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  font-weight: 400;
+  font-size: clamp(26px, 5vw, 46px);
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  margin: 0 0 18px;
+}
+.hero h1 .amber { color: rgb(var(--accent)); }
+.hero-sub {
+  max-width: 640px;
+  margin: 0 auto 30px;
+  color: rgb(var(--content-muted));
+  font-size: 19px;
+}
+.hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
+.hero-pip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 8px 14px;
+  border: 2px solid rgb(var(--border));
+  background: rgb(var(--surface-inset));
+  color: rgb(var(--content-muted));
+}
+.hero-pip code { color: rgb(var(--content)); }
+.copy-btn {
+  font-family: "Silkscreen", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  border: 1px solid rgb(var(--border-strong));
+  background: rgb(var(--surface));
+  color: rgb(var(--content-muted));
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.copy-btn:hover { color: rgb(var(--content)); background: rgb(var(--surface-hover)); }
+
+/* The hero recording, framed as the building itself: roof bar + sign above,
+   lobby bar below — the same silhouette as the app's Office Building view. */
+.hero-building {
+  max-width: 920px;
+  margin: 44px auto 0;
+  border: 2px solid rgb(var(--border-strong));
+  background: rgb(var(--surface));
+  box-shadow: 6px 6px 0 0 rgb(0 0 0 / 0.5);
+}
+.hero-roof {
+  height: 34px;
+  display: grid;
+  place-items: center;
+  background: rgb(var(--surface-hover));
+  border-bottom: 2px solid rgb(var(--border-strong));
+}
+.hero-roof span {
+  font-family: "Silkscreen", monospace;
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  text-indent: 0.24em;
+  text-transform: uppercase;
+  color: rgb(var(--accent));
+}
+.hero-screen { background: rgb(var(--surface-inset)); }
+.hero-screen video, .hero-screen img { width: 100%; image-rendering: auto; }
+.hero-lobby {
+  border-top: 2px solid rgb(var(--border-strong));
+  background: rgb(var(--surface-hover));
+  padding: 8px 14px;
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: rgb(var(--content-muted));
+}
+.hero-lobby b { color: rgb(var(--content)); font-weight: 600; }
+
+/* ── Section headings ─────────────────────────────────────────────────── */
+
+.sec-label {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: rgb(var(--accent));
+  margin: 0 0 10px;
+}
+h2 {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  font-weight: 400;
+  font-size: clamp(20px, 3vw, 28px);
+  letter-spacing: 0.04em;
+  margin: 0 0 14px;
+  line-height: 1.3;
+}
+.sec-intro { max-width: 640px; color: rgb(var(--content-muted)); margin: 0 0 36px; }
+
+/* ── Value props ──────────────────────────────────────────────────────── */
+
+.props { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 800px) { .props { grid-template-columns: 1fr; } }
+.prop {
+  border: 2px solid rgb(var(--border));
+  background: rgb(var(--surface));
+  padding: 20px;
+  box-shadow: 4px 4px 0 0 rgb(0 0 0 / 0.45);
+}
+.prop h3 {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  font-weight: 400;
+  font-size: 14px;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.prop p { margin: 0; color: rgb(var(--content-muted)); font-size: 16px; }
+/* Little square "LED" markers — state is never color-only in the app; here
+   they're decorative kind-color chips echoing the graph legend. */
+.led { width: 10px; height: 10px; flex-shrink: 0; display: inline-block; }
+.led--agent { background: rgb(var(--kind-agent)); }
+.led--tool  { background: rgb(var(--kind-tool)); }
+.led--llm   { background: rgb(var(--kind-llm)); }
+.led--step  { background: rgb(var(--kind-step)); }
+.led--run   { background: rgb(var(--status-running)); }
+.led--ok    { background: rgb(var(--status-success)); }
+.led--err   { background: rgb(var(--status-error)); }
+
+/* ── Quickstart ───────────────────────────────────────────────────────── */
+
+/* minmax(0,1fr): let cards shrink below their code block's natural width —
+   the pre scrolls inside instead of forcing the page wide on phones. */
+.steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.step {
+  border: 2px solid rgb(var(--border));
+  background: rgb(var(--surface));
+  padding: 18px 20px;
+  box-shadow: 4px 4px 0 0 rgb(0 0 0 / 0.45);
+}
+.step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.step-num {
+  font-family: "Silkscreen", monospace;
+  font-size: 12px;
+  color: rgb(var(--content-on-accent));
+  background: rgb(var(--accent));
+  padding: 2px 8px;
+}
+.step-head h3 {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  font-weight: 400;
+  font-size: 14px;
+  margin: 0;
+}
+.step p { color: rgb(var(--content-muted)); margin: 0 0 10px; font-size: 16px; }
+.step pre {
+  margin: 0;
+  padding: 14px 16px;
+  background: rgb(var(--surface-inset));
+  border: 2px solid rgb(var(--border));
+  overflow-x: auto;
+  color: rgb(var(--content));
+}
+.step pre .c  { color: rgb(var(--content-faint)); }   /* comment */
+.step pre .k  { color: rgb(var(--kind-llm)); }        /* keyword */
+.step pre .s  { color: rgb(var(--kind-tool)); }       /* string */
+.step pre .f  { color: rgb(var(--kind-step)); }       /* call */
+.step pre .p  { color: rgb(var(--accent)); }          /* prompt sigil */
+
+/* ── Feature tour ─────────────────────────────────────────────────────── */
+
+.tour { display: grid; gap: 56px; }
+.feature {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  align-items: center;
+}
+@media (max-width: 800px) { .feature { grid-template-columns: 1fr; } }
+.feature:nth-child(even) .feature-copy { order: 2; }
+@media (max-width: 800px) { .feature:nth-child(even) .feature-copy { order: 0; } }
+.feature-copy h3 {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  font-weight: 400;
+  font-size: 16px;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.feature-copy p { color: rgb(var(--content-muted)); margin: 0; font-size: 16px; }
+.feature-shot {
+  border: 2px solid rgb(var(--border-strong));
+  background: rgb(var(--surface-inset));
+  box-shadow: 5px 5px 0 0 rgb(0 0 0 / 0.5);
+}
+.feature-shot img { width: 100%; }
+.feature-shot figcaption {
+  border-top: 2px solid rgb(var(--border));
+  padding: 6px 10px;
+  font-size: 12px;
+  color: rgb(var(--content-faint));
+}
+
+/* ── Integrations ─────────────────────────────────────────────────────── */
+
+.integrations { display: flex; flex-wrap: wrap; gap: 10px; }
+.chip {
+  font-family: "Silkscreen", monospace;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  padding: 8px 12px;
+  border: 2px solid rgb(var(--border));
+  background: rgb(var(--surface));
+  color: rgb(var(--content-muted));
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+
+.site-foot {
+  border-top: 2px solid rgb(var(--border));
+  padding: 36px 0 48px;
+  color: rgb(var(--content-faint));
+  font-size: 14px;
+}
+.site-foot .wrap { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+.site-foot nav { display: flex; gap: 16px; margin-left: auto; }

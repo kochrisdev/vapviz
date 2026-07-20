@@ -14,7 +14,9 @@ export function formatLabel(node: Pick<GraphNode, "kind" | "label">): string {
   // Prefix-based rules apply regardless of node kind (prefixes leak onto steps).
   if (raw.startsWith("llm/")) {
     const rest = raw.slice(4);
-    // provider/model -> model id; keep model ids verbatim (don't title-case)
+    // provider/model -> model id; keep model ids verbatim (don't title-case).
+    // Same last-segment rule as vapviz/cost.py normalize_model() — display-only
+    // twin; keep the rules matching by hand.
     return rest.includes("/") ? rest.slice(rest.lastIndexOf("/") + 1) : rest;
   }
   if (raw.startsWith("agent/")) return humanize(raw.slice(6));

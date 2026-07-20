@@ -3,6 +3,9 @@
 This tutorial walks you from zero to a fully instrumented AI agent pipeline. Each step builds on
 the last, so work through them in order. No prior vapviz knowledge required.
 
+> New here? The **[vapviz website](https://vapviz-website.vercel.app)** gives you the 60-second
+> visual overview — screenshots, a demo video, and what the tool is for — before you dive in below.
+
 ---
 
 ## Contents

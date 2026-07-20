@@ -205,6 +205,9 @@ def run_agent() -> None:
 def main_with_server() -> None:
     import uvicorn
 
+    # Order matters: configure(db=...) first, THEN create_app() — the app
+    # resolves the default store when built. (Don't reuse the prebuilt
+    # vapviz.app here; it was constructed at import with the in-memory store.)
     vapviz.configure(db="vapviz.db")
     server_app = vapviz.create_app()
 
