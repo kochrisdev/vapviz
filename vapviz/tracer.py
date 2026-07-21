@@ -165,6 +165,124 @@ async def _acheck_control(run_id: str, store: "RunStore") -> None:
 
 
 # ---------------------------------------------------------------------------
+# Public control API for agent authors (Layer 2)
+# ---------------------------------------------------------------------------
+# Calls an author sprinkles into agent code to cooperate with the UI's control
+# channel beyond the automatic per-step checkpoint:
+#   * checkpoint()/acheckpoint() — an extra pause/stop checkpoint for a long
+#     loop with no natural step boundary.
+#   * take_input()/atake_input()  — receive a message the UI injected.
+# All require an active trace; called outside one they raise RuntimeError (a
+# deliberate author call, unlike the SDK monkey-patches which no-op untraced).
+
+
+def _require_ctx(fn_name: str) -> StepContext:
+    ctx = _current_step.get()
+    if ctx is None:
+        raise RuntimeError(
+            f"vapviz.{fn_name}() called outside an active trace "
+            "(no run is in progress on this thread/task)"
+        )
+    return ctx
+
+
+def checkpoint() -> None:
+    """Manual control checkpoint for a long loop with no natural step boundary.
+
+    Obeys Pause/Stop exactly like the automatic per-step checkpoint: parks while
+    the run is paused, raises :class:`VapStopped` while it is stopped::
+
+        for row in huge_dataset:      # no per-row step → add a checkpoint
+            vapviz.checkpoint()
+            process(row)
+    """
+    ctx = _require_ctx("checkpoint")
+    _check_control(ctx.run_id, ctx._store)
+
+
+async def acheckpoint() -> None:
+    """Async variant of :func:`checkpoint` — ``await`` it inside an async loop so
+    a paused agent yields to the event loop instead of blocking it."""
+    ctx = _require_ctx("acheckpoint")
+    await _acheck_control(ctx.run_id, ctx._store)
+
+
+def take_input(timeout: Optional[float] = None) -> Optional[str]:
+    """Receive a message the UI injected into this run (Layer 2 mailbox).
+
+    By default blocks at this checkpoint until a message arrives — the "agent
+    asks, then waits for the human" pattern — and returns the message. While
+    waiting, the UI shows "agent is waiting for your input". Stop still
+    interrupts a waiting agent (raises :class:`VapStopped`).
+
+    ``timeout``:
+      * ``None`` (default) — wait indefinitely for a message.
+      * ``0`` — non-blocking peek: return the pending message, or ``None`` now.
+      * ``> 0`` — wait up to that many seconds, then return ``None`` on timeout.
+
+    Requires an active trace; raises ``RuntimeError`` otherwise. (Pause is not
+    separately honored here — waiting for input already is a wait; a pause takes
+    effect at the next step checkpoint after the message is received.)
+    """
+    ctx = _require_ctx("take_input")
+    run_id, store = ctx.run_id, ctx._store
+    deadline = None if timeout is None else time.monotonic() + timeout
+    store.set_waiting_for_input(run_id, True)
+    try:
+        while True:
+            # Stop takes priority — a waiting agent must still be stoppable.
+            if store.get_control(run_id).desired == STOPPED:
+                store.set_ack(run_id, STOPPED)
+                raise VapStopped(run_id)
+            msg = store.take_input_if_ready(run_id)
+            if msg is not None:
+                return msg
+            if timeout == 0:
+                return None  # non-blocking peek
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None  # timed out
+                wait = min(CONTROL_POLL, remaining)
+            else:
+                wait = CONTROL_POLL
+            ev = store._control_wake_for(run_id)  # woken immediately by set_input…
+            ev.wait(timeout=wait)                 # …else re-poll (also catches Stop)
+            ev.clear()
+    finally:
+        store.set_waiting_for_input(run_id, False)
+
+
+async def atake_input(timeout: Optional[float] = None) -> Optional[str]:
+    """Async variant of :func:`take_input` — ``await``s instead of blocking, so a
+    waiting async agent yields the shared event loop (Stop and the injected
+    message are still served)."""
+    ctx = _require_ctx("atake_input")
+    run_id, store = ctx.run_id, ctx._store
+    deadline = None if timeout is None else time.monotonic() + timeout
+    store.set_waiting_for_input(run_id, True)
+    try:
+        while True:
+            if store.get_control(run_id).desired == STOPPED:
+                store.set_ack(run_id, STOPPED)
+                raise VapStopped(run_id)
+            msg = store.take_input_if_ready(run_id)
+            if msg is not None:
+                return msg
+            if timeout == 0:
+                return None
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                await asyncio.sleep(min(CONTROL_POLL, remaining))
+            else:
+                await asyncio.sleep(CONTROL_POLL)
+    finally:
+        store.set_waiting_for_input(run_id, False)
+
+
+# ---------------------------------------------------------------------------
 # RunContext — top-level context for a single agent run
 # ---------------------------------------------------------------------------
 

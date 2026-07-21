@@ -19,6 +19,7 @@ its first-class ``stopped`` status.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 # ── Lifecycle states ────────────────────────────────────────────────────────
 # "desired" = what the user asked for (set by the server); "acked" = what the
@@ -29,7 +30,9 @@ PAUSED = "paused"
 STOPPED = "stopped"
 DESIRED_STATES = (RUNNING, PAUSED, STOPPED)
 
-# UI action verb → desired lifecycle state.
+# UI action verb → desired lifecycle state. "input" is handled by a separate
+# endpoint (POST /runs/{id}/input), not this map — it carries a payload, not a
+# lifecycle transition.
 ACTION_TO_DESIRED = {"pause": PAUSED, "resume": RUNNING, "stop": STOPPED}
 
 # How long a parked agent waits between control re-checks. It's a *safety
@@ -42,11 +45,27 @@ CONTROL_POLL = 0.1
 @dataclass
 class RunControl:
     """A run's live control latch. ``desired`` is set by the server; ``acked``
-    is set by the tracer when it acts on it at a checkpoint."""
+    is set by the tracer when it acts on it at a checkpoint.
+
+    Layer 2 adds a single-slot **mailbox** on the same latch so the UI can inject
+    a message into a running agent (``vapviz.take_input()`` consumes it):
+
+    * ``pending_input`` — the message the UI sent, or ``None`` when the mailbox is
+      empty. Single-slot / last-write-wins: a second message before the agent
+      consumes the first overwrites it (the UI surfaces an undelivered message so
+      the overwrite is visible, never silent). ``None`` is the only "empty" — an
+      empty-string message is still a delivered message (check ``is not None``).
+    * ``waiting_for_input`` — set by the tracer while it is parked inside
+      ``take_input()`` waiting for a message, so the UI can honestly show
+      "agent is waiting for your input".
+    """
 
     desired: str = RUNNING
     acked: str = RUNNING
     updated_at: float = 0.0
+    # ── Layer 2 mailbox (inject a message into a running agent) ──────────────
+    pending_input: Optional[str] = None
+    waiting_for_input: bool = False
 
 
 class VapStopped(Exception):

@@ -54,6 +54,7 @@ This document describes the internal design of the Visualization Agentic Process
 │  POST   /runs/{id}/events      → remote event ingest                │
 │  GET    /runs/{id}/control     → control latch (desired + acked)    │
 │  POST   /runs/{id}/control     → pause / resume / stop a live run   │
+│  POST   /runs/{id}/input       → inject a message into a live run   │
 │  DELETE /runs                  → clear all runs                     │
 │  DELETE /runs/{id}             → delete one run                     │
 └──────────────────────────┬───────────────────────────────────────────┘
@@ -108,7 +109,7 @@ Each node kind has a symmetric open/close pair:
 Two event types are freestanding — they don't open/close a node:
 
 - `state_update` — updates metadata on the nearest parent node (currently inert in the graph reducers).
-- `control` — an inert audit marker emitted by the server when a user pauses/resumes/stops a run (see [Control channel](#control-channel-pause--resume--stop)). It appears in the timeline (Logs) but produces **no** graph change in either reducer — a parity fixture (`control_inert.json`) asserts both reducers ignore it identically.
+- `control` — an inert audit marker emitted by the server for pause/resume/stop **and** for an injected message (see [Control channel](#control-channel-pause--resume--stop)). It appears in the timeline (Logs) but produces **no** graph change in either reducer — parity fixtures (`control_inert.json`, `control_input_inert.json`) assert both reducers ignore every `data.action` identically, message payloads included.
 
 ### Graph construction
 
@@ -514,7 +515,43 @@ Everything above describes a **one-directional** system: the agent talks, vapviz
 
 **UI.** `RunControlBar.tsx` (Theater tab, live runs only) polls `GET /control` every 1 s and posts actions; the branchy state table lives in the pure, unit-tested `lib/runControl.ts` (`controlUiState(desired, acked, runStatus)` → banner + buttons). This latch-side UI state is **not** part of the dual-logic rule — only the `stopped` status and the `control` event type are.
 
-**Current scope and deferred layers:** this is Layer 1 — lifecycle control of in-process agents. Deferred by design: message injection / task prompting (Layer 2, plus a `vapviz.checkpoint()` escape hatch for step-less long loops), retry/re-run (Layer 3), and cross-process control for remote-ingest agents, whose tracers cannot see the server's in-memory latch (Layer 4).
+### Layer 2 — inject a message into a running agent
+
+Layer 1 only ever sends *commands* (pause/resume/stop) — three fixed lifecycle states. Layer 2 lets the UI send *data*: a short text message a live agent can actually read and act on. It reuses every piece of Layer 1's machinery rather than building a second one.
+
+**The mailbox rides the exact same latch, as a side channel — deliberately.** `RunControl` (`vapviz/control.py`) grows two more fields alongside `desired`/`acked`: `pending_input: str | None` (the message the UI last sent, or `None` when empty) and `waiting_for_input: bool` (the tracer sets this while parked inside `take_input()`). Same store dict, same `self._lock`, same per-run wake `threading.Event` `set_desired` already used to wake a parked agent instantly — Layer 2 needed no new store, no new lock, and no new wake mechanism. Like `desired`/`acked`, the mailbox is **ephemeral and never persisted** (even by `SqliteStore`) and **never fed to the graph reducers** — it is exactly as much of a side channel as the rest of the control latch, just carrying a payload instead of a lifecycle enum.
+
+The mailbox is **single-slot, last-write-wins**: `set_input(run_id, message)` simply overwrites `pending_input`, so sending a second message before the agent has consumed the first discards the first one. `None` is the only "empty" state — an empty string is still a delivered message — so every check in the store and tracer is `is not None`, never truthiness. The UI makes an overwrite visible rather than silent: a message it has sent but that hasn't been consumed yet (`pending_input` is still true) shows as "queued".
+
+**`vapviz.take_input(timeout=None)` / `vapviz.atake_input(timeout=None)`** are a new kind of cooperative checkpoint — alongside the automatic one at every `step`/`astep` entry — that an author calls deliberately to receive a message:
+
+```python
+with run.step("ask_customer", kind="step") as step:
+    reply = vapviz.take_input()      # blocks here until the UI sends a message
+    step.set_output({"reply": reply})
+```
+
+`timeout=None` (the default) blocks indefinitely — a deliberate choice: a silently-`None` default risked an agent charging ahead without input nobody noticed was missing, whereas a blocked run is loud (the UI shows "agent is waiting for your input", driven by `waiting_for_input`) and still fully controllable. `timeout=0` is a non-blocking peek (return the pending message, or `None`, right now); any positive number waits up to that many seconds before giving up and returning `None`. Internally the wait loop reuses the same `CONTROL_POLL` (0.1 s) safety-repoll pattern as `_check_control`, woken immediately by the same per-run `threading.Event` `set_input`/`set_desired` signal.
+
+**Stop still interrupts a waiting agent.** Every iteration of `take_input`'s loop checks `desired == STOPPED` *before* checking the mailbox, so a Stop sent while an agent is parked in `take_input()` raises `VapStopped` there, exactly as it would at a step boundary. Deliberately, **Pause is not separately honored inside `take_input()`** — being blocked waiting for a human is already a wait state, and layering "paused-while-waiting" on top would add a state-machine axis with no real behavioral difference; a pause simply takes effect at the next ordinary checkpoint after the message arrives.
+
+**`vapviz.checkpoint()` / `vapviz.acheckpoint()`** close out the escape hatch Layer 1 deferred: a loop with no natural `step`/`astep` boundary has no checkpoint at all, so Pause/Stop have nowhere to take effect until it finishes entirely. They are thin wrappers that call the very same `_check_control`/`_acheck_control` functions `step`/`astep` already call at entry — no new control logic, just a new place to invoke the existing one:
+
+```python
+for row in huge_dataset:      # no per-row step -> no checkpoint without this line
+    vapviz.checkpoint()
+    process(row)
+```
+
+All four — `take_input`, `atake_input`, `checkpoint`, `acheckpoint` — **raise `RuntimeError` if called outside an active trace**, rather than silently no-op'ing. That's a deliberate departure from the SDK monkey-patches (which must no-op harmlessly so a wrapped call still works when nobody's tracing): these four are calls an author adds on purpose as part of using the feature, so a loud error beats a mysteriously inert one.
+
+**`POST /runs/{run_id}/input`** (body `{"message": str}`) is a **new route, kept separate from `/control` on purpose** — a message is data, not a lifecycle command, so it doesn't fold into `/control`'s action→desired mapping. It mirrors `/control`'s edge cases exactly: `404` on an unknown run, a no-op `{"ended": true}` on an already-terminal one, and on success it calls `store.set_input(run_id, message)`. `GET /runs/{run_id}/control` — the same endpoint the UI already polls every ~1 s — grows two response-only fields so the UI never needs a second poll: `waiting_for_input` and `pending_input` (whether a message is queued — **never the message text itself**; no control endpoint response ever echoes the text back, including `POST /input`'s own response to the sender).
+
+**The message rides the event lane by reusing the inert `control` event — no new `EventType`, so no new dual-logic surface.** `POST /runs/{run_id}/input` emits the exact same audit event Layer 1's pause/resume/stop already emit, just a new `data.action` value: `{"action": "input", "message": "…"}`. Both graph reducers already ignore every `control` event unconditionally — neither one branches on `data.action` — so this shipped with **zero reducer changes**; a new `control_input_inert.json` parity fixture pins that guarantee down for this exact payload shape rather than relying on inspection alone. `LogsView` renders it specially, since (unlike the fixed "Paused by user" / "Resumed by user" / "Stopped by user" strings) this action carries a payload worth showing: `Message from user: "<text>"`.
+
+**Two UI ride-alongs, both presentation-only — same carve-out as the rest of this section.** The Theater office scene visibly "rests" (`.office-stage--resting`, dimmed/desaturated) with a small badge — `⏸ Paused` or `💬 Waiting for your input` — driven by the same `desired`/`acked`/`waiting_for_input` latch `RunControlBar` already polls (`useOfficeControl.ts` feeds it into the scene instead of only the control bar). The Office Building's room tiles gained hover-revealed Pause/Resume/Stop icon buttons for a **running** app's room — one more per-room poll of `GET /control`, alongside the per-room `/graph` fetch the Building already does — so lifecycle control no longer requires opening Theater. Message *sending* stays Theater-only; the room tiles are too small for a text box, and that line was drawn on purpose.
+
+**Current scope and deferred layers:** Layers 1 and 2 are now shipped — lifecycle control (pause/resume/stop) and message injection plus manual checkpoints, both for **in-process** agents. Message injection today is **one-way**: the UI sends *into* the agent, but there is no surface for the agent to show anything *back* to the user — it cannot display the question it is waiting on, nor a reply after your message. Making this a **two-way conversation** (the agent posts a question/response the user sees, the user answers) is the next slice. Also still deferred: retry/re-run a step (Layer 3), and cross-process control for remote-ingest agents, whose tracers cannot see the server's in-memory latch (Layer 4).
 
 ---
 

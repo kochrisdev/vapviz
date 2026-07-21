@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 
 from .budgets import Budget, BudgetReport, check_budget
-from .control import ACTION_TO_DESIRED
+from .control import ACTION_TO_DESIRED, RunControl
 from .evals import EvalResult, run_checks
 from .events import EventType, NodeKind, NodeStatus, RunGraph, RunSummary, VapEvent
 from .metrics import Metrics, compute_metrics
@@ -33,11 +33,31 @@ class ControlCommand(BaseModel):
     action: str  # "pause" | "resume" | "stop"
 
 
+class InputCommand(BaseModel):
+    message: str  # a message injected into a running agent (Layer 2 mailbox)
+
+
 class RunControlOut(BaseModel):
     desired: str
     acked: str
     updated_at: float
     ended: bool = False  # true when the run already terminated (control was a no-op)
+    # Layer 2 mailbox state (so the UI polls one endpoint, not two):
+    waiting_for_input: bool = False  # agent is parked in take_input() waiting
+    pending_input: bool = False      # a message is queued but not yet consumed
+
+
+def _control_out(c: RunControl, ended: bool) -> RunControlOut:
+    """Build the wire model from a control-latch snapshot (the message *text* is
+    never echoed back — the UI only needs to know one is pending)."""
+    return RunControlOut(
+        desired=c.desired,
+        acked=c.acked,
+        updated_at=c.updated_at,
+        ended=ended,
+        waiting_for_input=c.waiting_for_input,
+        pending_input=c.pending_input is not None,
+    )
 
 
 def create_app(store: RunStore | None = None, static_dir: str | None = None) -> FastAPI:
@@ -240,17 +260,34 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
     # docs/notes/DESIGN-agent-control.md.
     # ------------------------------------------------------------------
 
+    def _emit_control_audit(run_id: str, label: str, data: dict) -> None:
+        """Emit the inert `control` audit event for the Logs/Story timeline.
+        Ignored by both graph reducers. Shared by pause/resume/stop and the
+        Layer 2 message-inject (which reuses this type with action="input")."""
+        graph = _store.get_graph(run_id)
+        root_id = graph.nodes[0].id if graph and graph.nodes else run_id
+        _store.add_event(
+            VapEvent(
+                id=uuid.uuid4().hex[:12],
+                run_id=run_id,
+                timestamp=time.time(),
+                type=EventType.CONTROL,
+                node_id=root_id,
+                node_kind=NodeKind.AGENT,
+                node_label=label,
+                parent_id=None,
+                data=data,
+            )
+        )
+
     @app.get("/runs/{run_id}/control", response_model=RunControlOut)
     async def read_control(run_id: str):
-        """Current control latch — the UI polls this to render pausing…/paused."""
+        """Current control latch — the UI polls this to render pausing…/paused
+        and the waiting-for-input / message-pending state."""
         summary = _store.get_run(run_id)
         if not summary:
             raise HTTPException(status_code=404, detail="Run not found")
-        c = _store.get_control(run_id)
-        return RunControlOut(
-            desired=c.desired, acked=c.acked, updated_at=c.updated_at,
-            ended=summary.status in _TERMINAL,
-        )
+        return _control_out(_store.get_control(run_id), ended=summary.status in _TERMINAL)
 
     @app.post("/runs/{run_id}/control", response_model=RunControlOut)
     async def send_control(run_id: str, cmd: ControlCommand):
@@ -264,28 +301,31 @@ def create_app(store: RunStore | None = None, static_dir: str | None = None) -> 
 
         # No-op on an already-ended run — nothing live to control.
         if summary.status in _TERMINAL:
-            c = _store.get_control(run_id)
-            return RunControlOut(desired=c.desired, acked=c.acked, updated_at=c.updated_at, ended=True)
+            return _control_out(_store.get_control(run_id), ended=True)
 
         c = _store.set_desired(run_id, desired)
+        _emit_control_audit(run_id, summary.label, {"action": cmd.action})
+        return _control_out(c, ended=False)
 
-        # Inert audit marker for the Logs/Story timeline (ignored by the reducers).
-        graph = _store.get_graph(run_id)
-        root_id = graph.nodes[0].id if graph and graph.nodes else run_id
-        _store.add_event(
-            VapEvent(
-                id=uuid.uuid4().hex[:12],
-                run_id=run_id,
-                timestamp=time.time(),
-                type=EventType.CONTROL,
-                node_id=root_id,
-                node_kind=NodeKind.AGENT,
-                node_label=summary.label,
-                parent_id=None,
-                data={"action": cmd.action},
-            )
-        )
-        return RunControlOut(desired=c.desired, acked=c.acked, updated_at=c.updated_at, ended=False)
+    @app.post("/runs/{run_id}/input", response_model=RunControlOut)
+    async def send_input(run_id: str, cmd: InputCommand):
+        """Inject a message into a live in-process run (Layer 2 mailbox).
+
+        The agent receives it via ``vapviz.take_input()``. A message is data, not
+        a lifecycle command, so this is a route separate from /control; it emits
+        the same inert `control` audit event (action="input") for the timeline.
+        """
+        summary = _store.get_run(run_id)
+        if not summary:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        # No-op on an already-ended run — nothing live to receive the message.
+        if summary.status in _TERMINAL:
+            return _control_out(_store.get_control(run_id), ended=True)
+
+        c = _store.set_input(run_id, cmd.message)
+        _emit_control_audit(run_id, summary.label, {"action": "input", "message": cmd.message})
+        return _control_out(c, ended=False)
 
     # ------------------------------------------------------------------
     # Deletion

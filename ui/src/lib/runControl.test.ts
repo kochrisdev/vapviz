@@ -41,4 +41,28 @@ describe("controlUiState", () => {
     expect(s.live).toBe(false);
     expect(s.buttons).toEqual([]);
   });
+
+  it("waiting for input: banner + Stop only, Pause hidden, awaitingInput flag set", () => {
+    const s = controlUiState("running", "running", "running", true);
+    expect(s.banner).toBe("waiting for your input");
+    expect(s.awaitingInput).toBe(true);
+    expect(s.buttons).toEqual([{ action: "stop", disabled: false }]);
+  });
+
+  it("stop takes precedence over waiting for input", () => {
+    const s = controlUiState("stopped", "running", "running", true);
+    expect(s.banner).toBe("stopping…");
+    expect(s.awaitingInput).toBe(false);
+  });
+
+  it("waiting flag is ignored once the run is terminal", () => {
+    const s = controlUiState("running", "running", "success", true);
+    expect(s.live).toBe(false);
+    expect(s.awaitingInput).toBe(false);
+  });
+
+  it("non-waiting running keeps awaitingInput false", () => {
+    expect(controlUiState("running", "running", "running").awaitingInput).toBe(false);
+    expect(controlUiState("paused", "paused", "running").awaitingInput).toBe(false);
+  });
 });

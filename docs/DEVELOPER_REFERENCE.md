@@ -552,6 +552,83 @@ Control only reaches **in-process** agents (agent + server in one Python process
 
 ---
 
+#### `vapviz.checkpoint()`
+
+Manual control checkpoint for a loop with no natural `step`/`astep` boundary, so it stays pausable/stoppable exactly like a stepped loop. *(v1.4.0)*
+
+```python
+vapviz.checkpoint() -> None
+```
+
+Obeys Pause/Stop exactly like the automatic checkpoint every `step`/`astep` already runs at entry: parks while the run is paused, raises `vapviz.VapStopped` while it is stopped. It's a thin wrapper around the same `_check_control` function the sync context managers call — no new control logic, just a new place to call it.
+
+```python
+with vapviz.trace("Batch job") as run:
+    with run.step("process_all", kind="step") as step:
+        for row in huge_dataset:      # no per-row step -> no checkpoint without this
+            vapviz.checkpoint()
+            process(row)
+```
+
+Raises `RuntimeError` if called outside an active trace (no run in progress on the current thread/task) — a deliberate author call, unlike the SDK monkey-patches, which no-op silently when untraced.
+
+---
+
+#### `vapviz.acheckpoint()`
+
+Async version of `checkpoint`. `await` it inside an async loop so a paused agent yields to the event loop instead of blocking it.
+
+```python
+async vapviz.acheckpoint() -> None
+```
+
+Same semantics as `checkpoint` otherwise (obeys Pause/Stop, raises `RuntimeError` outside an active trace).
+
+---
+
+#### `vapviz.take_input(timeout=None)`
+
+Receive a message the UI injected into this run — the agent-facing side of the Layer 2 mailbox. *(v1.4.0)*
+
+```python
+vapviz.take_input(timeout: float | None = None) -> str | None
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `timeout` | `float \| None` | `None` | `None` waits indefinitely for a message. `0` is a non-blocking peek — returns the pending message or `None` immediately. A positive number waits up to that many seconds, then returns `None`. |
+
+By default **blocks at this checkpoint until a message arrives** — the "agent asks, then waits for a human" pattern — and returns it as a plain string. While waiting, `GET /runs/{id}/control` reports `waiting_for_input: true` so the UI can show "agent is waiting for your input".
+
+**Stop still interrupts a waiting agent** — `desired == "stopped"` is checked on every iteration of the wait loop, before the mailbox, so a Stop raises `vapviz.VapStopped` even mid-wait. Pause is **not** separately honored inside `take_input()` — a pause takes effect at the next ordinary checkpoint after the message is received, since waiting for input is already a wait state.
+
+The mailbox is **single-slot, last-write-wins**: sending a second message before the agent consumes the first overwrites it. An empty string is still a delivered message — only `None` means "no message" — so check the return value with `is not None` if an empty reply is meaningful for your use case.
+
+Requires an active trace; raises `RuntimeError` otherwise.
+
+```python
+with run.step("await_feedback", kind="step") as step:
+    feedback = vapviz.take_input()             # blocks until the UI sends one
+    step.set_output({"feedback": feedback})
+
+correction = vapviz.take_input(timeout=0)        # non-blocking peek
+reply      = vapviz.take_input(timeout=5)        # give up after 5s -> None
+```
+
+---
+
+#### `vapviz.atake_input(timeout=None)`
+
+Async version of `take_input`. `await` it so a waiting async agent yields the shared event loop — Stop and the injected message are still served while it waits.
+
+```python
+async vapviz.atake_input(timeout: float | None = None) -> str | None
+```
+
+Same semantics as `take_input` otherwise.
+
+---
+
 ### Tracer
 
 `vapviz.Tracer` is the class underlying the module-level `trace` / `atrace` functions. Use it when you need an isolated tracer with its own store (e.g. in tests).
@@ -716,11 +793,14 @@ The ABC also provides three **concrete** control-latch methods (used by the [con
 
 | Method | Signature | Description |
 |---|---|---|
-| `get_control` | `(run_id: str) -> RunControl` | Snapshot of the run's live control latch (`desired`, `acked`, `updated_at`); defaults to `running`. |
+| `get_control` | `(run_id: str) -> RunControl` | Snapshot of the run's live control latch — `desired`, `acked`, `updated_at`, plus the Layer 2 mailbox (`pending_input`, `waiting_for_input`); defaults to `running` with an empty mailbox. |
 | `set_desired` | `(run_id: str, desired: str) -> RunControl` | Record what the user asked for (`running`/`paused`/`stopped`) and wake a parked agent. Called by the server. |
 | `set_ack` | `(run_id: str, acked: str) -> None` | Record what the agent actually did at a checkpoint. Called by the tracer. |
+| `set_input` | `(run_id: str, message: str) -> RunControl` | *(v1.4.0)* UI → agent: write the single-slot mailbox (overwrites any unconsumed message) and wake a parked `take_input()`. Called by the server. |
+| `take_input_if_ready` | `(run_id: str) -> str \| None` | *(v1.4.0)* Agent-side: consume and clear the pending message, or `None` if the mailbox is empty. Called by `take_input` / `atake_input`. |
+| `set_waiting_for_input` | `(run_id: str, waiting: bool) -> None` | *(v1.4.0)* Flag whether the agent is currently parked inside `take_input()`, so the UI can show "waiting for your input". Called by `take_input` / `atake_input`. |
 
-The latch is ephemeral in-memory state — never persisted (even by `SqliteStore`) and never part of the event log or graph.
+The latch (including the mailbox) is ephemeral in-memory state — never persisted (even by `SqliteStore`) and never part of the event log or graph.
 
 ---
 
@@ -885,7 +965,7 @@ All enums extend `str, Enum` — their `.value` is the wire string.
 | `LLM_CALL` | `"llm_call"` | `step()` enter with kind=llm; Anthropic patch enter |
 | `LLM_RESPONSE` | `"llm_response"` | `step()` exit with kind=llm; Anthropic patch exit |
 | `STATE_UPDATE` | `"state_update"` | Freestanding state metadata event |
-| `CONTROL` | `"control"` | Freestanding audit marker (`data.action`: pause/resume/stop) emitted by `POST /runs/{id}/control`; ignored by both graph reducers |
+| `CONTROL` | `"control"` | Freestanding audit marker (`data.action`: pause/resume/stop/**input**) emitted by `POST /runs/{id}/control` or `POST /runs/{id}/input`; ignored by both graph reducers |
 | `ERROR` | `"error"` | Any unhandled exception inside a step block |
 
 #### `NodeKind`
@@ -1627,10 +1707,10 @@ Live run control (Pause / Resume / Stop) for **in-process** agents — the trace
 **`GET`** returns the run's control latch. The UI polls this ~1 s while a run is live:
 
 ```json
-{"desired": "paused", "acked": "running", "updated_at": 1752641200.5, "ended": false}
+{"desired": "paused", "acked": "running", "updated_at": 1752641200.5, "ended": false, "waiting_for_input": false, "pending_input": false}
 ```
 
-`desired` = what the user asked for; `acked` = what the agent has actually done at its last checkpoint (the gap is the cooperative lag — here, "pausing…"). `ended: true` means the run is already terminal.
+`desired` = what the user asked for; `acked` = what the agent has actually done at its last checkpoint (the gap is the cooperative lag — here, "pausing…"). `ended: true` means the run is already terminal. *(v1.4.0)* `waiting_for_input` is `true` while the agent is parked inside `take_input()`; `pending_input` is `true` when a message has been sent but not yet consumed — the message **text** itself is never included in this (or any control endpoint's) response, only whether one is pending.
 
 **`POST`** sends a command:
 
@@ -1643,7 +1723,31 @@ Live run control (Pause / Resume / Stop) for **in-process** agents — the trace
 - On an already-ended run: no-op; returns the latch with `"ended": true`.
 - Unknown run: `404` (both verbs).
 
-A stopped agent sees `vapviz.VapStopped` raised at its next checkpoint; the run terminates with status `"stopped"`.
+A stopped agent sees `vapviz.VapStopped` raised at its next checkpoint (including one parked in `take_input()` — see below); the run terminates with status `"stopped"`.
+
+---
+
+### `POST /runs/{run_id}/input`
+
+*(v1.4.0)* Inject a short text message into a live **in-process** run — the agent receives it via `vapviz.take_input()` / `vapviz.atake_input()`. A message is data, not a lifecycle command, so this is a route separate from `/control`, though it shares that route's edge-case handling. See [ARCHITECTURE → Control channel](ARCHITECTURE.md#control-channel-pause--resume--stop).
+
+**Request body:**
+
+```json
+{"message": "please retry with a shorter summary"}
+```
+
+**Response** `200 OK` — the same `RunControlOut` shape as `GET`/`POST /runs/{run_id}/control`:
+
+```json
+{"desired": "running", "acked": "running", "updated_at": 1752641200.5, "ended": false, "waiting_for_input": false, "pending_input": true}
+```
+
+- Writes the run's single-slot mailbox (**last-write-wins** — a second call before the agent consumes the first overwrites it) and wakes an agent currently parked in `take_input()`.
+- Also emits the inert `control` audit event used for pause/resume/stop, with `data: {"action": "input", "message": "…"}` — appears in Logs as `Message from user: "…"`. No new `EventType`; both graph reducers already ignore `control` events, so this needed no reducer change.
+- On an already-ended run: no-op; returns the latch with `"ended": true`.
+- Unknown run: `404`.
+- The message **text** is never echoed back by this (or any control) endpoint's response — not even to the caller who just sent it — only `pending_input: bool`.
 
 ---
 
@@ -1831,7 +1935,7 @@ type EventType =
   | "tool_call"   | "tool_result"
   | "llm_call"    | "llm_response"
   | "state_update"
-  | "control"     // inert audit marker (pause/resume/stop); ignored by the reducer
+  | "control"     // inert audit marker (pause/resume/stop, or an injected message); ignored by the reducer
   | "error";
 ```
 
@@ -1925,6 +2029,10 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v1.4.0 — 2026-07-21
+
+- **Agent control Layer 2 — inject a message into a running agent.** `RunControl` (`vapviz/control.py`) gains a single-slot mailbox: `pending_input: str | None` and `waiting_for_input: bool`, alongside the existing `desired`/`acked` fields — same store dict, lock, and per-run wake `threading.Event` Layer 1 already built. New `RunStore` methods `set_input` / `take_input_if_ready` / `set_waiting_for_input` (concrete on the ABC, like `get_control`/`set_desired`/`set_ack`). New tracer functions **`vapviz.take_input(timeout=None)`** / **`vapviz.atake_input(timeout=None)`** — block at that checkpoint until the UI sends a message (`timeout=0` peeks non-blocking; `timeout=N` waits up to `N` seconds then returns `None`); Stop still raises `VapStopped` inside a waiting call; Pause is not separately honored while waiting. New **`vapviz.checkpoint()`** / **`vapviz.acheckpoint()`** — thin wrappers around the existing `_check_control`/`_acheck_control`, for a loop with no natural `step`/`astep` boundary. All four raise `RuntimeError` outside an active trace. New **`POST /runs/{id}/input`** endpoint (body `{"message": str}`; 404 unknown run, no-op `{"ended": true}` on a terminal run) delivers to the mailbox and emits the existing inert `EventType.CONTROL` event with a new `action="input"` payload — no new event type, no reducer change (new `control_input_inert.json` parity fixture). `GET`/`POST /runs/{id}/control`'s response (`RunControlOut`) gains `waiting_for_input: bool` and `pending_input: bool` (the message text itself is never echoed back by any control endpoint). UI: the Theater office scene shows a dimmed "resting" state with a "⏸ Paused" / "💬 Waiting for your input" badge (`OfficeStage.tsx`, fed by `useOfficeControl.ts`); `RunControlBar.tsx` gains a message box; the Office Building's room tiles (`BuildingView.tsx`) gain hover-revealed Pause/Resume/Stop buttons per running app (message-sending stays Theater-only). Exports: `vapviz.take_input` / `atake_input` / `checkpoint` / `acheckpoint`. Try `python examples/input_demo.py` (no API key).
 
 ### v1.3.0
 

@@ -5,6 +5,7 @@ import json
 import threading
 import time
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from threading import Lock
 from typing import Any, Optional
 
@@ -205,7 +206,7 @@ class RunStore(ABC):
         """Return a snapshot copy of the run's control latch (default: running)."""
         with self._lock:  # type: ignore[attr-defined]
             c = self._control.get(run_id)  # type: ignore[attr-defined]
-            return RunControl(c.desired, c.acked, c.updated_at) if c else RunControl()
+            return replace(c) if c else RunControl()  # replace() copies all fields
 
     def set_desired(self, run_id: str, desired: str) -> RunControl:
         """Set what the UI wants the run to do next, then wake a parked agent."""
@@ -215,7 +216,7 @@ class RunStore(ABC):
             c = self._control.setdefault(run_id, RunControl())  # type: ignore[attr-defined]
             c.desired = desired
             c.updated_at = time.time()
-            snap = RunControl(c.desired, c.acked, c.updated_at)
+            snap = replace(c)  # copy all fields (incl. the Layer 2 mailbox)
         self._control_wake_for(run_id).set()  # nudge a paused sync agent to re-check now
         return snap
 
@@ -224,6 +225,42 @@ class RunStore(ABC):
         with self._lock:  # type: ignore[attr-defined]
             c = self._control.setdefault(run_id, RunControl())  # type: ignore[attr-defined]
             c.acked = acked
+            c.updated_at = time.time()
+
+    # ── Layer 2 mailbox — inject a message into a running agent ──────────────
+    # The UI writes a message (``set_input``); the tracer consumes it at a
+    # checkpoint inside ``take_input()`` (``take_input_if_ready``) and flags
+    # while it waits (``set_waiting_for_input``). Single-slot, lock-guarded,
+    # ephemeral — same side channel as desired/acked, never persisted or reduced.
+
+    def set_input(self, run_id: str, message: str) -> RunControl:
+        """UI → agent: write the mailbox, then wake a parked ``take_input()``."""
+        with self._lock:  # type: ignore[attr-defined]
+            c = self._control.setdefault(run_id, RunControl())  # type: ignore[attr-defined]
+            c.pending_input = message  # single-slot: overwrites an unconsumed message
+            c.updated_at = time.time()
+            snap = replace(c)
+        self._control_wake_for(run_id).set()  # nudge the agent to re-check its mailbox now
+        return snap
+
+    def take_input_if_ready(self, run_id: str) -> Optional[str]:
+        """Tracer → consume-and-clear the pending message, or ``None`` if the
+        mailbox is empty. An empty-string message is still a delivered message."""
+        with self._lock:  # type: ignore[attr-defined]
+            c = self._control.get(run_id)  # type: ignore[attr-defined]
+            if c is None or c.pending_input is None:
+                return None
+            msg = c.pending_input
+            c.pending_input = None
+            c.updated_at = time.time()
+            return msg
+
+    def set_waiting_for_input(self, run_id: str, waiting: bool) -> None:
+        """Tracer → flag whether the agent is parked in ``take_input()`` waiting,
+        so the UI can honestly show 'agent is waiting for your input'."""
+        with self._lock:  # type: ignore[attr-defined]
+            c = self._control.setdefault(run_id, RunControl())  # type: ignore[attr-defined]
+            c.waiting_for_input = waiting
             c.updated_at = time.time()
 
     def _control_wake_for(self, run_id: str) -> threading.Event:

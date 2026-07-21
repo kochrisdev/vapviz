@@ -38,7 +38,8 @@ the last, so work through them in order. No prior vapviz knowledge required.
 26. [Trace Replay](#26-trace-replay)
 27. [Theater & the Office Building](#27-theater--the-office-building)
 28. [Controlling a Live Run (Pause / Resume / Stop)](#28-controlling-a-live-run-pause--resume--stop)
-29. [What's Next?](#29-whats-next)
+29. [Sending a Message to a Live Run](#29-sending-a-message-to-a-live-run)
+30. [What's Next?](#30-whats-next)
 
 ---
 
@@ -1503,7 +1504,120 @@ checkpoint — the gap between them is the cooperative lag the UI renders as "pa
 
 ---
 
-## 29. What's Next?
+## 29. Sending a Message to a Live Run
+
+Section 28 let you pause, resume, or stop a run from the outside — a lifecycle *command*. This
+section goes one step further: you can hand a live agent actual *data* — a follow-up instruction,
+an approval, a missing piece of information — and have its own code pick it up with one call:
+`vapviz.take_input()`.
+
+### Ask, then wait for a human
+
+Somewhere inside your agent, ask for something and stop right there until it arrives:
+
+```python
+import vapviz
+
+with vapviz.trace("Drafting Agent", app_id="drafting-agent") as run:
+    with run.step("draft", kind="step") as step:
+        draft = write_first_draft()
+        step.set_output({"draft": draft})
+
+    with run.step("await_feedback", kind="step") as step:
+        feedback = vapviz.take_input()          # <- genuinely waits here
+        step.set_output({"feedback": feedback})
+
+    with run.step("revise", kind="step") as step:
+        final = revise(draft, feedback)
+        step.set_output({"final": final})
+```
+
+By default `take_input()` **blocks** — your code stops at that line, however long it takes, until
+someone sends a message from the Theater tab's control bar (or `POST /runs/{id}/input`). The
+instant a message arrives, `take_input()` returns it as a plain string and your code carries on.
+While it waits, the run shows a **"💬 waiting for your input"** badge in the Theater, so it's
+obvious the agent isn't stuck or crashed — it's genuinely paused *for you*.
+
+> **Think of it like a colleague who asks a question and then actually waits for your answer**
+> instead of guessing and plowing ahead. Nothing else happens on that run until you reply (or
+> Stop it).
+
+### Peeking instead of blocking
+
+Sometimes you don't want to freeze the run — you just want to check "did anyone send anything?"
+and move on either way. Pass a `timeout`:
+
+```python
+correction = vapviz.take_input(timeout=0)     # returns right now: the message, or None
+if correction:
+    apply_correction(correction)
+
+reply = vapviz.take_input(timeout=5)          # waits up to 5 seconds, then gives up (None)
+```
+
+| `timeout=` | Behaviour |
+|---|---|
+| *(omitted)* / `None` | Wait forever for a message — the default "ask, then wait" pattern |
+| `0` | Non-blocking peek — return the pending message, or `None`, immediately |
+| `N` (seconds) | Wait up to `N` seconds, then return `None` if nothing arrived |
+
+Only one message fits in the mailbox at a time. If you send a second one before the agent has
+read the first, the second **replaces** it — the UI shows the first as "queued" so you can see it
+was overwritten, never silently dropped.
+
+**Stop still works even while an agent is waiting.** Hit Stop while a run is parked in
+`take_input()` and it raises `vapviz.VapStopped` right there, exactly as it would at a normal step
+boundary — waiting for input never makes a run un-stoppable.
+
+Async agents use the same pattern with `await`:
+
+```python
+async with vapviz.atrace("Async Agent") as run:
+    async with run.astep("await_feedback", kind="step") as step:
+        feedback = await vapviz.atake_input()
+        step.set_output({"feedback": feedback})
+```
+
+> **Heads up:** `take_input()` / `atake_input()` only work while a trace is active. Call one
+> outside a `with vapviz.trace(...)` block and you'll get a `RuntimeError`, not a silent no-op —
+> vapviz would rather fail loudly than pretend to listen.
+
+### `checkpoint()` — for loops with no natural step
+
+Pause and Stop both work by checking in at the top of every `run.step()` / `run.astep()` — those
+are the "checkpoints" your agent already passes through. But a tight loop that doesn't open a step
+per iteration has **no checkpoints at all**:
+
+```python
+for row in huge_dataset:
+    process(row)          # <- no run.step() here — Pause/Stop have nowhere to take effect
+```
+
+Drop in `vapviz.checkpoint()` (or `await vapviz.acheckpoint()` in async code) to give the loop one:
+
+```python
+import vapviz
+
+with vapviz.trace("Batch Processor") as run:
+    with run.step("process_all", kind="step") as step:
+        for row in huge_dataset:
+            vapviz.checkpoint()      # Pause parks here; Stop raises VapStopped here
+            process(row)
+        step.set_output({"rows": len(huge_dataset)})
+```
+
+`checkpoint()` behaves exactly like the automatic checkpoint built into `run.step()` — it just
+gives you a way to add one anywhere a loop needs it. Like `take_input()`, calling it outside an
+active trace raises `RuntimeError`.
+
+> **Try it with no API key:** `python examples/input_demo.py` starts a server and an agent that
+> calls `vapviz.take_input()` and genuinely waits — a background "human" thread sends it a message
+> a couple of seconds later over the real `POST /runs/{id}/input` endpoint, so the demo finishes on
+> its own. It also exercises `checkpoint()` in a plain loop.
+
+---
+
+## 30. What's Next?
 
 You now know everything you need to instrument real agents. Here are pointers for going deeper:
 
@@ -1522,6 +1636,7 @@ python examples/otel_demo.py          # console OTel export — requires pip ins
 python examples/budgets_demo.py       # cost/latency budget alerting
 python examples/evals_demo.py         # agent evals / assertions
 python examples/control_demo.py       # pause/resume/stop a live run
+python examples/input_demo.py         # send a message into a running agent
 python examples/evals_ci_demo.py      # eval suite as a CI gate
 
 # Requires an API key:

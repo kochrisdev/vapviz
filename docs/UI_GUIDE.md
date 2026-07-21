@@ -107,21 +107,28 @@ The **Theater** tab turns a run into a cozy pixel office — a tab at the top of
 > Multi-agent runs (a CrewAI crew, a LangGraph supervisor + workers) are where this shines — you can
 > literally see which agent is doing what.
 
-### Pause, resume, stop — the Agent control bar
+### Pause, resume, stop — and send a message — the Agent control bar
 
 While a run is **live**, the Theater tab shows an **Agent control** bar with **Pause** and
-**Stop** buttons (it disappears once the run ends). This isn't just for show — it really
-controls the agent:
+**Stop** buttons and a **message box** (it disappears once the run ends). This isn't just for
+show — it really controls the agent:
 
 - **Pause** asks the agent to hold on. Agents are polite, not instant: the bar says
   **"pausing…"** until the agent finishes the step it's on and actually parks, then
   **"paused"** with a **Resume** button. Think of asking a colleague to stop — they finish
-  their sentence first.
+  their sentence first. While paused, the office scene **dims and rests** with a **⏸ Paused**
+  badge, so it's obvious the office is on a break rather than stuck.
 - **Stop** ends the run at the agent's next opportunity. A stopped run gets a neutral grey
   **⏹ Stopped** badge — it didn't succeed and it didn't fail; *you* ended it — and it doesn't
   count against your success rate on the Dashboard.
-- Every pause/resume/stop is written into the run's **Logs** ("Paused by user"), so the
-  record stays honest.
+- **Send a message** — type into the box and press **Send** to hand a note to the agent while
+  it runs. The agent only *receives* it if its code asks for one (`vapviz.take_input()` — the
+  "agent asks a question, then waits for your answer" pattern). When an agent is waiting, the
+  bar highlights the box ("agent is waiting — reply…") and the office rests with a **💬 Waiting
+  for your input** badge; your message unblocks it. A message you've sent but the agent hasn't
+  picked up yet shows as **"queued"**.
+- Every pause/resume/stop **and every message** is written into the run's **Logs** ("Paused by
+  user", "Message from user: …"), so the record stays honest.
 
 > This works for agents running in the same process as the vapviz server (like the demos).
 > Agents that report over the network can't be controlled yet.
@@ -163,6 +170,9 @@ How the building works:
   spend today.
 - **Click any room** to drop into that app's current run — it opens straight onto the
   **Theater** tab, so you land in the live office scene (with the control bar if it's running).
+- **Control a room without leaving the floor** — hover a **running** room and small
+  **Pause / Resume / Stop** buttons appear in its corner (the same cooperative control as the
+  Theater bar). Sending a *message* stays on the Theater tab, where there's room to type.
 
 The sidebar mirrors the building: it lists **apps**, not individual runs — expand one (▸) to see
 its full run history and click any past run to inspect and replay it.

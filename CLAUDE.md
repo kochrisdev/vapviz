@@ -22,8 +22,8 @@ cd ui && npm install
 
 # Tests / the gate
 make check                                                   # THE GATE: fast unit tests + UI typecheck (also blocks commits)
-.venv/bin/python -m pytest -m "not integration"              # fast/free Python unit tests (337 pass)
-.venv/bin/python -m pytest                                   # everything incl. real-LLM integration (343 collected)
+.venv/bin/python -m pytest -m "not integration"              # fast/free Python unit tests (377 pass)
+.venv/bin/python -m pytest                                   # everything incl. real-LLM integration (383 collected)
 .venv/bin/python -m pytest tests/test_tracer.py::TestNesting::test_auto_parent   # one test
 cd ui && npm test                                            # UI unit tests (vitest) — incl. dual-reducer parity
 # tests/*_integration.py are auto-marked `integration` (tests/conftest.py): they hit OpenRouter
@@ -71,7 +71,7 @@ The data pipeline (the event lane, one direction):
 agent code → Tracer (vapviz/tracer.py) → RunStore (vapviz/store.py) → FastAPI+SSE (vapviz/server.py) → React UI (ui/src/)
 ```
 
-Plus one **return lane** — the control channel (`vapviz/control.py`): `POST /runs/{id}/control` writes a per-run `desired`/`acked` latch in the store (ephemeral side channel, guarded by the store lock like tags — never persisted, never fed to the reducers); the tracer obeys it **cooperatively** at the top of every `step`/`astep` (pause parks *between* steps; stop raises `VapStopped`, which `trace`/`atrace` turn into an `agent_end` with `{"stopped": true}` → first-class `stopped` status). In-process agents only; each action also emits a reducer-inert `control` audit event. See `docs/ARCHITECTURE.md` → "Control channel".
+Plus one **return lane** — the control channel (`vapviz/control.py`): `POST /runs/{id}/control` writes a per-run `desired`/`acked` latch in the store (ephemeral side channel, guarded by the store lock like tags — never persisted, never fed to the reducers); the tracer obeys it **cooperatively** at the top of every `step`/`astep` (pause parks *between* steps; stop raises `VapStopped`, which `trace`/`atrace` turn into an `agent_end` with `{"stopped": true}` → first-class `stopped` status). In-process agents only; each action also emits a reducer-inert `control` audit event. **Layer 2 (inject a message)** extends the *same* latch with a single-slot mailbox (`pending_input`/`waiting_for_input`): `POST /runs/{id}/input` delivers a message the agent receives via `vapviz.take_input()` (blocks at a checkpoint until one arrives; Stop still interrupts it), and `vapviz.checkpoint()` adds a control checkpoint to a step-less loop (both have async variants). The message audit **reuses** the inert `control` event with `action="input"` (no new event type). See `docs/ARCHITECTURE.md` → "Control channel".
 
 - **Tracer (`vapviz/tracer.py`):** `trace`/`step` (sync) and `atrace`/`astep` (async) are context managers. Parent/child nesting is automatic via a single `contextvars.ContextVar` (`_current_step`): on enter a node reads it (→ its parent) then sets itself; on exit it restores the previous value via the saved token. `RunContext` is the root (agent) node; `StepContext` is every other node and owns `_emit()`. Exceptions emit an `error` event then re-raise; `finally` always resets the ContextVar.
 - **Store (`vapviz/store.py`):** `RunStore` ABC with `MemoryStore` (default) and `SqliteStore` (`vapviz/backends/sqlite.py`, WAL mode, replays the DB into an in-memory graph cache on startup). Both keep the raw event log **and** a derived `RunGraph`, built by the shared pure function `_apply_event_to_graph`. Cross-thread delivery to SSE: a `threading.Lock` guards state, one `asyncio.Queue` per subscriber, and `loop.call_soon_threadsafe(q.put_nowait, event)` bridges the tracer thread to the asyncio loop (the loop is injected at server startup in the FastAPI `lifespan`).

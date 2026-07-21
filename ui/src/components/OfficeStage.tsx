@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
+import { Pause, MessageSquare } from "lucide-react";
 import type { GraphNode } from "../types/events";
+import type { OfficeControl } from "../hooks/useOfficeControl";
 import { buildScene, type AvatarState } from "../lib/theater";
 import { callsByAgent, stationForCall, fallbackStation, lineFor, errorLineFor } from "../lib/officeScene";
 import { WALK, WALK_BOB, colorway, rasterize, blit } from "../lib/sprites";
@@ -307,10 +309,16 @@ interface OfficeStageProps {
   nodes: GraphNode[];
   /** Small tiled rendering for the Floor's run-zones (fewer/smaller labels). */
   compact?: boolean;
+  /** Live control cue — dims the office + shows a badge while paused / waiting
+   *  for input. UI-only presentation; leaves the sprite renderer untouched. */
+  control?: OfficeControl;
 }
 
-export function OfficeStage({ nodes, compact = false }: OfficeStageProps) {
+export function OfficeStage({ nodes, compact = false, control }: OfficeStageProps) {
   const goals = useMemo(() => computeGoals(nodes), [nodes]);
+
+  // Waiting-for-input outranks paused (matches the control bar's precedence).
+  const mood = control?.waiting ? "waiting" : control?.paused ? "paused" : "normal";
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -427,9 +435,27 @@ export function OfficeStage({ nodes, compact = false }: OfficeStageProps) {
   }, [goals, compact]);
 
   return (
-    <div ref={wrapRef} className={`office-stage${compact ? " office-stage--compact" : ""}`}>
+    <div
+      ref={wrapRef}
+      className={`office-stage${compact ? " office-stage--compact" : ""}${
+        mood !== "normal" ? " office-stage--resting" : ""
+      }`}
+    >
       <canvas ref={canvasRef} className="sprite" role="img" aria-label={goals.label} />
       {goals.agents.length === 0 && <div className="vt-empty">No agents yet…</div>}
+      {mood !== "normal" && !compact && (
+        <div className="vt-office-rest" role="status">
+          {mood === "waiting" ? (
+            <>
+              <MessageSquare size={11} /> Waiting for your input
+            </>
+          ) : (
+            <>
+              <Pause size={11} /> Paused
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

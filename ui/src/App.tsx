@@ -188,7 +188,7 @@ function RunViewer() {
               <div className="flex-1 min-w-0 flex flex-col min-h-0">
                 <RunControlBar runId={selectedRunId!} runStatus={state.status} />
                 <div className="flex-1 min-h-0">
-                  <TheaterView nodes={shownNodes} />
+                  <TheaterView nodes={shownNodes} runId={selectedRunId!} runStatus={state.status} />
                 </div>
                 {/* Playback is core to Theater: bar always shown (live runs sit at the end). */}
                 <ReplayBar

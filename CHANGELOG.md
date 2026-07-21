@@ -11,6 +11,44 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 _Nothing yet._
 
+## [1.4.0] - 2026-07-21
+
+### Added
+- **Agent control Layer 2 — inject a message into a running agent.** Building on Layer 1's
+  Pause/Resume/Stop, a live in-process run can now receive a short text message from the UI.
+  The agent picks it up with **`vapviz.take_input(timeout=None)`** (and the async
+  **`vapviz.atake_input(...)`**): by default it blocks at that point in the code until the UI
+  sends a message and returns the string — the "agent asks, then waits for a human" pattern.
+  Pass `timeout=0` for a non-blocking peek at the mailbox, or `timeout=N` to wait up to `N`
+  seconds and give up with `None`. While waiting, the UI shows "agent is waiting for your
+  input" — and **Stop still interrupts a waiting agent** (raises `vapviz.VapStopped`, same as
+  any other checkpoint). Calling either function outside an active trace raises `RuntimeError`.
+  Delivery is a new **`POST /runs/{id}/input`** endpoint (body `{"message": "<text>"}`; 404 on
+  an unknown run, a no-op `{"ended": true}` on an already-ended one). The mailbox is
+  **single-slot / last-write-wins** — sending a second message before the agent consumes the
+  first overwrites it — and the UI marks a sent-but-unconsumed message as "queued" so an
+  overwrite is never silent.
+- **`vapviz.checkpoint()` / `vapviz.acheckpoint()`** — a manual control checkpoint you drop
+  inside a long loop that has no natural per-iteration `step`/`astep`, so it stays
+  pausable/stoppable exactly like a stepped loop (parks on Pause, raises `VapStopped` on Stop).
+  Closes out the escape hatch Layer 1 deferred. Raises `RuntimeError` outside an active trace.
+- **`GET /runs/{id}/control`** gains two read-only fields so the UI can render the waiting
+  state from its existing ~1s poll, no second endpoint needed: `waiting_for_input` (the agent
+  is currently parked in `take_input()`) and `pending_input` (a message is queued but not yet
+  consumed). The message **text** itself is never echoed back by this endpoint — only whether
+  one is pending.
+- **The message shows up in the timeline for free.** Rather than a new event type, an injected
+  message reuses the existing inert `control` event (`data.action="input"`, `data.message`),
+  the same audit marker Layer 1 uses for pause/resume/stop — so it's ignored by both graph
+  reducers with zero reducer changes (a new `control_input_inert.json` parity fixture pins
+  this down). Logs renders it as `Message from user: "<text>"`.
+- **Two UI ride-alongs.** The Theater office scene now visibly rests — dimmed/desaturated with
+  a "⏸ Paused" or "💬 Waiting for your input" badge — while the agent is paused or blocked in
+  `take_input()`. The Office Building's room tiles gain hover-revealed Pause/Resume/Stop
+  buttons for a running app, so lifecycle control no longer requires opening Theater
+  (message-sending stays Theater-only — the room tiles are too small for a text box).
+- Try it with no API key: `python examples/input_demo.py`.
+
 ## [1.3.0]
 
 ### Added
@@ -287,7 +325,8 @@ This release adds no new tracing/integration features beyond 0.15.0 — it marks
 ### Added
 - Initial release: sync tracer, in-memory store, FastAPI + SSE server, ReactFlow UI, Anthropic SDK integration.
 
-[Unreleased]: https://github.com/kochrisdev/vapviz/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/kochrisdev/vapviz/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.4.0
 [1.3.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.3.0
 [1.2.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.2.0
 [1.1.0]: https://github.com/kochrisdev/vapviz/releases/tag/v1.1.0

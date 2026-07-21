@@ -18,16 +18,26 @@ const EVENT_LABEL: Record<string, string> = {
   control: "Control",
 };
 
-// A `control` event's specific meaning lives in data.action (pause/resume/stop).
+// A `control` event's specific meaning lives in data.action
+// (pause/resume/stop, or Layer 2's "input" — a message injected into the run).
 const CONTROL_LABEL: Record<string, string> = {
   pause: "Paused by user",
   resume: "Resumed by user",
   stop: "Stopped by user",
+  input: "Message from user",
 };
 
-/** Event label, resolving `control` events to their specific action. */
+/** Event label, resolving `control` events to their specific action (and, for an
+ *  injected message, showing the text). */
 function eventLabel(ev: VapEvent): string {
-  if (ev.type === "control") return CONTROL_LABEL[String(ev.data?.action)] ?? "Control";
+  if (ev.type === "control") {
+    const action = String(ev.data?.action);
+    const base = CONTROL_LABEL[action] ?? "Control";
+    if (action === "input" && typeof ev.data?.message === "string") {
+      return `${base}: “${ev.data.message}”`;
+    }
+    return base;
+  }
   return EVENT_LABEL[ev.type] ?? ev.type;
 }
 

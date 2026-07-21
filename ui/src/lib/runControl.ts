@@ -28,6 +28,9 @@ export interface ControlUiState {
   banner: string | null;
   /** Buttons to show, in order. */
   buttons: ControlButton[];
+  /** True while the agent is parked in `take_input()` — the bar emphasizes the
+   *  message box (sending a message is what unblocks it). */
+  awaitingInput: boolean;
 }
 
 const TERMINAL: ReadonlySet<NodeStatus> = new Set<NodeStatus>(["success", "error", "stopped"]);
@@ -36,13 +39,27 @@ export function controlUiState(
   desired: ControlDesired,
   acked: ControlDesired,
   runStatus: NodeStatus,
+  waitingForInput = false,
 ): ControlUiState {
   // A finished run is not controllable — hide the bar.
-  if (TERMINAL.has(runStatus)) return { live: false, banner: null, buttons: [] };
+  if (TERMINAL.has(runStatus)) return { live: false, banner: null, buttons: [], awaitingInput: false };
 
   if (desired === "stopped") {
-    // Stop requested; waiting for the agent to reach a checkpoint and end.
-    return { live: true, banner: "stopping…", buttons: [{ action: "stop", disabled: true }] };
+    // Stop requested; waiting for the agent to reach a checkpoint and end. Stop
+    // interrupts a waiting-for-input agent too, so this takes precedence.
+    return { live: true, banner: "stopping…", buttons: [{ action: "stop", disabled: true }], awaitingInput: false };
+  }
+
+  if (waitingForInput) {
+    // Agent is blocked in take_input(): a message unblocks it, Stop interrupts
+    // it. Pause is hidden — it wouldn't take effect until after the message is
+    // received, so offering it here would be misleading.
+    return {
+      live: true,
+      banner: "waiting for your input",
+      buttons: [{ action: "stop", disabled: false }],
+      awaitingInput: true,
+    };
   }
 
   if (desired === "paused") {
@@ -54,6 +71,7 @@ export function controlUiState(
           { action: "resume", disabled: false },
           { action: "stop", disabled: false },
         ],
+        awaitingInput: false,
       };
     }
     // Pause requested but the agent is still between checkpoints.
@@ -64,6 +82,7 @@ export function controlUiState(
         { action: "pause", disabled: true },
         { action: "stop", disabled: false },
       ],
+      awaitingInput: false,
     };
   }
 
@@ -75,5 +94,6 @@ export function controlUiState(
       { action: "pause", disabled: false },
       { action: "stop", disabled: false },
     ],
+    awaitingInput: false,
   };
 }

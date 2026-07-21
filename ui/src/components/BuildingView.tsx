@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Coffee, Drama, Siren, X } from "lucide-react";
+import { Coffee, Drama, Pause, Play, Siren, Square, X, type LucideIcon } from "lucide-react";
 import type { GraphNode, NodeStatus, RunSummary } from "../types/events";
+import { controlUiState, type ControlAction, type ControlDesired } from "../lib/runControl";
 import { OfficeStage } from "./OfficeStage";
 import { LoungeStage } from "./LoungeStage";
 import { FloorEnv } from "./FloorEnv";
@@ -63,19 +64,38 @@ const DOT: Record<NodeStatus, string> = {
   stopped: "bg-status-stopped",
 };
 
-/** A floor room: an app's home. Renders its current run's office diorama. */
+const CTL_ICON: Record<ControlAction, LucideIcon> = { pause: Pause, resume: Play, stop: Square };
+const CTL_LABEL: Record<ControlAction, string> = { pause: "Pause", resume: "Resume", stop: "Stop" };
+
+/** A floor room: an app's home. Renders its current run's office diorama, plus
+ *  (for a running app) hover-revealed pause/resume/stop controls — the same
+ *  cooperative control as the Theater bar, without leaving the floor view. */
 function RoomTile({
   slot,
   room,
   nodes,
   onOpen,
+  control,
+  onControl,
 }: {
   slot: number;
   room: AppRoom;
   nodes: GraphNode[];
   onOpen: () => void;
+  control?: { desired: string; acked: string };
+  onControl?: (action: ControlAction) => void;
 }) {
   const side = slot < 3 ? "bottom" : "top";
+  // Reuse the Theater bar's pure state machine so the buttons + pausing…/stopping…
+  // disabling behave identically here (message-inject stays Theater-only).
+  const ctl =
+    room.status === "running" && onControl
+      ? controlUiState(
+          (control?.desired ?? "running") as ControlDesired,
+          (control?.acked ?? "running") as ControlDesired,
+          "running",
+        )
+      : null;
   return (
     <div
       className={`vt-room group relative ${room.status === "error" ? "vt-room--error" : ""}`}
@@ -87,6 +107,35 @@ function RoomTile({
           <OfficeStage nodes={nodes} compact />
         </div>
       </button>
+      {/* Run control (§ ride-along B): sibling of the open-in-Theater button (not
+          nested — valid HTML), on top, revealed on hover/focus of the room. */}
+      {ctl && (
+        <div
+          className="absolute top-1 right-1 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+          role="group"
+          aria-label={`Control ${room.label}`}
+        >
+          {ctl.buttons.map(({ action, disabled }) => {
+            const Icon = CTL_ICON[action];
+            return (
+              <button
+                key={action}
+                onClick={() => onControl!(action)}
+                disabled={disabled}
+                title={`${CTL_LABEL[action]} ${room.label}`}
+                aria-label={`${CTL_LABEL[action]} ${room.label}`}
+                className={`grid place-items-center w-[18px] h-[18px] border-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  action === "stop"
+                    ? "border-status-error/50 text-status-error bg-surface-inset/90 hover:bg-status-error/20"
+                    : "border-border-strong text-content bg-surface-inset/90 hover:bg-surface-hover"
+                }`}
+              >
+                <Icon size={11} />
+              </button>
+            );
+          })}
+        </div>
+      )}
       {/* Door on the Walk-Way-facing edge (§4-K): where floor-life walkers step
           out. Top-row rooms open downward, bottom-row rooms upward. Its rect is
           the walker's spawn/return anchor (captured as roomdoor:<appKey>); the
@@ -266,6 +315,7 @@ export function BuildingView() {
   const selectRun = useRunStore((s) => s.selectRun);
   const [building, setBuilding] = useState<Building | null>(null);
   const [nodesByRun, setNodesByRun] = useState<Record<string, GraphNode[]>>({});
+  const [controlByRun, setControlByRun] = useState<Record<string, { desired: string; acked: string }>>({});
   const [costToday, setCostToday] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
@@ -381,12 +431,13 @@ export function BuildingView() {
           ...next.floors.flatMap((f) => f.rooms.filter((r): r is AppRoom => r !== null)),
         ];
         const graphs: Record<string, GraphNode[]> = {};
+        const controls: Record<string, { desired: string; acked: string }> = {};
         await Promise.all(
           visible.map(async (room) => {
             const id = room.currentRunId;
             if (room.status !== "running" && cache.has(id)) {
               graphs[id] = cache.get(id)!;
-              return;
+              return; // finished run: cached graph, no live control to poll
             }
             try {
               const g = await fetch(`/runs/${id}/graph`).then((r) => r.json());
@@ -394,6 +445,16 @@ export function BuildingView() {
               if (room.status !== "running") cache.set(id, graphs[id]);
             } catch {
               graphs[id] = cache.get(id) ?? [];
+            }
+            // Control latch — only for a live (running) room; powers the tile's
+            // hover pause/stop controls.
+            if (room.status === "running") {
+              try {
+                const c = await fetch(`/runs/${id}/control`).then((r) => r.json());
+                controls[id] = { desired: c.desired, acked: c.acked };
+              } catch {
+                /* transient — the tile falls back to defaults (Pause/Stop) */
+              }
             }
           })
         );
@@ -403,6 +464,7 @@ export function BuildingView() {
           prevRef.current = next;
           setBuilding(next);
           setNodesByRun(graphs);
+          setControlByRun(controls);
           setCostToday(runs.reduce((s, r) => s + (r.total_cost_usd ?? 0), 0));
           setLoaded(true);
         }
@@ -426,6 +488,26 @@ export function BuildingView() {
     captureRects();
     prevRef.current = next;
     setBuilding(next);
+  };
+
+  // Pause/resume/stop a running app's room from the floor (ride-along B). Same
+  // cooperative endpoint as the Theater bar; optimistic, then the poll reconciles.
+  const sendRoomControl = async (runId: string, action: ControlAction) => {
+    const optimistic: ControlDesired =
+      action === "pause" ? "paused" : action === "resume" ? "running" : "stopped";
+    setControlByRun((p) => ({
+      ...p,
+      [runId]: { desired: optimistic, acked: p[runId]?.acked ?? "running" },
+    }));
+    try {
+      await fetch(`/runs/${runId}/control`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+    } catch {
+      /* transient — the next poll reconciles */
+    }
   };
 
   const floors = building?.floors ?? [];
@@ -478,6 +560,8 @@ export function BuildingView() {
                       room={room}
                       nodes={nodesByRun[room.currentRunId] ?? []}
                       onOpen={() => selectRun(room.currentRunId, "theater")}
+                      control={controlByRun[room.currentRunId]}
+                      onControl={(action) => sendRoomControl(room.currentRunId, action)}
                     />
                   ) : (
                     <div

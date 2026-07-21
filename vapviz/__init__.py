@@ -1,4 +1,14 @@
-from .tracer import trace, atrace, get_current_step, Tracer, RunContext
+from .tracer import (
+    trace,
+    atrace,
+    get_current_step,
+    Tracer,
+    RunContext,
+    checkpoint,
+    acheckpoint,
+    take_input,
+    atake_input,
+)
 from .control import VapStopped
 from .store import default_store, RunStore, MemoryStore
 from .server import create_app, app
@@ -74,8 +84,12 @@ __all__ = [
     "get_current_step",
     "Tracer",
     "RunContext",
-    # Control (Pause / Resume / Stop)
+    # Control (Pause / Resume / Stop, + Layer 2: inject a message)
     "VapStopped",
+    "checkpoint",
+    "acheckpoint",
+    "take_input",
+    "atake_input",
     # Store
     "default_store",
     "RunStore",

@@ -18,7 +18,13 @@ from vapviz.control import PAUSED, RUNNING, STOPPED, VapStopped
 from vapviz.events import EventType, NodeKind, NodeStatus, VapEvent
 from vapviz.server import create_app
 from vapviz.store import MemoryStore
-from vapviz.tracer import Tracer
+from vapviz.tracer import (
+    Tracer,
+    acheckpoint,
+    atake_input,
+    checkpoint,
+    take_input,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -279,3 +285,334 @@ def test_control_noop_on_ended_run(app_client):
     # no latch change, no audit event
     assert store.get_control(rid).desired == "running"
     assert "control" not in [e.type.value for e in store.get_events(rid)]
+
+
+# ===========================================================================
+# Layer 2 — inject a message (mailbox) + checkpoint()
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Store mailbox
+# ---------------------------------------------------------------------------
+
+def test_mailbox_defaults_empty():
+    store = MemoryStore()
+    c = store.get_control("r")
+    assert c.pending_input is None and c.waiting_for_input is False
+    assert store.take_input_if_ready("r") is None
+
+
+def test_set_and_take_input_roundtrip():
+    store = MemoryStore()
+    store.set_input("r", "hello")
+    assert store.get_control("r").pending_input == "hello"
+    assert store.take_input_if_ready("r") == "hello"
+    # consume-and-clear: a second take gets nothing
+    assert store.take_input_if_ready("r") is None
+    assert store.get_control("r").pending_input is None
+
+
+def test_set_input_overwrites_unconsumed_message():
+    """Single-slot mailbox — last write wins (see DESIGN §19)."""
+    store = MemoryStore()
+    store.set_input("r", "first")
+    store.set_input("r", "second")
+    assert store.take_input_if_ready("r") == "second"
+
+
+def test_empty_string_message_is_delivered():
+    """'' is a real message, distinct from an empty mailbox (None)."""
+    store = MemoryStore()
+    store.set_input("r", "")
+    assert store.get_control("r").pending_input == ""
+    assert store.take_input_if_ready("r") == ""  # not None
+
+
+def test_set_waiting_for_input_roundtrip():
+    store = MemoryStore()
+    store.set_waiting_for_input("r", True)
+    assert store.get_control("r").waiting_for_input is True
+    store.set_waiting_for_input("r", False)
+    assert store.get_control("r").waiting_for_input is False
+
+
+def test_mailbox_cleared_on_delete():
+    store = MemoryStore()
+    store.set_input("r", "x")
+    store.set_waiting_for_input("r", True)
+    store.delete_run("r")
+    c = store.get_control("r")
+    assert c.pending_input is None and c.waiting_for_input is False
+
+
+def test_get_control_copy_includes_mailbox_fields():
+    """The snapshot must carry the new fields (regression: positional copy dropped them)."""
+    store = MemoryStore()
+    store.set_input("r", "msg")
+    store.set_waiting_for_input("r", True)
+    snap = store.get_control("r")
+    assert snap.pending_input == "msg" and snap.waiting_for_input is True
+    # and it is a copy — mutating it must not corrupt the store
+    snap.pending_input = "tampered"
+    assert store.get_control("r").pending_input == "msg"
+
+
+# ---------------------------------------------------------------------------
+# Tracer — take_input (sync)
+# ---------------------------------------------------------------------------
+
+def _wait_until(pred, timeout=2.0):
+    deadline = time.time() + timeout
+    while not pred() and time.time() < deadline:
+        time.sleep(0.01)
+    return pred()
+
+
+def test_take_input_blocks_until_message():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-input"
+    entered = threading.Event()
+    received: dict[str, object] = {}
+
+    def agent():
+        with tracer.trace("Asker", run_id=run_id) as run:
+            with run.step("ask"):
+                entered.set()
+                received["msg"] = take_input()  # blocks until a message arrives
+
+    t = threading.Thread(target=agent)
+    t.start()
+    assert entered.wait(2)
+    # the agent flags that it is waiting
+    assert _wait_until(lambda: store.get_control(run_id).waiting_for_input)
+    store.set_input(run_id, "do the thing")
+    t.join(5)
+    assert not t.is_alive()
+    assert received["msg"] == "do the thing"
+    # flag cleared once take_input returns
+    assert store.get_control(run_id).waiting_for_input is False
+    assert store.get_graph(run_id).status == NodeStatus.SUCCESS
+
+
+def test_take_input_peek_and_present():
+    """timeout=0 returns None on an empty mailbox, the message when one is present."""
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    got: dict[str, object] = {}
+    with tracer.trace("Peek", run_id="peek") as run:
+        with run.step("s"):
+            got["empty"] = take_input(timeout=0)
+            store.set_input("peek", "later")
+            got["present"] = take_input(timeout=0)
+    assert got["empty"] is None
+    assert got["present"] == "later"
+
+
+def test_take_input_times_out():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    t0 = time.time()
+    with tracer.trace("T", run_id="t") as run:
+        with run.step("s"):
+            out = take_input(timeout=0.2)
+    assert out is None
+    assert time.time() - t0 >= 0.2
+
+
+def test_take_input_interrupted_by_stop():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-input-stop"
+    entered = threading.Event()
+
+    def agent():
+        try:
+            with tracer.trace("Asker", run_id=run_id) as run:
+                with run.step("ask"):
+                    entered.set()
+                    take_input()  # blocks; Stop must break the wait
+        except VapStopped:
+            pass
+
+    t = threading.Thread(target=agent)
+    t.start()
+    assert entered.wait(2)
+    assert _wait_until(lambda: store.get_control(run_id).waiting_for_input)
+    store.set_desired(run_id, STOPPED)
+    t.join(5)
+    assert not t.is_alive()
+    assert store.get_graph(run_id).status == NodeStatus.STOPPED
+
+
+def test_take_input_outside_trace_raises():
+    with pytest.raises(RuntimeError):
+        take_input(timeout=0)
+
+
+# ---------------------------------------------------------------------------
+# Tracer — checkpoint()
+# ---------------------------------------------------------------------------
+
+def test_checkpoint_outside_trace_raises():
+    with pytest.raises(RuntimeError):
+        checkpoint()
+
+
+def test_checkpoint_makes_a_stepless_loop_stoppable():
+    """An agent with no per-iteration step stays stoppable via checkpoint()."""
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-ckpt"
+    in_loop = threading.Event()
+
+    def agent():
+        try:
+            with tracer.trace("Looper", run_id=run_id) as run:
+                for _ in range(500):  # NB: no run.step() — checkpoint() is the only turnstile
+                    checkpoint()
+                    in_loop.set()
+                    time.sleep(0.005)
+        except VapStopped:
+            pass
+
+    t = threading.Thread(target=agent)
+    t.start()
+    assert in_loop.wait(2)
+    store.set_desired(run_id, STOPPED)
+    t.join(5)
+    assert not t.is_alive()
+    assert store.get_graph(run_id).status == NodeStatus.STOPPED
+
+
+def test_checkpoint_parks_while_paused():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-ckpt-pause"
+    in_loop = threading.Event()
+    done = threading.Event()
+
+    def agent():
+        with tracer.trace("Looper", run_id=run_id) as run:
+            for _ in range(400):
+                checkpoint()
+                in_loop.set()
+                time.sleep(0.005)
+        done.set()
+
+    t = threading.Thread(target=agent)
+    t.start()
+    assert in_loop.wait(2)
+    store.set_desired(run_id, PAUSED)
+    assert _wait_until(lambda: store.get_control(run_id).acked == PAUSED)
+    assert not done.is_set()
+    store.set_desired(run_id, RUNNING)
+    t.join(5)
+    assert done.is_set()
+
+
+# ---------------------------------------------------------------------------
+# Tracer — async variants (driven via asyncio.run, no pytest-asyncio dep)
+# ---------------------------------------------------------------------------
+
+def test_async_take_input_blocks_until_message():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-ainput"
+    received: dict[str, object] = {}
+
+    async def scenario():
+        async def agent():
+            async with tracer.atrace("AsyncAsker", run_id=run_id) as run:
+                async with run.astep("ask"):
+                    received["msg"] = await atake_input()
+
+        task = asyncio.create_task(agent())
+        # let it reach atake_input and flag waiting
+        for _ in range(200):
+            if store.get_control(run_id).waiting_for_input:
+                break
+            await asyncio.sleep(0.01)
+        store.set_input(run_id, "async hello")
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(scenario())
+    assert received["msg"] == "async hello"
+    assert store.get_control(run_id).waiting_for_input is False
+
+
+def test_async_acheckpoint_stops_stepless_loop():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-ackpt"
+
+    async def scenario():
+        async def agent():
+            try:
+                async with tracer.atrace("ALooper", run_id=run_id) as run:
+                    for _ in range(500):
+                        await acheckpoint()
+                        await asyncio.sleep(0.003)
+            except VapStopped:
+                pass
+
+        task = asyncio.create_task(agent())
+        await asyncio.sleep(0.05)
+        store.set_desired(run_id, STOPPED)
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(scenario())
+    assert store.get_graph(run_id).status == NodeStatus.STOPPED
+
+
+# ---------------------------------------------------------------------------
+# Server — POST /input + GET /control mailbox fields
+# ---------------------------------------------------------------------------
+
+def test_input_post_404(app_client):
+    client, _ = app_client
+    assert client.post("/runs/nope/input", json={"message": "hi"}).status_code == 404
+
+
+def test_input_on_live_run(app_client):
+    client, store = app_client
+    rid = _seed_running(store)
+    r = client.post(f"/runs/{rid}/input", json={"message": "hello agent"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["pending_input"] is True and body["ended"] is False
+    assert store.get_control(rid).pending_input == "hello agent"
+    # inert control audit event with action=input (+ the message) landed
+    controls = [e for e in store.get_events(rid) if e.type.value == "control"]
+    assert controls and controls[-1].data["action"] == "input"
+    assert controls[-1].data["message"] == "hello agent"
+
+
+def test_input_noop_on_ended_run(app_client):
+    client, store = app_client
+    rid = _seed_completed(store)
+    r = client.post(f"/runs/{rid}/input", json={"message": "too late"})
+    assert r.status_code == 200
+    assert r.json()["ended"] is True
+    assert store.get_control(rid).pending_input is None
+    assert "control" not in [e.type.value for e in store.get_events(rid)]
+
+
+def test_get_control_reflects_waiting_and_pending(app_client):
+    client, store = app_client
+    rid = _seed_running(store)
+    store.set_waiting_for_input(rid, True)
+    store.set_input(rid, "queued")
+    body = client.get(f"/runs/{rid}/control").json()
+    assert body["waiting_for_input"] is True
+    assert body["pending_input"] is True
+
+
+def test_get_control_does_not_leak_message_text(app_client):
+    """The response exposes only that a message is pending, never its text."""
+    client, store = app_client
+    rid = _seed_running(store)
+    store.set_input(rid, "secret plan")
+    body = client.get(f"/runs/{rid}/control").json()
+    assert "secret plan" not in str(body)
+    assert body["pending_input"] is True

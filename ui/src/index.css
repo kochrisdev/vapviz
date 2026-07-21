@@ -166,6 +166,24 @@ pre, code, kbd, .font-mono {
 
 .vt-empty { position: absolute; inset: 0; display: grid; place-items: center; color: rgb(var(--content-faint)); font-size: 14px; }
 
+/* Control cue (agent-control Layer 2): while a run is paused / waiting for the
+ * user's input the office "rests" — the diorama desaturates and dims, and a
+ * pixel badge names the state. Presentation only; the canvas renderer is
+ * untouched. */
+.office-stage--resting .sprite { filter: grayscale(0.55) brightness(0.82); transition: filter 0.3s ease; }
+.vt-office-rest {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  z-index: 3; display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px; white-space: nowrap;
+  background: rgb(var(--surface-inset) / 0.94); color: rgb(var(--content));
+  border: 2px solid rgb(var(--border-strong));
+  font-family: "Silkscreen", monospace; font-size: 10px; letter-spacing: 0.04em;
+  box-shadow: 3px 3px 0 rgb(var(--bg) / 0.5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .office-stage--resting .sprite { transition: none; }
+}
+
 /* ── Office Building view (§4-J) — the *visual* building ───────────────────
  * Hybrid render: CSS/vector chrome here (walls, roof, floor slabs, Walk Way,
  * Door/Stairs frames, east wall, lobby), hand-authored pixel art for the
