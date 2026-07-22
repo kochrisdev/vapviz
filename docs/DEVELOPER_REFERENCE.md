@@ -629,6 +629,51 @@ Same semantics as `take_input` otherwise.
 
 ---
 
+#### `vapviz.ask(prompt, timeout=None)`
+
+Ask the user a question and block for their reply — the agent → user half of the two-way conversation (Layer 2b). *(v1.5.0)*
+
+```python
+vapviz.ask(prompt: str, timeout: float | None = None) -> str | None
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `prompt` | `str` | — | The question to display. Shown in the Theater chat panel; also surfaced by `GET /runs/{id}/control` as `question`. |
+| `timeout` | `float \| None` | `None` | Same meaning as `take_input`: `None` waits indefinitely, `0` peeks, `> 0` bounds the wait (returns `None` on timeout). |
+
+Posts `prompt` (so the chat panel shows it and the reply box lights up), then blocks for the reply, which the user sends over the same `POST /runs/{id}/input` mailbox `take_input()` drains — so **Stop still interrupts** a waiting `ask()` (raises `vapviz.VapStopped`). The displayed question is cleared automatically when `ask()` returns (answered, timed out, or interrupted). Requires an active trace; raises `RuntimeError` otherwise.
+
+```python
+region = vapviz.ask("Which region should I deploy to?")   # shows the question, waits for the reply
+vapviz.say(f"Got it — deploying to {region}.")            # confirm (see below)
+```
+
+---
+
+#### `vapviz.say(text)`
+
+Post a statement the user sees, **without** blocking — the agent volunteering something (e.g. a confirmation after a `take_input()` steer). *(v1.5.0)*
+
+```python
+vapviz.say(text: str) -> None
+```
+
+Fire-and-forget: emits a conversation turn to the timeline + chat panel and returns immediately. No reply is expected and nothing is waited on. Requires an active trace; raises `RuntimeError` otherwise.
+
+---
+
+#### `vapviz.aask(prompt, timeout=None)` / `vapviz.asay(text)`
+
+Async versions of `ask` / `say`. `await aask(...)` yields the shared event loop while waiting for the reply; `asay` is a thin async alias of `say` (emitting a turn doesn't block). *(v1.5.0)*
+
+```python
+async vapviz.aask(prompt: str, timeout: float | None = None) -> str | None
+async vapviz.asay(text: str) -> None
+```
+
+---
+
 ### Tracer
 
 `vapviz.Tracer` is the class underlying the module-level `trace` / `atrace` functions. Use it when you need an isolated tracer with its own store (e.g. in tests).
@@ -965,7 +1010,7 @@ All enums extend `str, Enum` — their `.value` is the wire string.
 | `LLM_CALL` | `"llm_call"` | `step()` enter with kind=llm; Anthropic patch enter |
 | `LLM_RESPONSE` | `"llm_response"` | `step()` exit with kind=llm; Anthropic patch exit |
 | `STATE_UPDATE` | `"state_update"` | Freestanding state metadata event |
-| `CONTROL` | `"control"` | Freestanding audit marker (`data.action`: pause/resume/stop/**input**) emitted by `POST /runs/{id}/control` or `POST /runs/{id}/input`; ignored by both graph reducers |
+| `CONTROL` | `"control"` | Freestanding audit marker (`data.action`: pause/resume/stop/**input**, plus **ask**/**say** for the Layer 2b conversation) emitted by `POST /runs/{id}/control`, `POST /runs/{id}/input`, or the tracer (`ask`/`say`); ignored by both graph reducers |
 | `ERROR` | `"error"` | Any unhandled exception inside a step block |
 
 #### `NodeKind`
@@ -2029,6 +2074,10 @@ interface RunGraph {
 ---
 
 ## Changelog
+
+### v1.5.0 — 2026-07-21
+
+- **Agent control Layer 2b — two-way conversation.** The agent → user half of the mailbox: `RunControl` (`vapviz/control.py`) gains one field, `question: str | None` (the prompt `ask()` is displaying — the mirror of `pending_input`), with a new `RunStore.set_question` method. New tracer functions **`vapviz.ask(prompt, timeout=None)`** / **`aask(...)`** — post the question (set `question` + emit a transcript turn), then delegate the wait to `take_input()`, so Stop interruption and timeout semantics come for free; the question is cleared in a `finally`. **`vapviz.say(text)`** / **`asay(...)`** emit a fire-and-forget statement turn. A shared `_emit_conversation` tracer helper mirrors the server's `_emit_control_audit` (the agent is in-process). All four raise `RuntimeError` outside an active trace and are exported from `vapviz`. `GET`/`POST /runs/{id}/control`'s `RunControlOut` gains `question: str | None` — echoed as text (unlike the injected message), since it's the agent's own words. The conversation turns **reuse the inert `EventType.CONTROL`** with new `action` values `ask` / `say` — no new event type, no reducer change (new `control_conversation_inert.json` parity fixture pins an ask→input→say exchange as inert in both reducers). UI: new `ConversationPanel.tsx` docked beside the office in the Theater tab renders the agent ↔ user turns (pure `lib/conversation.ts` `toTurns()`) as bubbles + hosts the reply box (works live and as a read-only transcript); the message box moved out of `RunControlBar.tsx` (now lifecycle-only), and the bar + panel share one poll via the new `useControlLatch` hook; the Office Building flags a **"💬 needs input"** badge on a running room whose agent is waiting; `LogsView` labels the `ask`/`say` actions. Exports: `vapviz.ask` / `aask` / `say` / `asay`. Try `python examples/conversation_demo.py` (no API key).
 
 ### v1.4.0 — 2026-07-21
 

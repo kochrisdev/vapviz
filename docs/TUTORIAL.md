@@ -1533,7 +1533,7 @@ with vapviz.trace("Drafting Agent", app_id="drafting-agent") as run:
 ```
 
 By default `take_input()` **blocks** — your code stops at that line, however long it takes, until
-someone sends a message from the Theater tab's control bar (or `POST /runs/{id}/input`). The
+someone sends a message from the Theater tab's chat panel (or `POST /runs/{id}/input`). The
 instant a message arrives, `take_input()` returns it as a plain string and your code carries on.
 While it waits, the run shows a **"💬 waiting for your input"** badge in the Theater, so it's
 obvious the agent isn't stuck or crashed — it's genuinely paused *for you*.
@@ -1581,6 +1581,51 @@ async with vapviz.atrace("Async Agent") as run:
 > **Heads up:** `take_input()` / `atake_input()` only work while a trace is active. Call one
 > outside a `with vapviz.trace(...)` block and you'll get a `RuntimeError`, not a silent no-op —
 > vapviz would rather fail loudly than pretend to listen.
+
+### Talking *back*: `ask()` and `say()`
+
+`take_input()` is a one-way intercom — you talk *into* the agent, but you can't see what it's
+waiting on, and it can't tell you anything back. Two more calls make it a real **two-way
+conversation**, shown in a chat panel docked beside the office scene in the Theater tab.
+
+**`vapviz.ask(prompt)`** posts a question you actually *see*, then waits for your reply:
+
+```python
+with run.step("choose_region", kind="step") as step:
+    region = vapviz.ask("Which region should I deploy to?")   # the question appears; the run waits
+    step.set_output({"region": region})
+```
+
+The question shows up in the chat panel (and the reply box lights up); type an answer and the agent
+continues with it. It's `take_input()` with a visible prompt — so the same rules apply: it blocks
+by default, accepts the same `timeout`, and **Stop still interrupts it**.
+
+**`vapviz.say(text)`** is the agent speaking up *without* waiting — perfect for confirming it acted
+on something you sent:
+
+```python
+correction = vapviz.take_input(timeout=0)     # did you steer it?
+if correction:
+    vapviz.say(f"Got it — applying: {correction}")   # tell the user you heard them
+```
+
+Every turn — the agent's questions and statements, and your replies — is rendered as a chat bubble
+in the panel and recorded on the timeline, so the whole back-and-forth is there to read afterwards
+(the panel works as a read-only transcript once the run ends). From the Office Building overview, a
+room whose agent is waiting shows a **"💬 needs input"** badge so you notice from the top level and
+click in to answer.
+
+> **Think of `ask` / `say` as giving your colleague a voice**, not just ears: they can raise their
+> hand with a question, and check back in once you've replied — instead of silently waiting and
+> hoping you noticed.
+
+Async agents use `await vapviz.aask(...)` and `await vapviz.asay(...)`. Like the rest of this API,
+all four raise `RuntimeError` if called outside an active trace.
+
+> **Try it with no API key:** `python examples/conversation_demo.py` starts a server and an agent
+> that calls `vapviz.ask("Which region?")` and waits, then confirms with `vapviz.say(...)`. A
+> background "human" thread polls until the agent is asking, reads the question, and answers over
+> `POST /runs/{id}/input` — open the Theater tab to watch the chat panel fill in.
 
 ### `checkpoint()` — for loops with no natural step
 
@@ -1637,6 +1682,7 @@ python examples/budgets_demo.py       # cost/latency budget alerting
 python examples/evals_demo.py         # agent evals / assertions
 python examples/control_demo.py       # pause/resume/stop a live run
 python examples/input_demo.py         # send a message into a running agent
+python examples/conversation_demo.py  # two-way chat with a running agent (ask/say)
 python examples/evals_ci_demo.py      # eval suite as a CI gate
 
 # Requires an API key:

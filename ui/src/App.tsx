@@ -12,12 +12,14 @@ import { NodeDetail } from "./components/NodeDetail";
 import { ReplayBar } from "./components/ReplayBar";
 import { RunComparison } from "./components/RunComparison";
 import { RunControlBar } from "./components/RunControlBar";
+import { ConversationPanel } from "./components/ConversationPanel";
 import { RunList } from "./components/RunList";
 import { StatusBadge } from "./components/StatusBadge";
 import { StoryView } from "./components/StoryView";
 import { TagEditor } from "./components/TagEditor";
 import { buildGraphAt } from "./lib/replay";
 import { useRunStream } from "./hooks/useRunStream";
+import { useControlLatch } from "./hooks/useControlLatch";
 import { useRunStore, type RunTab } from "./store/runStore";
 
 function RunViewer() {
@@ -36,6 +38,10 @@ function RunViewer() {
 
   const state = selectedRunId ? runStates[selectedRunId] : null;
   const selectedNode = state?.nodes.find((n) => n.id === selectedNodeId) ?? null;
+
+  // One shared control-latch poll for the Theater (control bar + conversation
+  // panel) so they don't each hit GET /control. UI-only side channel.
+  const control = useControlLatch(selectedRunId ?? "", state?.status === "running");
 
   // Per-run tab — Story is the default legible view; a caller of selectRun can
   // request another landing tab via the store's `entryTab` (e.g. a floor-view
@@ -186,9 +192,21 @@ function RunViewer() {
             {/* Body */}
             {tab === "theater" ? (
               <div className="flex-1 min-w-0 flex flex-col min-h-0">
-                <RunControlBar runId={selectedRunId!} runStatus={state.status} />
-                <div className="flex-1 min-h-0">
-                  <TheaterView nodes={shownNodes} runId={selectedRunId!} runStatus={state.status} />
+                <RunControlBar
+                  runStatus={state.status}
+                  latch={control.latch}
+                  sendAction={control.sendAction}
+                />
+                <div className="flex-1 min-h-0 flex">
+                  <div className="flex-1 min-w-0">
+                    <TheaterView nodes={shownNodes} runId={selectedRunId!} runStatus={state.status} />
+                  </div>
+                  <ConversationPanel
+                    events={state.events}
+                    runStatus={state.status}
+                    latch={control.latch}
+                    sendMessage={control.sendMessage}
+                  />
                 </div>
                 {/* Playback is core to Theater: bar always shown (live runs sit at the end). */}
                 <ReplayBar

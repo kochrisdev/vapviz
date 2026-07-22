@@ -107,11 +107,11 @@ The **Theater** tab turns a run into a cozy pixel office — a tab at the top of
 > Multi-agent runs (a CrewAI crew, a LangGraph supervisor + workers) are where this shines — you can
 > literally see which agent is doing what.
 
-### Pause, resume, stop — and send a message — the Agent control bar
+### Pause, resume, stop — the Agent control bar
 
 While a run is **live**, the Theater tab shows an **Agent control** bar with **Pause** and
-**Stop** buttons and a **message box** (it disappears once the run ends). This isn't just for
-show — it really controls the agent:
+**Stop** buttons (it disappears once the run ends). This isn't just for show — it really controls
+the agent:
 
 - **Pause** asks the agent to hold on. Agents are polite, not instant: the bar says
   **"pausing…"** until the agent finishes the step it's on and actually parks, then
@@ -121,14 +121,25 @@ show — it really controls the agent:
 - **Stop** ends the run at the agent's next opportunity. A stopped run gets a neutral grey
   **⏹ Stopped** badge — it didn't succeed and it didn't fail; *you* ended it — and it doesn't
   count against your success rate on the Dashboard.
-- **Send a message** — type into the box and press **Send** to hand a note to the agent while
-  it runs. The agent only *receives* it if its code asks for one (`vapviz.take_input()` — the
-  "agent asks a question, then waits for your answer" pattern). When an agent is waiting, the
-  bar highlights the box ("agent is waiting — reply…") and the office rests with a **💬 Waiting
-  for your input** badge; your message unblocks it. A message you've sent but the agent hasn't
-  picked up yet shows as **"queued"**.
-- Every pause/resume/stop **and every message** is written into the run's **Logs** ("Paused by
-  user", "Message from user: …"), so the record stays honest.
+- Every pause/resume/stop is written into the run's **Logs** ("Paused by user"), so the record
+  stays honest.
+
+### Talk to the agent — the Conversation panel
+
+Beside the office scene, the Theater tab has a **chat panel** — a two-way conversation with the
+running agent (it also stays as a read-only transcript after the run ends):
+
+- **The agent can ask you a question.** When its code calls `vapviz.ask("Which region?")`, the
+  question appears as a bubble, the reply box lights up ("type your answer…"), and the office
+  rests with a **💬 Waiting for your input** badge. Type an answer and press send — the agent
+  continues with it. Stop still works while it waits.
+- **The agent can speak up on its own** (`vapviz.say(...)`) — e.g. to confirm it acted on
+  something you sent — and those show as agent bubbles too.
+- **You can steer any time** — type into the box even when the agent didn't ask; its code picks
+  the message up with `vapviz.take_input()`. A message you've sent but the agent hasn't read yet
+  shows as **"delivered — awaiting pickup"**.
+- Every turn (the agent's questions/statements and your replies) is also written into the run's
+  **Logs**, so the whole exchange stays on the record.
 
 > This works for agents running in the same process as the vapviz server (like the demos).
 > Agents that report over the network can't be controlled yet.
@@ -172,7 +183,11 @@ How the building works:
   **Theater** tab, so you land in the live office scene (with the control bar if it's running).
 - **Control a room without leaving the floor** — hover a **running** room and small
   **Pause / Resume / Stop** buttons appear in its corner (the same cooperative control as the
-  Theater bar). Sending a *message* stays on the Theater tab, where there's room to type.
+  Theater bar). Talking to the agent (the conversation panel) stays on the Theater tab, where
+  there's room to type.
+- **A waiting agent flags itself** — if a running room's agent is blocked on `ask()` /
+  `take_input()`, the room shows a **💬 needs input** badge you can't miss; click it to open the
+  run in Theater and answer.
 
 The sidebar mirrors the building: it lists **apps**, not individual runs — expand one (▸) to see
 its full run history and click any past run to inspect and replay it.

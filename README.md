@@ -46,7 +46,7 @@ Instrument your agent with a single context manager. Every step, tool call, and 
 - **Theater view** — watch a run as a cozy pixel office: each agent is a hand-drawn sprite that walks from its home desk to the LLM desk or a tool station (SEARCH / FETCH / DATA / PRINT, picked from the tool's name), speech bubble overhead — live or replayed
 - **Office building** — a centralized monitor keyed to **apps**, drawn as a real pixel building: each app owns a room (a re-run lights the same room back up), floors hold six rooms around a Walk Way with the earliest app **walking down the stairs** when the top floor fills, and a failing app's room turns red while its agents wait it out in the rooftop **lounge** (inspect or dismiss). A coworker steps out of every **running** room to mill on the Walk Way, so the floor is alive exactly while work is happening — watch all your agents work across every app on one screen
 - **Live run control** — **Pause / Resume / Stop** a running in-process agent from the UI (Theater tab) or `POST /runs/{id}/control`. Cooperative: the tracer obeys at each step boundary — pause parks the agent *between* steps, stop raises `vapviz.VapStopped` so the code genuinely halts, and the run ends with a first-class neutral `stopped` status
-- **Message injection** — hand a live agent a short text message from the UI (or `POST /runs/{id}/input`); the agent receives it with `msg = vapviz.take_input()`, which genuinely blocks your code at that point until one arrives (a non-blocking peek and a timeout are both supported). A Stop still interrupts a waiting agent. `vapviz.checkpoint()` / `acheckpoint()` add the same pausable/stoppable checkpoint to a long loop that has no natural `step`
+- **Two-way conversation** — the agent can talk *back*, not just listen. `region = vapviz.ask("Which region?")` posts a question the user sees in a docked **chat panel** (Theater tab) and blocks for their reply; `vapviz.say("Switching to us-west")` posts a statement, no waiting. Combined with `vapviz.take_input()` (receive an unprompted steer), that's a full back-and-forth, rendered as a transcript on the timeline. A Building room whose agent is waiting flags a **"💬 needs input"** badge. `vapviz.checkpoint()` / `acheckpoint()` add the same pausable/stoppable checkpoint to a long loop that has no natural `step`
 - **Persistent storage** — `vapviz.configure(db="vapviz.db")` switches from in-memory to SQLite with zero code changes
 - **CLI** — `vapviz serve --db vapviz.db` starts the server from the command line
 - **Live streaming** — events flow from tracer → FastAPI → SSE → React in real time; the graph updates as the agent runs
@@ -211,8 +211,13 @@ the full picture. Two calls let your own code cooperate with the message side of
 import vapviz
 
 with vapviz.trace("Support Agent") as run:
+    with run.step("choose_region", kind="step") as step:
+        region = vapviz.ask("Which region should I deploy to?")  # shows the question, waits
+        vapviz.say(f"Got it — deploying to {region}.")           # confirms; doesn't block
+        step.set_output({"region": region})
+
     with run.step("ask_customer", kind="step") as step:
-        msg = vapviz.take_input()          # blocks here until the UI sends a message
+        msg = vapviz.take_input()          # receive an unprompted steer (no displayed prompt)
         step.set_output({"received": msg})
 
     for row in huge_dataset:               # a loop with no per-row step
@@ -220,11 +225,13 @@ with vapviz.trace("Support Agent") as run:
         process(row)
 ```
 
-`take_input(timeout=None)` waits indefinitely by default (the "agent asks, then waits for a
-human" pattern); pass `timeout=0` to peek without blocking, or `timeout=N` seconds to give up and
-get `None` back. A waiting agent can still be **Stopped** — it raises `vapviz.VapStopped` like any
-other checkpoint. Async equivalents: `atake_input()` / `acheckpoint()`. Both `take_input` /
-`checkpoint` (and their async twins) raise `RuntimeError` if called outside an active trace.
+`ask(prompt)` posts the question to the chat panel and blocks for the reply (it accepts the same
+`timeout` as `take_input`). `say(text)` is fire-and-forget. `take_input(timeout=None)` waits
+indefinitely by default (the "agent asks, then waits for a human" pattern); pass `timeout=0` to
+peek without blocking, or `timeout=N` seconds to give up and get `None` back. A waiting agent can
+still be **Stopped** — it raises `vapviz.VapStopped` like any other checkpoint. Async equivalents:
+`aask()` / `asay()` / `atake_input()` / `acheckpoint()`. All of these raise `RuntimeError` if
+called outside an active trace.
 
 ---
 
@@ -653,8 +660,8 @@ The FastAPI server (`http://localhost:8001`) exposes:
 | `GET` | `/runs/{id}/events` | **SSE stream** — replays history then pushes live |
 | `GET` | `/runs/compare?a={id}&b={id}` | Return two run graphs for comparison |
 | `POST` | `/runs/{id}/events` | Ingest an event from a remote process |
-| `GET` / `POST` | `/runs/{id}/control` | Read / send live run control (pause / resume / stop, in-process agents); `GET` also reports `waiting_for_input` / `pending_input` |
-| `POST` | `/runs/{id}/input` | Inject a message into a running agent — received via `vapviz.take_input()` (in-process agents) |
+| `GET` / `POST` | `/runs/{id}/control` | Read / send live run control (pause / resume / stop, in-process agents); `GET` also reports `waiting_for_input` / `pending_input` / `question` (the prompt `vapviz.ask()` is showing) |
+| `POST` | `/runs/{id}/input` | Send a message / reply to a running agent — received via `vapviz.take_input()` or answers a `vapviz.ask()` (in-process agents) |
 | `DELETE` | `/runs` | Clear all runs from store |
 | `DELETE` | `/runs/{id}` | Delete a single run |
 
@@ -746,6 +753,7 @@ examples/
 ├── remote_ingest_demo.py     HTTP POST ingest from a separate process (stdlib only)
 ├── control_demo.py           Live Pause / Resume / Stop of a running agent — no API key needed
 ├── input_demo.py             Inject a message into a running agent (take_input/checkpoint) — no API key needed
+├── conversation_demo.py      Two-way chat with a running agent (ask/say) — no API key needed
 ├── anthropic_demo.py         Real Claude API calls with auto-tracing
 ├── openai_demo.py            OpenAI chat.completions with auto-tracing
 ├── langgraph_demo.py         LangGraph ReAct agent with VapCallbackHandler
@@ -868,10 +876,22 @@ python examples/input_demo.py
 
 Starts the server and an agent that asks a question with `vapviz.take_input()` and genuinely waits;
 a background thread plays "the human" and sends a message a couple of seconds later over the real
-`POST /runs/{id}/input` endpoint (the same request the UI's control bar makes), so the demo finishes
-on its own — the printed `curl` command and the Theater control bar let you send your own instead.
+`POST /runs/{id}/input` endpoint (the same request the UI's chat panel makes), so the demo finishes
+on its own — the printed `curl` command and the Theater chat panel let you send your own instead.
 Also shows `vapviz.checkpoint()` keeping a plain `for` loop pausable/stoppable with no per-iteration
 `step`.
+
+### Two-way conversation demo (no API key)
+
+```bash
+python examples/conversation_demo.py
+```
+
+Starts the server and an agent that uses `vapviz.ask("Which region?")` (posts a question and waits)
+and `vapviz.say(...)` (posts a confirmation). A background thread plays "the human": it polls
+`GET /runs/{id}/control` until the agent is waiting, reads the `question` it posted, and answers over
+`POST /runs/{id}/input`. Open the run's **Theater** tab to watch the exchange in the docked chat
+panel — or delete the auto-answerer and reply yourself.
 
 ### Anthropic demo
 
@@ -1114,6 +1134,7 @@ records what's already shipped (full detail in [CHANGELOG.md](CHANGELOG.md)).
 - [x] **`GET /runs/{id}/control` gains `waiting_for_input` / `pending_input`** — the message text itself is never echoed back by any control endpoint, only whether one is pending
 - [x] **No new event type** — the message is recorded as the existing inert `control` event (`action="input"`), so it's ignored by both graph reducers with zero reducer changes
 - [x] **Two UI ride-alongs** — the Theater office scene dims and shows a "⏸ Paused" / "💬 Waiting for your input" badge; the Office Building's room tiles gain hover-revealed Pause/Resume/Stop controls for a running app
+- [x] **Agent control Layer 2b — two-way conversation** — the agent talks *back*: `vapviz.ask(prompt)` / `aask()` post a question the user sees and block for the reply; `vapviz.say(text)` / `asay()` post a statement without blocking. A docked **chat panel** (Theater tab) renders the agent ↔ user turns as bubbles (live *and* as a read-only transcript), and a running Building room flags a **"💬 needs input"** badge. Still no new event type (turns reuse `control` with `action="ask"` / `"say"`); `GET /control` adds a `question` field
 
 For the full release history see [CHANGELOG.md](CHANGELOG.md).
 
@@ -1160,7 +1181,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor guide. Quick sta
 # Install with all integration + dev dependencies
 pip install -e ".[dev]"
 
-# Run the Python test suite (377 unit tests; integration tests skip if the
+# Run the Python test suite (390 unit tests; integration tests skip if the
 # corresponding framework isn't installed)
 pytest -q
 

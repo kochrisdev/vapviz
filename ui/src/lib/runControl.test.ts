@@ -49,6 +49,18 @@ describe("controlUiState", () => {
     expect(s.buttons).toEqual([{ action: "stop", disabled: false }]);
   });
 
+  it("waiting with a question (ask()): banner says 'waiting for your answer'", () => {
+    const s = controlUiState("running", "running", "running", true, "Which region?");
+    expect(s.banner).toBe("waiting for your answer");
+    expect(s.awaitingInput).toBe(true);
+  });
+
+  it("a question is ignored when the agent isn't waiting", () => {
+    const s = controlUiState("running", "running", "running", false, "Which region?");
+    expect(s.banner).toBeNull();
+    expect(s.awaitingInput).toBe(false);
+  });
+
   it("stop takes precedence over waiting for input", () => {
     const s = controlUiState("stopped", "running", "running", true);
     expect(s.banner).toBe("stopping…");

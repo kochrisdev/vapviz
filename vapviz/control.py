@@ -58,6 +58,15 @@ class RunControl:
     * ``waiting_for_input`` — set by the tracer while it is parked inside
       ``take_input()`` waiting for a message, so the UI can honestly show
       "agent is waiting for your input".
+
+    Layer 2b adds the **agent → user** direction (``vapviz.ask()``):
+
+    * ``question`` — the prompt ``ask()`` is currently displaying, or ``None``
+      when the agent is not asking anything. The mirror of ``pending_input``:
+      unlike the mailbox message, this text **is** echoed to the UI (it's the
+      agent's own words, meant to be shown). Set when ``ask()`` starts, cleared
+      when it returns (answered, timed out, or interrupted). ``say()`` needs no
+      field here — it is fire-and-forget (just a transcript event).
     """
 
     desired: str = RUNNING
@@ -66,6 +75,8 @@ class RunControl:
     # ── Layer 2 mailbox (inject a message into a running agent) ──────────────
     pending_input: Optional[str] = None
     waiting_for_input: bool = False
+    # ── Layer 2b (agent → user): the open question ask() is displaying ───────
+    question: Optional[str] = None
 
 
 class VapStopped(Exception):

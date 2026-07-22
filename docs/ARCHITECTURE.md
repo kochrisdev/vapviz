@@ -109,7 +109,7 @@ Each node kind has a symmetric open/close pair:
 Two event types are freestanding — they don't open/close a node:
 
 - `state_update` — updates metadata on the nearest parent node (currently inert in the graph reducers).
-- `control` — an inert audit marker emitted by the server for pause/resume/stop **and** for an injected message (see [Control channel](#control-channel-pause--resume--stop)). It appears in the timeline (Logs) but produces **no** graph change in either reducer — parity fixtures (`control_inert.json`, `control_input_inert.json`) assert both reducers ignore every `data.action` identically, message payloads included.
+- `control` — an inert audit marker for pause/resume/stop, an injected message (`action="input"`), and the agent → user conversation turns `action="ask"` / `action="say"` (see [Control channel](#control-channel-pause--resume--stop)). Emitted by the server (lifecycle + input) or the tracer (ask/say). It appears in the timeline (Logs) but produces **no** graph change in either reducer — parity fixtures (`control_inert.json`, `control_input_inert.json`, `control_conversation_inert.json`) assert both reducers ignore every `data.action` identically, message payloads included.
 
 ### Graph construction
 
@@ -551,7 +551,26 @@ All four — `take_input`, `atake_input`, `checkpoint`, `acheckpoint` — **rais
 
 **Two UI ride-alongs, both presentation-only — same carve-out as the rest of this section.** The Theater office scene visibly "rests" (`.office-stage--resting`, dimmed/desaturated) with a small badge — `⏸ Paused` or `💬 Waiting for your input` — driven by the same `desired`/`acked`/`waiting_for_input` latch `RunControlBar` already polls (`useOfficeControl.ts` feeds it into the scene instead of only the control bar). The Office Building's room tiles gained hover-revealed Pause/Resume/Stop icon buttons for a **running** app's room — one more per-room poll of `GET /control`, alongside the per-room `/graph` fetch the Building already does — so lifecycle control no longer requires opening Theater. Message *sending* stays Theater-only; the room tiles are too small for a text box, and that line was drawn on purpose.
 
-**Current scope and deferred layers:** Layers 1 and 2 are now shipped — lifecycle control (pause/resume/stop) and message injection plus manual checkpoints, both for **in-process** agents. Message injection today is **one-way**: the UI sends *into* the agent, but there is no surface for the agent to show anything *back* to the user — it cannot display the question it is waiting on, nor a reply after your message. Making this a **two-way conversation** (the agent posts a question/response the user sees, the user answers) is the next slice. Also still deferred: retry/re-run a step (Layer 3), and cross-process control for remote-ingest agents, whose tracers cannot see the server's in-memory latch (Layer 4).
+### Layer 2b — two-way conversation (the agent speaks back)
+
+Layer 2 was **one-way**: the UI could send *into* the agent, but the agent had no way to show anything *back* — it could not display the question it was waiting on, nor confirm it acted on your message. Layer 2b closes that with two agent-side calls, and it does so **entirely in-process** (the agent shares the store's process), so it needed **no new HTTP route and no dual-logic change** — the mirror image of how cheap Layer 2 was.
+
+**`vapviz.ask(prompt, timeout=None)` / `aask(...)`** post a question the user sees, then block for the reply. `ask` is a thin composition of pieces that already exist: it sets one new latch field, `question` (the prompt the agent is currently displaying — the agent → user mirror of `pending_input`), emits a transcript turn, then delegates the actual wait to `take_input()`. Because the reply arrives on the same mailbox `take_input()` already drains, **Stop still interrupts a waiting agent** for free, and the `question` is cleared in a `finally` so it goes away whether the agent got an answer, timed out, or was stopped:
+
+```python
+region = vapviz.ask("Which region should I deploy to?")   # shows the question, blocks for a reply
+vapviz.say(f"Got it — deploying to {region}.")            # posts a statement, does not block
+```
+
+**`vapviz.say(text)` / `asay(...)`** are fire-and-forget: they emit a transcript turn and return. No latch field, no blocking — just the agent volunteering something the user should see (typically a confirmation after an unprompted `take_input()` steer). Both new calls raise `RuntimeError` outside an active trace, like the rest of the Layer 2 API.
+
+**The `question` field is the one thing a control response *does* echo as text.** `GET /runs/{run_id}/control` grows a `question: str | None` field — unlike the injected message (whose text is never echoed, only its presence), the question is the agent's own words *meant* to be shown, so the panel can render it from the same ~1 s poll.
+
+**The conversation turns reuse the inert `control` event — new `action` values, still no new `EventType`.** `ask` and `say` are emitted from the *tracer* side (a shared `_emit_conversation` helper mirroring the server's `_emit_control_audit`, since the agent is in-process), while the user's reply is still the server-side `action="input"` audit from `POST /input`. So a full exchange is three interleaved `control` events in the log — `ask` → `input` → `say` — and both reducers ignore all three exactly as before. A `control_conversation_inert.json` parity fixture pins that a whole exchange produces no graph change in either reducer.
+
+**The UI surface is a docked chat panel + a nudge badge — presentation-only, same carve-out as the rest of this section.** `ConversationPanel.tsx` sits beside the office scene in the Theater tab; the pure `lib/conversation.ts` `toTurns()` derives the agent ↔ user turns straight from the run's `control` events, so the panel renders live over SSE *and* as a read-only transcript for a finished run. Its reply box (`POST /input`) lights up when `waiting_for_input`, showing the open `question` as the prompt. The message box moved *out* of `RunControlBar` into the panel (one input surface, not two — the bar is now lifecycle-only), and the bar + panel now share **one** control-latch poll (`useControlLatch`). In the Office Building overview, a running room whose agent is waiting shows a **"💬 needs input"** badge that clicks through to Theater — reusing the per-room `/control` poll the floor already runs, so no new request. `LogsView` labels the new actions too (`Agent asks: "…"` / `Agent: "…"`).
+
+**Current scope and deferred layers:** Layers 1, 2, and 2b are now shipped — lifecycle control (pause/resume/stop), message injection + manual checkpoints, and a full **two-way conversation** (`ask`/`say`), all for **in-process** agents. Still deferred: retry/re-run a step (Layer 3), and cross-process control for remote-ingest agents, whose tracers cannot see the server's in-memory latch (Layer 4).
 
 ---
 

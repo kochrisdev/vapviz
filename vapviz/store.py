@@ -263,6 +263,15 @@ class RunStore(ABC):
             c.waiting_for_input = waiting
             c.updated_at = time.time()
 
+    # ── Layer 2b — the agent → user direction (``vapviz.ask()``) ─────────────
+    def set_question(self, run_id: str, question: Optional[str]) -> None:
+        """Tracer → set the prompt ``ask()`` is currently displaying (``None``
+        clears it). Unlike the mailbox message, this text IS echoed to the UI."""
+        with self._lock:  # type: ignore[attr-defined]
+            c = self._control.setdefault(run_id, RunControl())  # type: ignore[attr-defined]
+            c.question = question
+            c.updated_at = time.time()
+
     def _control_wake_for(self, run_id: str) -> threading.Event:
         """Get-or-create the per-run wake Event a parked sync agent blocks on."""
         with self._lock:  # type: ignore[attr-defined]

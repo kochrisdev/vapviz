@@ -20,9 +20,13 @@ from vapviz.server import create_app
 from vapviz.store import MemoryStore
 from vapviz.tracer import (
     Tracer,
+    aask,
     acheckpoint,
+    ask,
+    asay,
     atake_input,
     checkpoint,
+    say,
     take_input,
 )
 
@@ -357,6 +361,33 @@ def test_get_control_copy_includes_mailbox_fields():
     assert store.get_control("r").pending_input == "msg"
 
 
+# ── Layer 2b — the agent → user question latch ──────────────────────────────
+
+def test_set_question_roundtrip_and_clear():
+    store = MemoryStore()
+    assert store.get_control("r").question is None
+    store.set_question("r", "Which region?")
+    assert store.get_control("r").question == "Which region?"
+    store.set_question("r", None)  # cleared when ask() returns
+    assert store.get_control("r").question is None
+
+
+def test_get_control_copy_includes_question():
+    store = MemoryStore()
+    store.set_question("r", "Which region?")
+    snap = store.get_control("r")
+    assert snap.question == "Which region?"
+    snap.question = "tampered"  # a copy — must not corrupt the store
+    assert store.get_control("r").question == "Which region?"
+
+
+def test_question_cleared_on_delete():
+    store = MemoryStore()
+    store.set_question("r", "Which region?")
+    store.delete_run("r")
+    assert store.get_control("r").question is None
+
+
 # ---------------------------------------------------------------------------
 # Tracer — take_input (sync)
 # ---------------------------------------------------------------------------
@@ -616,3 +647,152 @@ def test_get_control_does_not_leak_message_text(app_client):
     body = client.get(f"/runs/{rid}/control").json()
     assert "secret plan" not in str(body)
     assert body["pending_input"] is True
+
+
+# ---------------------------------------------------------------------------
+# Layer 2b — ask() / say() (agent → user conversation)
+# ---------------------------------------------------------------------------
+
+def _controls(store, run_id):
+    return [e for e in store.get_events(run_id) if e.type.value == "control"]
+
+
+def test_ask_blocks_sets_question_and_returns_reply():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-ask"
+    entered = threading.Event()
+    received: dict[str, object] = {}
+
+    def agent():
+        with tracer.trace("Asker", run_id=run_id) as run:
+            with run.step("plan"):
+                entered.set()
+                received["ans"] = ask("Which region?")
+
+    t = threading.Thread(target=agent)
+    t.start()
+    assert entered.wait(2)
+    # the question is visible while the agent waits, and it flags waiting
+    assert _wait_until(lambda: store.get_control(run_id).question == "Which region?")
+    assert _wait_until(lambda: store.get_control(run_id).waiting_for_input)
+    # the ask turn landed on the timeline as an inert control event
+    asks = [e for e in _controls(store, run_id) if e.data.get("action") == "ask"]
+    assert asks and asks[-1].data["message"] == "Which region?"
+    # reply arrives on the same mailbox the UI writes
+    store.set_input(run_id, "us-west")
+    t.join(5)
+    assert not t.is_alive()
+    assert received["ans"] == "us-west"
+    # question cleared once ask() returns; run finished clean
+    assert store.get_control(run_id).question is None
+    assert store.get_control(run_id).waiting_for_input is False
+    assert store.get_graph(run_id).status == NodeStatus.SUCCESS
+
+
+def test_ask_times_out_returns_none_and_clears_question():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    with tracer.trace("T", run_id="ask-timeout") as run:
+        with run.step("s"):
+            out = ask("Which region?", timeout=0.2)
+    assert out is None
+    assert store.get_control("ask-timeout").question is None  # cleared via finally
+
+
+def test_ask_interrupted_by_stop_clears_question():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "ask-stop"
+    entered = threading.Event()
+
+    def agent():
+        try:
+            with tracer.trace("Asker", run_id=run_id) as run:
+                with run.step("plan"):
+                    entered.set()
+                    ask("Which region?")  # blocks; Stop must break it
+        except VapStopped:
+            pass
+
+    t = threading.Thread(target=agent)
+    t.start()
+    assert entered.wait(2)
+    assert _wait_until(lambda: store.get_control(run_id).waiting_for_input)
+    store.set_desired(run_id, STOPPED)
+    t.join(5)
+    assert not t.is_alive()
+    assert store.get_control(run_id).question is None  # cleared even on interrupt
+    assert store.get_graph(run_id).status == NodeStatus.STOPPED
+
+
+def test_say_emits_turn_without_blocking():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-say"
+    with tracer.trace("Teller", run_id=run_id) as run:
+        with run.step("plan"):
+            say("Switching to us-west.")
+    says = [e for e in _controls(store, run_id) if e.data.get("action") == "say"]
+    assert says and says[-1].data["message"] == "Switching to us-west."
+    # say() never touches the question latch and never blocks
+    assert store.get_control(run_id).question is None
+    assert store.get_graph(run_id).status == NodeStatus.SUCCESS
+
+
+def test_ask_and_say_outside_trace_raise():
+    with pytest.raises(RuntimeError):
+        ask("x", timeout=0)
+    with pytest.raises(RuntimeError):
+        say("x")
+
+
+@pytest.mark.asyncio
+async def test_aask_blocks_and_returns_reply():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-aask"
+
+    async def agent():
+        async with tracer.atrace("Asker", run_id=run_id) as run:
+            async with run.astep("plan"):
+                return await aask("Which region?")
+
+    task = asyncio.create_task(agent())
+    # wait until the async agent is parked, then answer
+    for _ in range(200):
+        if store.get_control(run_id).waiting_for_input:
+            break
+        await asyncio.sleep(0.01)
+    assert store.get_control(run_id).question == "Which region?"
+    store.set_input(run_id, "eu-central")
+    ans = await asyncio.wait_for(task, timeout=5)
+    assert ans == "eu-central"
+    assert store.get_control(run_id).question is None
+
+
+@pytest.mark.asyncio
+async def test_asay_emits_turn():
+    store = MemoryStore()
+    tracer = Tracer(store=store)
+    run_id = "run-asay"
+    async with tracer.atrace("Teller", run_id=run_id) as run:
+        async with run.astep("plan"):
+            await asay("done")
+    says = [e for e in _controls(store, run_id) if e.data.get("action") == "say"]
+    assert says and says[-1].data["message"] == "done"
+
+
+def test_get_control_echoes_question(app_client):
+    """Unlike the injected message, the agent's question text IS surfaced."""
+    client, store = app_client
+    rid = _seed_running(store)
+    store.set_question(rid, "Which region?")
+    body = client.get(f"/runs/{rid}/control").json()
+    assert body["question"] == "Which region?"
+
+
+def test_get_control_question_null_when_not_asking(app_client):
+    client, store = app_client
+    rid = _seed_running(store)
+    assert client.get(f"/runs/{rid}/control").json()["question"] is None

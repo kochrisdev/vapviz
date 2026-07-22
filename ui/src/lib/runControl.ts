@@ -40,6 +40,7 @@ export function controlUiState(
   acked: ControlDesired,
   runStatus: NodeStatus,
   waitingForInput = false,
+  question: string | null = null,
 ): ControlUiState {
   // A finished run is not controllable — hide the bar.
   if (TERMINAL.has(runStatus)) return { live: false, banner: null, buttons: [], awaitingInput: false };
@@ -51,12 +52,14 @@ export function controlUiState(
   }
 
   if (waitingForInput) {
-    // Agent is blocked in take_input(): a message unblocks it, Stop interrupts
-    // it. Pause is hidden — it wouldn't take effect until after the message is
-    // received, so offering it here would be misleading.
+    // Agent is blocked in take_input()/ask(): a message unblocks it, Stop
+    // interrupts it. Pause is hidden — it wouldn't take effect until after the
+    // message is received, so offering it here would be misleading. When the
+    // agent posted a question (ask()), the banner says so; otherwise it's an
+    // open-ended wait for an unprompted steer (bare take_input()).
     return {
       live: true,
-      banner: "waiting for your input",
+      banner: question ? "waiting for your answer" : "waiting for your input",
       buttons: [{ action: "stop", disabled: false }],
       awaitingInput: true,
     };

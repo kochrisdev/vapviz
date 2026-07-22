@@ -11,6 +11,41 @@ For the detailed per-release notes (APIs, fixes, internals), see the
 
 _Nothing yet._
 
+## [1.5.0] - 2026-07-21
+
+### Added
+- **Agent control Layer 2b — two-way conversation.** Layer 2 let you send a message *into* a
+  running agent; now the agent can talk *back*. Two new calls (sync + async):
+  - **`vapviz.ask(prompt, timeout=None)`** / **`aask(...)`** — post a question the user sees and
+    block for their reply. The prompt shows in a new docked **chat panel** (Theater tab) and the
+    reply box lights up; the reply arrives on the same mailbox `take_input()` uses, so **Stop
+    still interrupts** a waiting agent (`VapStopped`). Returns the reply (or `None` on timeout).
+  - **`vapviz.say(text)`** / **`asay(...)`** — post a statement the user sees, without blocking
+    (e.g. confirm you acted on a steer). Fire-and-forget.
+
+  Together with `take_input()` (receive an unprompted steer) this is a full back-and-forth. Both
+  new calls raise `RuntimeError` outside an active trace.
+- **Docked conversation panel (Theater tab).** A chat surface beside the office scene renders the
+  agent ↔ user turns as bubbles (agent left, you right) and hosts the reply box. It reads the
+  run's events, so it works live *and* as a **read-only transcript for a completed run**. The
+  message box moved here out of the control bar (one input surface, not two); the bar stays
+  lifecycle-only (Pause/Resume/Stop).
+- **"💬 needs input" nudge on Building rooms.** A running room whose agent is parked in
+  `ask()`/`take_input()` flags a badge in the Office Building overview — click through to Theater
+  to answer. (Reuses the per-room control poll; no new request.)
+- **`GET /runs/{id}/control`** gains a **`question`** field — the prompt `ask()` is currently
+  displaying (echoed as text, unlike the injected message, since it's the agent's own words meant
+  to be shown; `null` when the agent isn't asking).
+
+### Internal
+- The conversation turns **reuse the inert `control` event** with new `action` values `ask` /
+  `say` (like Layer 2's `input`) — **no new event type, no reducer/dual-logic change.** New parity
+  fixture `control_conversation_inert.json` pins that a full ask→input→say exchange is ignored
+  identically by both reducers.
+- The Theater's control bar and conversation panel now share **one** control-latch poll
+  (`useControlLatch`) instead of two.
+- Tests: **390** fast Python unit tests (was 377), **64** UI (vitest, was 57).
+
 ## [1.4.0] - 2026-07-21
 
 ### Added

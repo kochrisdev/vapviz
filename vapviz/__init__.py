@@ -8,6 +8,10 @@ from .tracer import (
     acheckpoint,
     take_input,
     atake_input,
+    ask,
+    aask,
+    say,
+    asay,
 )
 from .control import VapStopped
 from .store import default_store, RunStore, MemoryStore
@@ -90,6 +94,10 @@ __all__ = [
     "acheckpoint",
     "take_input",
     "atake_input",
+    "ask",
+    "aask",
+    "say",
+    "asay",
     # Store
     "default_store",
     "RunStore",

@@ -18,22 +18,28 @@ const EVENT_LABEL: Record<string, string> = {
   control: "Control",
 };
 
-// A `control` event's specific meaning lives in data.action
-// (pause/resume/stop, or Layer 2's "input" — a message injected into the run).
+// A `control` event's specific meaning lives in data.action: pause/resume/stop,
+// Layer 2's "input" (a message injected into the run), or Layer 2b's agent → user
+// conversation turns "ask" (a question the agent posted) and "say" (a statement).
 const CONTROL_LABEL: Record<string, string> = {
   pause: "Paused by user",
   resume: "Resumed by user",
   stop: "Stopped by user",
   input: "Message from user",
+  ask: "Agent asks",
+  say: "Agent",
 };
 
-/** Event label, resolving `control` events to their specific action (and, for an
- *  injected message, showing the text). */
+// Actions whose message text is worth showing inline in the log.
+const CONTROL_WITH_TEXT = new Set(["input", "ask", "say"]);
+
+/** Event label, resolving `control` events to their specific action (and, for the
+ *  message-carrying ones, showing the text). */
 function eventLabel(ev: VapEvent): string {
   if (ev.type === "control") {
     const action = String(ev.data?.action);
     const base = CONTROL_LABEL[action] ?? "Control";
-    if (action === "input" && typeof ev.data?.message === "string") {
+    if (CONTROL_WITH_TEXT.has(action) && typeof ev.data?.message === "string") {
       return `${base}: “${ev.data.message}”`;
     }
     return base;

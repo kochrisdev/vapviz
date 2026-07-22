@@ -4,7 +4,7 @@ import asyncio
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,11 +45,14 @@ class RunControlOut(BaseModel):
     # Layer 2 mailbox state (so the UI polls one endpoint, not two):
     waiting_for_input: bool = False  # agent is parked in take_input() waiting
     pending_input: bool = False      # a message is queued but not yet consumed
+    # Layer 2b — the agent → user direction: the open question ask() is showing.
+    question: Optional[str] = None   # echoed as text (it's the agent's own words)
 
 
 def _control_out(c: RunControl, ended: bool) -> RunControlOut:
-    """Build the wire model from a control-latch snapshot (the message *text* is
-    never echoed back — the UI only needs to know one is pending)."""
+    """Build the wire model from a control-latch snapshot. The injected *message*
+    text is never echoed (the UI only needs to know one is pending), but the
+    agent's ``question`` IS — it's meant to be shown in the chat panel."""
     return RunControlOut(
         desired=c.desired,
         acked=c.acked,
@@ -57,6 +60,7 @@ def _control_out(c: RunControl, ended: bool) -> RunControlOut:
         ended=ended,
         waiting_for_input=c.waiting_for_input,
         pending_input=c.pending_input is not None,
+        question=c.question,
     )
 
 

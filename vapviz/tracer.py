@@ -283,6 +283,97 @@ async def atake_input(timeout: Optional[float] = None) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# Public conversation API for agent authors (Layer 2b — agent → user)
+# ---------------------------------------------------------------------------
+# The mirror of take_input(): ask()/say() let the agent speak *back* to the UI.
+# In-process only (like the rest of the control channel): the agent writes the
+# store and emits the transcript event directly — no HTTP. Both render on the
+# timeline (and the Theater chat panel) as inert `control` events, reusing the
+# same type Layer 2 used for message-inject, so there is no reducer/dual-logic
+# change. See docs/notes/DESIGN-agent-control.md §29-38.
+
+
+def _emit_conversation(ctx: StepContext, action: str, text: str) -> None:
+    """Emit the inert ``control`` audit event for one agent → user turn
+    (``action`` = "ask" | "say"), mirroring the server's ``_emit_control_audit``
+    so every conversation turn — user-side (``input``) or agent-side — renders
+    uniformly against the run's root (agent) node."""
+    store = ctx._store
+    graph = store.get_graph(ctx.run_id)
+    root_id = graph.nodes[0].id if graph and graph.nodes else ctx.run_id
+    label = graph.label if graph else ctx.label
+    store.add_event(
+        VapEvent(
+            id=_uid(),
+            run_id=ctx.run_id,
+            timestamp=_now(),
+            type=EventType.CONTROL,
+            node_id=root_id,
+            node_kind=NodeKind.AGENT,
+            node_label=label,
+            parent_id=None,
+            data={"action": action, "message": text},
+        )
+    )
+
+
+def ask(prompt: str, timeout: Optional[float] = None) -> Optional[str]:
+    """Ask the user a question and block for their reply (Layer 2b).
+
+    Posts ``prompt`` to the UI (the Theater chat panel shows it, and the run's
+    "💬 needs input" state lights up), then waits for the user to answer — the
+    reply arrives on the same mailbox ``take_input()`` uses (``POST /input``), so
+    Stop still interrupts a waiting agent (raises :class:`VapStopped`)::
+
+        region = vapviz.ask("Which region should I deploy to?")
+
+    ``timeout`` matches :func:`take_input`: ``None`` (default) waits indefinitely,
+    ``0`` peeks, ``> 0`` bounds the wait. Returns the reply, or ``None`` on
+    timeout. Requires an active trace; raises ``RuntimeError`` otherwise.
+    """
+    ctx = _require_ctx("ask")
+    ctx._store.set_question(ctx.run_id, prompt)  # live: the agent is asking this
+    _emit_conversation(ctx, "ask", prompt)        # transcript turn
+    try:
+        return take_input(timeout=timeout)         # reuse the existing wait
+    finally:
+        ctx._store.set_question(ctx.run_id, None)  # clear the open question
+
+
+async def aask(prompt: str, timeout: Optional[float] = None) -> Optional[str]:
+    """Async variant of :func:`ask` — ``await``s the reply so a waiting async
+    agent yields the shared event loop."""
+    ctx = _require_ctx("aask")
+    ctx._store.set_question(ctx.run_id, prompt)
+    _emit_conversation(ctx, "ask", prompt)
+    try:
+        return await atake_input(timeout=timeout)
+    finally:
+        ctx._store.set_question(ctx.run_id, None)
+
+
+def say(text: str) -> None:
+    """Post a statement the user sees, without blocking (Layer 2b).
+
+    The agent's way to speak up unprompted — e.g. confirm it acted on a steer::
+
+        vapviz.say("Got it — switching to us-west.")
+
+    Fire-and-forget: no reply expected, no waiting. Requires an active trace;
+    raises ``RuntimeError`` otherwise.
+    """
+    ctx = _require_ctx("say")
+    _emit_conversation(ctx, "say", text)
+
+
+async def asay(text: str) -> None:
+    """Async variant of :func:`say`. Emitting a turn doesn't block, so this is a
+    thin async alias kept for symmetry with :func:`aask`/:func:`atake_input`."""
+    ctx = _require_ctx("asay")
+    _emit_conversation(ctx, "say", text)
+
+
+# ---------------------------------------------------------------------------
 # RunContext — top-level context for a single agent run
 # ---------------------------------------------------------------------------
 

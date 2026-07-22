@@ -1,0 +1,25 @@
+{
+  "name": "control_conversation_inert",
+  "description": "Layer 2b: the agent->user conversation turns reuse the inert 'control' event with new actions (ask/say). Like input/pause/resume they must not create nodes or change status. A full exchange (agent asks, user replies, agent says) is inert in both reducers; the run finishes a normal success.",
+  "events": [
+    {"id": "e1", "run_id": "r9", "timestamp": 9000, "type": "agent_start", "node_id": "a1", "node_kind": "agent", "node_label": "Deploy Agent", "parent_id": null, "data": {}},
+    {"id": "e2", "run_id": "r9", "timestamp": 9001, "type": "step_start", "node_id": "s1", "node_kind": "step", "node_label": "plan", "parent_id": "a1", "data": {}},
+    {"id": "e3", "run_id": "r9", "timestamp": 9002, "type": "control", "node_id": "a1", "node_kind": "agent", "node_label": "Deploy Agent", "parent_id": null, "data": {"action": "ask", "message": "Which region should I deploy to?"}},
+    {"id": "e4", "run_id": "r9", "timestamp": 9003, "type": "control", "node_id": "a1", "node_kind": "agent", "node_label": "Deploy Agent", "parent_id": null, "data": {"action": "input", "message": "us-west"}},
+    {"id": "e5", "run_id": "r9", "timestamp": 9004, "type": "control", "node_id": "a1", "node_kind": "agent", "node_label": "Deploy Agent", "parent_id": null, "data": {"action": "say", "message": "Got it — switching to us-west."}},
+    {"id": "e6", "run_id": "r9", "timestamp": 9005, "type": "step_end", "node_id": "s1", "node_kind": "step", "node_label": "plan", "parent_id": "a1", "data": {}},
+    {"id": "e7", "run_id": "r9", "timestamp": 9006, "type": "agent_end", "node_id": "a1", "node_kind": "agent", "node_label": "Deploy Agent", "parent_id": null, "data": {}}
+  ],
+  "expected": {
+    "status": "success",
+    "ended_at": 9006,
+    "nodes": [
+      {"id": "a1", "kind": "agent", "label": "Deploy Agent", "status": "success", "parent_id": null, "started_at": 9000, "ended_at": 9006},
+      {"id": "s1", "kind": "step", "label": "plan", "status": "success", "parent_id": "a1", "started_at": 9001, "ended_at": 9005}
+    ],
+    "edges": [
+      {"id": "a1→s1", "source": "a1", "target": "s1"}
+    ],
+    "total_cost_usd": null
+  }
+}

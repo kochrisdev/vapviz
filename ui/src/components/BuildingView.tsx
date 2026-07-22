@@ -82,10 +82,11 @@ function RoomTile({
   room: AppRoom;
   nodes: GraphNode[];
   onOpen: () => void;
-  control?: { desired: string; acked: string };
+  control?: { desired: string; acked: string; waiting_for_input?: boolean };
   onControl?: (action: ControlAction) => void;
 }) {
   const side = slot < 3 ? "bottom" : "top";
+  const needsInput = room.status === "running" && !!control?.waiting_for_input;
   // Reuse the Theater bar's pure state machine so the buttons + pausing…/stopping…
   // disabling behave identically here (message-inject stays Theater-only).
   const ctl =
@@ -135,6 +136,19 @@ function RoomTile({
             );
           })}
         </div>
+      )}
+      {/* Needs-input nudge (Layer 2b): the agent is blocked in ask()/take_input().
+          Always visible (not hover-gated) — it's a call to act; click through to
+          Theater to answer in the chat panel. */}
+      {needsInput && (
+        <button
+          onClick={onOpen}
+          title={`${room.label} is waiting for your input — open in Theater to reply`}
+          aria-label={`${room.label} needs your input`}
+          className="absolute top-1 left-1 z-10 flex items-center gap-1 px-1.5 py-0.5 border-2 border-status-running bg-surface-inset/90 text-status-running px-display text-[8px] animate-pulse"
+        >
+          💬 needs input
+        </button>
       )}
       {/* Door on the Walk-Way-facing edge (§4-K): where floor-life walkers step
           out. Top-row rooms open downward, bottom-row rooms upward. Its rect is
@@ -315,7 +329,9 @@ export function BuildingView() {
   const selectRun = useRunStore((s) => s.selectRun);
   const [building, setBuilding] = useState<Building | null>(null);
   const [nodesByRun, setNodesByRun] = useState<Record<string, GraphNode[]>>({});
-  const [controlByRun, setControlByRun] = useState<Record<string, { desired: string; acked: string }>>({});
+  const [controlByRun, setControlByRun] = useState<
+    Record<string, { desired: string; acked: string; waiting_for_input?: boolean }>
+  >({});
   const [costToday, setCostToday] = useState(0);
   const [loaded, setLoaded] = useState(false);
 
@@ -431,7 +447,7 @@ export function BuildingView() {
           ...next.floors.flatMap((f) => f.rooms.filter((r): r is AppRoom => r !== null)),
         ];
         const graphs: Record<string, GraphNode[]> = {};
-        const controls: Record<string, { desired: string; acked: string }> = {};
+        const controls: Record<string, { desired: string; acked: string; waiting_for_input?: boolean }> = {};
         await Promise.all(
           visible.map(async (room) => {
             const id = room.currentRunId;
@@ -447,11 +463,15 @@ export function BuildingView() {
               graphs[id] = cache.get(id) ?? [];
             }
             // Control latch — only for a live (running) room; powers the tile's
-            // hover pause/stop controls.
+            // hover pause/stop controls + the "needs input" nudge badge (L2b).
             if (room.status === "running") {
               try {
                 const c = await fetch(`/runs/${id}/control`).then((r) => r.json());
-                controls[id] = { desired: c.desired, acked: c.acked };
+                controls[id] = {
+                  desired: c.desired,
+                  acked: c.acked,
+                  waiting_for_input: !!c.waiting_for_input,
+                };
               } catch {
                 /* transient — the tile falls back to defaults (Pause/Stop) */
               }
